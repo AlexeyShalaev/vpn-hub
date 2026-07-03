@@ -42,3 +42,16 @@ def test__settings__bool_defaults() -> None:
     s = Settings(_env_file=None, database_url=_DSN)
     assert s.trusted_proxy is False
     assert s.docs_enabled is False
+
+
+def test__settings__kubernetes_service_env_vpnhub_port__ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Регресс: k8s-сервис `vpnhub` инжектит VPNHUB_PORT=tcp://<ip>:<port>. Поле port читает ТОЛЬКО
+    PORT, поэтому эта переменная игнорируется (иначе под крашлупил на int_parsing)."""
+    monkeypatch.setenv("VPNHUB_PORT", "tcp://10.96.203.23:80")
+    s = Settings(_env_file=None, database_url=_DSN)
+    assert s.port == 8000
+
+
+def test__settings__port_env__parsed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PORT", "9000")
+    assert Settings(_env_file=None, database_url=_DSN).port == 9000

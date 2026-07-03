@@ -20,6 +20,9 @@ spec:
       labels:
         app.kubernetes.io/name: vpnhub
     spec:
+      # k8s инжектит для каждого Service переменные вида VPNHUB_PORT=tcp://<ip>:<port>; приложению
+      # они не нужны и ломали разбор настроек (имя сервиса `vpnhub` → VPNHUB_PORT). Отключаем.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000     # образ работает под uid/gid 1000 (пользователь app)

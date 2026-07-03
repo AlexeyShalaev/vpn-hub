@@ -128,7 +128,10 @@ class Settings(BaseSettings):
     update_feed_url: str = ""  # JSON-фид релизов; пусто → апдейт-чек в офлайне (last-known)
     update_command: str = ""  # команда применения апдейта (напр. скрипт); пусто → ручной путь
     built: str = ""  # дата сборки (проставляется при build образа: VPNHUB_BUILT); пусто → mtime кода
-    port: int = Field(default=8000, validation_alias=AliasChoices("PORT", "VPNHUB_PORT"))
+    # ТОЛЬКО `PORT` (не `VPNHUB_PORT`): в Kubernetes сервис по имени `vpnhub` инжектит legacy-переменную
+    # VPNHUB_PORT=tcp://<clusterIP>:<port>, которая ломала бы разбор int (под крашлупил). VPNHUB_PORT и так
+    # не влияет на контейнер (uvicorn читает $PORT из entrypoint.sh) — см. docs/deploy/configuration.md.
+    port: int = Field(default=8000, validation_alias=AliasChoices("PORT"))
 
     # app/build info shown in admin → system
     version: str = "0.1.0"

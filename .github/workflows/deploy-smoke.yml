@@ -353,10 +353,11 @@ jobs:
               echo "::error::валидация не сработала: install.sh $bad"; exit 1
             fi
           done
-          # регрессия «не виснет без TTY»: пустой stdin, как при curl | bash
+          # регрессия «не виснет без TTY»: пустой stdin, как при curl | bash (stdin = пайп).
+          # БЕЗ </dev/null: он перекрыл бы пайп echo → у echo нет читателя → SIGPIPE (флейк на macOS).
           # (timeout есть только на Linux; на macOS страхует timeout-minutes шага)
           T=""; command -v timeout >/dev/null && T="timeout 60"
-          echo '' | $T bash deploy/scripts/install.sh --dry-run --dir "$RUNNER_TEMP/vpnhub-dry4" </dev/null
+          echo '' | $T bash deploy/scripts/install.sh --dry-run --dir "$RUNNER_TEMP/vpnhub-dry4"
           echo "✅ install.sh валиден на ${{ runner.os }}"
         timeout-minutes: 5
 
