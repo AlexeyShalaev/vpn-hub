@@ -222,7 +222,7 @@ jobs:
       - name: Load image
         run: docker load -i image.tar
       - uses: azure/setup-kubectl@v4
-      - uses: helm/kind-action@v1.10.0
+      - uses: helm/kind-action@v1.14.0
         with:
           cluster_name: vpnhub
 
