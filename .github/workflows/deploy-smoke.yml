@@ -75,7 +75,7 @@ jobs:
           fi
           echo "✅ все compose-файлы валидны"
 
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v5
 
       - name: Kustomize build + kubeconform
         run: |
@@ -221,7 +221,7 @@ jobs:
           name: vpnhub-image
       - name: Load image
         run: docker load -i image.tar
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v5
       - uses: helm/kind-action@v1.10.0
         with:
           cluster_name: vpnhub
