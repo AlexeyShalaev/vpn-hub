@@ -1,0 +1,54 @@
+{
+  "name": "vpn-hub-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "VPN Hub — self-hosted VPN aggregator (React + Vite UI, bundled into the backend).",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Alexey Shalaev <shalaevad.alexey@gmail.com>",
+  "homepage": "https://github.com/AlexeyShalaev/vpn-hub#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexeyShalaev/vpn-hub.git",
+    "directory": "frontend"
+  },
+  "bugs": {
+    "url": "https://github.com/AlexeyShalaev/vpn-hub/issues"
+  },
+  "keywords": [
+    "vpn",
+    "self-hosted",
+    "react",
+    "vite"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@fontsource/golos-text": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@tanstack/react-query": "^5.62.7",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-phone-number-input": "^3.4.9",
+    "react-router-dom": "^7.1.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.2",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^4.1.9"
+  }
+}

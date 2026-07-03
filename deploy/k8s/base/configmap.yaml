@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpnhub-config
+  namespace: vpnhub
+data:
+  # Публичный адрес — ДОЛЖЕН совпадать с host в Ingress и быть https на проде.
+  # На https приложение требует валидный VPNHUB_MASTER_KEY (см. secret.example.yaml).
+  VPNHUB_BASE_URL: "https://vpn.example.com"
+
+  # Приложение за Ingress (обратный прокси): доверять X-Forwarded-Proto/For —
+  # реальный IP клиента для rate-limit/аудита (Secure-cookie и так включён из-за https base_url).
+  VPNHUB_TRUSTED_PROXY: "true"
+
+  # Пути персистентного состояния (том vpnhub-state, subPath — см. app-deployment.yaml).
+  VPNHUB_BACKUP_DIR: "/var/lib/vpnhub/backups"
+  VPNHUB_PROVIDERS_FILE: "/var/lib/vpnhub/data/providers.yaml"
+
+  # Миграции на старте сериализованы advisory-lock — безопасно при нескольких репликах.
+  VPNHUB_RUN_MIGRATIONS: "true"
+
+  # Фоновый планировщик работает В КАЖДОЙ реплике (лидер-элекшена нет): при replicas>1
+  # бэкапы/монитор/синк дублируются. Держите app на 1 реплике (см. app-deployment.yaml).
+  VPNHUB_MONITOR_ENABLED: "true"
+  VPNHUB_MONITOR_INTERVAL: "120"
+  VPNHUB_SYNC_ENABLED: "true"
+  VPNHUB_SYNC_INTERVAL: "300"
+
+  VPNHUB_LOG_LEVEL: "INFO"
+  VPNHUB_SESSION_TTL_DAYS: "30"

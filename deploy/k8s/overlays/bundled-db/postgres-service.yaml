@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vpnhub-postgres        # это host в DATABASE_URL (см. secret.example.yaml)
+  namespace: vpnhub
+  labels:
+    app.kubernetes.io/name: vpnhub-postgres
+spec:
+  clusterIP: None              # headless: стабильное DNS-имя пода
+  selector:
+    app.kubernetes.io/name: vpnhub-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

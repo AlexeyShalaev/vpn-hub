@@ -1,0 +1,35 @@
+.phone-field .PhoneInput {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* инпут занимает всё оставшееся место */
+.phone-field .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* флаг + селектор страны */
+.phone-field .PhoneInputCountry {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  height: 42px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.phone-field .PhoneInputCountryIcon {
+  width: 26px;
+  height: 19px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.phone-field .PhoneInputCountrySelectArrow {
+  color: var(--text-3);
+  opacity: 0.7;
+}

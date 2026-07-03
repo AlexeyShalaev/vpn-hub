@@ -1,0 +1,6 @@
+# Конфиг hadolint (линт Dockerfile). Используется в CI (deploy-smoke) и в `make hadolint`.
+failure-threshold: warning
+ignored:
+  # Версии apt-пакетов намеренно не пиним: единственный пакет — curl из stable-репозитория
+  # debian-slim, его обновляет базовый образ python:3.14-slim (dependabot двигает тег базы).
+  - DL3008

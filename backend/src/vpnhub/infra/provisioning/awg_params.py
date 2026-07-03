@@ -1,0 +1,221 @@
+"""Генерация obfuscation-параметров AmneziaWG (порт awgInstaller::generateAwgParameters).
+
+Параметры генерятся ОДИН раз на сервер (на этапе install), пишутся и в серверный конфиг,
+и в каждый клиентский — поэтому ДОЛЖНЫ совпадать на обеих сторонах. Мы храним их в БД
+(ServerProtocol.params) и подставляем в оба шаблона.
+
+Ограничения из исходника (awgInstaller.cpp:47-72):
+- Jc ∈ [4,6]; Jmin=10; Jmax=50 (жёстко, не рандом).
+- S1,S2 ∈ [15,149]; S3 ∈ [0,63]; S4 ∈ [0,19]; все Sx уникальны;
+  запрещены равные размеры пакетов: S1+148 ≠ S2+92, S1+148 ≠ S3+64, S2+92 ≠ S3+64.
+- AWG 2.0: заголовки H1-H4 — диапазоны "first-second" (возрастающие). Legacy: одиночные уникальные числа.
+- I1 — DNS-подобный junk-блоб (дефолт), I2-I5 пустые.
+"""
+
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass
+
+from vpnhub.infra.provisioning import constants as c
+
+INT32_MAX = 2**31 - 1
+
+# awgProtocolConfig.h:14-16 (AwgConstant)
+MSG_INITIATION_SIZE = 148
+MSG_RESPONSE_SIZE = 92
+MSG_COOKIE_REPLY_SIZE = 64
+
+# protocolConstants.h awg::defaultSpecialJunk1
+DEFAULT_I1 = "<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>"
+
+
+@dataclass
+class AwgParams:
+    """Полный набор obfuscation-параметров (значения — строки, как в конфиге)."""
+
+    jc: str
+    jmin: str
+    jmax: str
+    s1: str
+    s2: str
+    s3: str
+    s4: str
+    h1: str
+    h2: str
+    h3: str
+    h4: str
+    i1: str = DEFAULT_I1
+    i2: str = ""
+    i3: str = ""
+    i4: str = ""
+    i5: str = ""
+    subnet_address: str = c.DEFAULT_SUBNET_ADDRESS
+    subnet_cidr: str = c.DEFAULT_SUBNET_CIDR
+    protocol_version: str = ""  # "2" для awg2, "" для legacy
+
+    def script_vars(self) -> dict[str, str]:
+        """$-токены для genAwgVars (scriptsRegistry.cpp)."""
+        return {
+            "$JUNK_PACKET_COUNT": self.jc,
+            "$JUNK_PACKET_MIN_SIZE": self.jmin,
+            "$JUNK_PACKET_MAX_SIZE": self.jmax,
+            "$INIT_PACKET_JUNK_SIZE": self.s1,
+            "$RESPONSE_PACKET_JUNK_SIZE": self.s2,
+            "$COOKIE_REPLY_PACKET_JUNK_SIZE": self.s3,
+            "$TRANSPORT_PACKET_JUNK_SIZE": self.s4,
+            "$INIT_PACKET_MAGIC_HEADER": self.h1,
+            "$RESPONSE_PACKET_MAGIC_HEADER": self.h2,
+            "$UNDERLOAD_PACKET_MAGIC_HEADER": self.h3,
+            "$TRANSPORT_PACKET_MAGIC_HEADER": self.h4,
+            "$SPECIAL_JUNK_1": self.i1,
+            "$SPECIAL_JUNK_2": self.i2,
+            "$SPECIAL_JUNK_3": self.i3,
+            "$SPECIAL_JUNK_4": self.i4,
+            "$SPECIAL_JUNK_5": self.i5,
+            "$AWG_SUBNET_IP": self.subnet_address,
+            "$WIREGUARD_SUBNET_CIDR": self.subnet_cidr,
+        }
+
+    def config_json(self, is_awg2: bool) -> dict[str, str]:
+        """Ключи AWG для native-конфига (AwgServerConfig/AwgClientConfig toJson)."""
+        obj = {
+            "Jc": self.jc,
+            "Jmin": self.jmin,
+            "Jmax": self.jmax,
+            "S1": self.s1,
+            "S2": self.s2,
+            "H1": self.h1,
+            "H2": self.h2,
+            "H3": self.h3,
+            "H4": self.h4,
+            "I1": self.i1,
+            "I2": self.i2,
+            "I3": self.i3,
+            "I4": self.i4,
+            "I5": self.i5,
+        }
+        if is_awg2:
+            obj["S3"] = self.s3
+            obj["S4"] = self.s4
+        return obj
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "jc": self.jc, "jmin": self.jmin, "jmax": self.jmax,
+            "s1": self.s1, "s2": self.s2, "s3": self.s3, "s4": self.s4,
+            "h1": self.h1, "h2": self.h2, "h3": self.h3, "h4": self.h4,
+            "i1": self.i1, "i2": self.i2, "i3": self.i3, "i4": self.i4, "i5": self.i5,
+            "subnet_address": self.subnet_address, "subnet_cidr": self.subnet_cidr,
+            "protocol_version": self.protocol_version,
+        }  # fmt: skip
+
+    @classmethod
+    def from_dict(cls, d: dict[str, str]) -> AwgParams:
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+    @classmethod
+    def from_server_conf(cls, text: str, is_awg2: bool) -> AwgParams:
+        """Разобрать параметры из живого серверного конфига (порт extractConfigFromContainer).
+
+        I1-I5 в серверном конфиге закомментированы (`# I1 = ...`) — читаем и их.
+        """
+        kv: dict[str, str] = {}
+        commented: dict[str, str] = {}
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or (line.startswith("[") and line.endswith("]")):
+                continue
+            if line.startswith("#"):
+                body = line.lstrip("#").strip()
+                if "=" in body:
+                    k, v = body.split("=", 1)
+                    commented[k.strip()] = v.strip()
+                continue
+            if "=" in line:
+                k, v = line.split("=", 1)
+                kv.setdefault(k.strip(), v.strip())
+
+        subnet_address, subnet_cidr = c.DEFAULT_SUBNET_ADDRESS, c.DEFAULT_SUBNET_CIDR
+        if kv.get("Address"):
+            parts = kv["Address"].split("/")
+            subnet_address = parts[0].strip()
+            if len(parts) > 1:
+                subnet_cidr = parts[1].strip()
+
+        return cls(
+            jc=kv.get("Jc", ""),
+            jmin=kv.get("Jmin", ""),
+            jmax=kv.get("Jmax", ""),
+            s1=kv.get("S1", ""),
+            s2=kv.get("S2", ""),
+            s3=kv.get("S3", "") if is_awg2 else "",
+            s4=kv.get("S4", "") if is_awg2 else "",
+            h1=kv.get("H1", ""),
+            h2=kv.get("H2", ""),
+            h3=kv.get("H3", ""),
+            h4=kv.get("H4", ""),
+            i1=commented.get("I1", DEFAULT_I1),
+            i2=commented.get("I2", ""),
+            i3=commented.get("I3", ""),
+            i4=commented.get("I4", ""),
+            i5=commented.get("I5", ""),
+            subnet_address=subnet_address,
+            subnet_cidr=subnet_cidr,
+            protocol_version="2" if is_awg2 else "",
+        )
+
+
+def _rand(lo: int, hi: int, rng: random.Random) -> int:
+    """Аналог QRandomGenerator::bounded(lo, hi) — [lo, hi)."""
+    return rng.randrange(lo, hi)
+
+
+def generate(is_awg2: bool, rng: random.Random | None = None) -> AwgParams:
+    rng = rng or random.SystemRandom()
+
+    jc = str(_rand(4, 7, rng))
+    jmin, jmax = "10", "50"
+
+    s1 = _rand(15, 150, rng)
+    s2 = _rand(15, 150, rng)
+    s3 = _rand(0, 64, rng)
+    s4 = _rand(0, 20, rng)
+
+    used = {s1}
+    while s2 in used or s1 + MSG_INITIATION_SIZE == s2 + MSG_RESPONSE_SIZE:
+        s2 = _rand(15, 150, rng)
+    used.add(s2)
+    while (
+        s3 in used
+        or s1 + MSG_INITIATION_SIZE == s3 + MSG_COOKIE_REPLY_SIZE
+        or s2 + MSG_RESPONSE_SIZE == s3 + MSG_COOKIE_REPLY_SIZE
+    ):
+        s3 = _rand(0, 64, rng)
+    used.add(s3)
+    while s4 in used:
+        s4 = _rand(0, 20, rng)
+
+    if is_awg2:
+        headers: list[str] = []
+        lo = 5
+        while len(headers) != 4:
+            if lo >= INT32_MAX - 1:  # защита от вырождения диапазона (в C++ не встречается на 4 итерациях)
+                lo = 5
+            first = _rand(lo, INT32_MAX, rng)
+            second = _rand(first, INT32_MAX, rng) if first < INT32_MAX - 1 else first
+            lo = second
+            headers.append(f"{first}-{second}")
+        h1, h2, h3, h4 = headers
+    else:
+        hs: set[str] = set()
+        while len(hs) != 4:
+            hs.add(str(_rand(5, INT32_MAX, rng)))
+        h1, h2, h3, h4 = list(hs)
+
+    return AwgParams(
+        jc=jc, jmin=jmin, jmax=jmax,
+        s1=str(s1), s2=str(s2), s3=str(s3), s4=str(s4),
+        h1=h1, h2=h2, h3=h3, h4=h4,
+        protocol_version="2" if is_awg2 else "",
+    )  # fmt: skip

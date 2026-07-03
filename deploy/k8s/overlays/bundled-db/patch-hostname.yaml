@@ -1,0 +1,30 @@
+# Замените vpn.example.com на ваш домен (в обоих документах). Kustomize применит
+# каждый документ к ресурсу с совпадающим kind+name.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vpnhub
+  namespace: vpnhub
+spec:
+  tls:
+    - hosts: ["vpn.example.com"]
+      secretName: vpnhub-tls
+  rules:
+    - host: vpn.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vpnhub
+                port:
+                  number: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpnhub-config
+  namespace: vpnhub
+data:
+  VPNHUB_BASE_URL: "https://vpn.example.com"

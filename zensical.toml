@@ -1,0 +1,93 @@
+[project]
+site_name = "vpn-hub"
+site_description = "Self-hosted VPN infrastructure control panel (Amnezia / OpenVPN / Outline)"
+site_author = "Alexey Shalaev"
+repo_name = "AlexeyShalaev/vpn-hub"
+repo_url = "https://github.com/AlexeyShalaev/vpn-hub"
+edit_uri = "edit/master/docs/"
+copyright = "Copyright &copy; 2026 Alexey Shalaev"
+docs_dir = "docs"
+site_dir = "site"
+
+nav = [
+    { "Главная" = "index.md" },
+    { "Установка" = [
+        "deploy/index.md",
+        { "Требования" = "deploy/requirements.md" },
+        { "Способы установки" = [
+            { "Docker Compose" = "deploy/compose.md" },
+            { "Скрипт (одна команда)" = "deploy/scripts.md" },
+            { "Docker без Compose" = "deploy/docker.md" },
+            { "Kubernetes" = "deploy/kubernetes.md" },
+        ] },
+        { "Настройка" = [
+            { "HTTPS и домен" = "deploy/reverse-proxy.md" },
+            { "Внешняя база данных" = "deploy/external-db.md" },
+            { "Переменные окружения" = "deploy/configuration.md" },
+        ] },
+        { "Обновление" = "deploy/updates.md" },
+    ] },
+    { "Начало работы" = [
+        { "Первый запуск и вход" = "guide/first-run.md" },
+        { "Быстрый старт владельца" = "guide/quickstart.md" },
+        { "Как устроен VPN Hub" = "guide/overview.md" },
+    ] },
+    { "Владельцу" = [
+        { "Серверы" = "owner/servers.md" },
+        { "Установка VPN на сервер" = "owner/vpn.md" },
+        { "Группы и участники" = "owner/groups.md" },
+        { "Пулы и доступы" = "owner/access.md" },
+        { "Кто пользуется сервером" = "owner/clients.md" },
+    ] },
+    { "Участнику" = [
+        { "Присоединение к группе" = "member/join.md" },
+        { "Устройства" = "member/devices.md" },
+        { "Получение конфига и подключение" = "member/get-config.md" },
+    ] },
+    { "Администрирование" = [
+        { "Пользователи" = "admin/users.md" },
+        { "Система и обновления" = "admin/system.md" },
+        { "Резервные копии и мастер-ключ" = "admin/backups.md" },
+        { "Каталог провайдеров" = "admin/catalog.md" },
+    ] },
+    { "Справка" = [
+        { "Профиль и безопасность" = "help/profile.md" },
+        { "Вопросы и решение проблем" = "help/faq.md" },
+        { "Глоссарий" = "help/glossary.md" },
+    ] },
+    { "Changelog" = "changelog.md" },
+]
+
+[project.theme]
+features = [
+    "content.code.annotate",
+    "content.code.copy",
+    "content.code.select",
+    "content.tabs.link",
+    "content.tooltips",
+    "navigation.footer",
+    "navigation.indexes",
+    "navigation.instant",
+    "navigation.instant.prefetch",
+    "navigation.path",
+    "navigation.sections",
+    "navigation.tabs",
+    "navigation.tabs.sticky",
+    "navigation.top",
+    "navigation.tracking",
+    "search.highlight",
+    "search.share",
+    "search.suggest",
+    "toc.follow",
+    "toc.integrate",
+]
+
+[[project.theme.palette]]
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"

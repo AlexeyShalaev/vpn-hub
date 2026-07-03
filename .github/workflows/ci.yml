@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Backend lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - name: Sync
+        working-directory: backend
+        run: uv sync --frozen --group dev
+      - name: Ruff format
+        working-directory: backend
+        run: uv run ruff format --check .
+      - name: Ruff lint
+        working-directory: backend
+        run: uv run ruff check .
+      - name: Mypy
+        working-directory: backend
+        run: uv run mypy src
+
+  test-unit:
+    name: Backend unit tests (Python 3.14)
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+      - name: Sync
+        working-directory: backend
+        run: uv sync --frozen --group dev
+      - name: Pytest (unit + integration, in-memory SQLite)
+        working-directory: backend
+        # Порог = текущий факт (~55%). Поднимать по мере добавления тестов, цель — 90.
+        run: uv run pytest --cov=vpnhub --cov-fail-under=55
+
+  frontend:
+    name: Frontend lint, types, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Lint & format (Biome)
+        working-directory: frontend
+        run: npx biome ci .
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+      - name: Test (vitest)
+        working-directory: frontend
+        run: npm test
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  migrations:
+    name: Alembic migrations smoke (Postgres)
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: vpnhub
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - name: Sync
+        working-directory: backend
+        run: uv sync --frozen --group dev
+      - name: Upgrade head
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/vpnhub
+        run: uv run alembic upgrade head
+
+  # Sentinel — единственный required-статус в branch protection.
+  all-checks-passed:
+    name: All checks passed
+    if: always()
+    needs: [lint, test-unit, frontend, migrations]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required checks failed."
+            exit 1
+          fi
+          echo "All checks passed."
