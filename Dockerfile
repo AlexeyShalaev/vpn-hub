@@ -1,7 +1,7 @@
 # VPN Hub — один образ: FastAPI (API + статика React) + Postgres-клиент. Один процесс.
 
 # 1) сборка фронтенда
-FROM node:20-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /fe
 COPY frontend/package.json frontend/package-lock.json ./
 # npm ci — детерминированная установка строго по lock-файлу (воспроизводимый билд)
