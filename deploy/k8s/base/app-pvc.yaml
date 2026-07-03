@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vpnhub-state
+  namespace: vpnhub
+spec:
+  accessModes: ["ReadWriteOnce"]   # один писатель — ок при replicas: 1
+  # storageClassName: standard      # раскомментируйте под свой кластер
+  resources:
+    requests:
+      storage: 5Gi

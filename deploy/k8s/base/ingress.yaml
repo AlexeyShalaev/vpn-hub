@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vpnhub
+  namespace: vpnhub
+  annotations:
+    # cert-manager выпустит TLS-сертификат в secretName ниже (нужен установленный
+    # cert-manager и ClusterIssuer с этим именем).
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx          # имя вашего Ingress-контроллера
+  tls:
+    - hosts: ["vpn.example.com"]    # ДОЛЖЕН совпадать с VPNHUB_BASE_URL
+      secretName: vpnhub-tls
+  rules:
+    - host: vpn.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vpnhub
+                port:
+                  number: 80

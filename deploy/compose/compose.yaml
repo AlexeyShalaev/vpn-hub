@@ -1,0 +1,63 @@
+# VPN Hub — рабочий стек: приложение (один контейнер) + PostgreSQL 17.
+# Быстрый старт:
+#   cp .env.example .env      # затем заполните VPNHUB_MASTER_KEY и POSTGRES_PASSWORD
+#   docker compose up -d
+# Публичный доступ по HTTPS — оверлей Caddy. Надёжнее закрепить его в .env (переживает
+# обновления):  COMPOSE_FILE=compose.yaml:caddy.compose.yaml  + VPNHUB_DOMAIN=ваш.домен
+# Разово руками:  docker compose -f compose.yaml -f caddy.compose.yaml up -d
+name: vpnhub
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vpnhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env (openssl rand -hex 32)}
+      POSTGRES_DB: ${POSTGRES_DB:-vpnhub}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ — экранирование, чтобы переменные раскрыл шелл контейнера, а не Compose.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-vpnhub} -d $${POSTGRES_DB:-vpnhub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  app:
+    image: ghcr.io/alexeyshalaev/vpn-hub:${VPNHUB_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy   # app стартует только когда БД принимает подключения
+    environment:
+      # asyncpg-драйвер обязателен. Пароль без спецсимволов (hex) — URL-safe.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vpnhub}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-vpnhub}
+      # Мастер-ключ восстановления: из него выводятся ключи шифрования секретов и бэкапов.
+      # На https приложение НЕ стартует с дефолтным/пустым ключом (защита от известного ключа).
+      VPNHUB_MASTER_KEY: ${VPNHUB_MASTER_KEY:?задайте VPNHUB_MASTER_KEY в .env (openssl rand -hex 32)}
+      VPNHUB_BASE_URL: ${VPNHUB_BASE_URL:-http://localhost:8000}
+      VPNHUB_BACKUP_DIR: /var/lib/vpnhub/backups
+      VPNHUB_PROVIDERS_FILE: /var/lib/vpnhub/data/providers.yaml
+      # Необязательно: первичный админ (иначе — setup-экран при первом входе).
+      VPNHUB_ADMIN_PHONE: ${VPNHUB_ADMIN_PHONE:-}
+      VPNHUB_ADMIN_PASSWORD: ${VPNHUB_ADMIN_PASSWORD:-}
+      # Необязательно: токен для /metrics (пусто → эндпоинт открыт, закрывайте на прокси).
+      VPNHUB_METRICS_TOKEN: ${VPNHUB_METRICS_TOKEN:-}
+      # За обратным прокси задайте 1 — тогда X-Forwarded-Proto/For учитываются (Secure-cookie,
+      # реальный IP для rate-limit). Оверлей Caddy включает это автоматически.
+      VPNHUB_TRUSTED_PROXY: ${VPNHUB_TRUSTED_PROXY:-false}
+    # По умолчанию порт публикуется только локально — наружу выводите через reverse-proxy (Caddy).
+    # Для доступа по IP без прокси (тест/LAN) задайте в .env: VPNHUB_HTTP_ADDR=0.0.0.0:8000
+    ports:
+      - "${VPNHUB_HTTP_ADDR:-127.0.0.1:8000}:8000"
+    volumes:
+      - backups:/var/lib/vpnhub/backups   # .vhb-бэкапы БД
+      - data:/var/lib/vpnhub/data         # каталог провайдеров (правится из админки)
+    # HEALTHCHECK уже зашит в образ (curl /healthz).
+
+volumes:
+  pgdata:
+  backups:
+  data:

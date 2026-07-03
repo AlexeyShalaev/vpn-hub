@@ -1,0 +1,34 @@
+# VPN Hub с ВНЕШНЕЙ базой (managed Postgres: RDS, Cloud SQL, Neon, Supabase, своя БД…).
+# Встроенный Postgres не поднимается — приложению нужен только DATABASE_URL.
+# Быстрый старт:
+#   cp .env.external-db.example .env   # заполните DATABASE_URL и VPNHUB_MASTER_KEY
+#   docker compose -f compose.external-db.yaml up -d
+name: vpnhub
+
+services:
+  app:
+    image: ghcr.io/alexeyshalaev/vpn-hub:${VPNHUB_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # Формат: postgresql+asyncpg://user:pass@host:5432/db
+      # Managed-базы обычно требуют TLS — добавьте ?ssl=require (или ssl=verify-full с CA).
+      DATABASE_URL: ${DATABASE_URL:?укажите DATABASE_URL внешнего Postgres (postgresql+asyncpg://…)}
+      VPNHUB_MASTER_KEY: ${VPNHUB_MASTER_KEY:?задайте VPNHUB_MASTER_KEY в .env (openssl rand -hex 32)}
+      VPNHUB_BASE_URL: ${VPNHUB_BASE_URL:-http://localhost:8000}
+      VPNHUB_BACKUP_DIR: /var/lib/vpnhub/backups
+      VPNHUB_PROVIDERS_FILE: /var/lib/vpnhub/data/providers.yaml
+      VPNHUB_ADMIN_PHONE: ${VPNHUB_ADMIN_PHONE:-}
+      VPNHUB_ADMIN_PASSWORD: ${VPNHUB_ADMIN_PASSWORD:-}
+      # Токен для /metrics (пусто → открыт, закрывайте на прокси).
+      VPNHUB_METRICS_TOKEN: ${VPNHUB_METRICS_TOKEN:-}
+      # За обратным прокси — 1 (учитывать X-Forwarded-Proto/For). Оверлей Caddy включает автоматически.
+      VPNHUB_TRUSTED_PROXY: ${VPNHUB_TRUSTED_PROXY:-false}
+    ports:
+      - "${VPNHUB_HTTP_ADDR:-127.0.0.1:8000}:8000"
+    volumes:
+      - backups:/var/lib/vpnhub/backups
+      - data:/var/lib/vpnhub/data
+
+volumes:
+  backups:
+  data:

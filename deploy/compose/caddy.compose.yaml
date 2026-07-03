@@ -1,0 +1,41 @@
+# Оверлей: автоматический HTTPS через Caddy (Let's Encrypt из коробки).
+#
+# Рекомендуемый способ включить (переживает update.sh) — закрепить в .env:
+#   COMPOSE_FILE=compose.yaml:caddy.compose.yaml
+#   VPNHUB_DOMAIN=vpn.example.com
+#   VPNHUB_BASE_URL=https://vpn.example.com
+# install.sh --domain vpn.example.com делает всё это сам.
+#
+# Разовый запуск руками (не забывайте оба -f при каждой команде):
+#   docker compose -f compose.yaml -f caddy.compose.yaml up -d
+#
+# Домен в Caddyfile подставляется из VPNHUB_DOMAIN — сам файл редактировать не нужно.
+# Не забудьте открыть на файрволе 80 и 443 (80 нужен для выпуска сертификата).
+# Caddy ходит к приложению по внутренней сети (app:8000) — публиковать порт app наружу не нужно.
+services:
+  # Приложение теперь за обратным прокси: доверяем X-Forwarded-Proto/For
+  # (Secure-cookie на https + реальный IP клиента для rate-limit/аудита).
+  app:
+    environment:
+      VPNHUB_TRUSTED_PROXY: "1"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      # compose не пробрасывает .env в контейнеры сам; :? даёт понятную ошибку вместо пустого хоста
+      VPNHUB_DOMAIN: ${VPNHUB_DOMAIN:?задайте VPNHUB_DOMAIN в .env (или install.sh --domain vpn.example.com)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # выданные сертификаты — обязательно на томе (иначе rate-limit LE)
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy-data:
+  caddy-config:

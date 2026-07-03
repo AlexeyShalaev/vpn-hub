@@ -1,0 +1,484 @@
+name: Deploy smoke
+
+# Проверяет НЕ логику приложения (это делает ci.yml), а что СОБИРАЕМЫЙ образ реально
+# запускается там и так, как его будут разворачивать:
+#   Tier 0  валидация артефактов деплоя (hadolint / compose config / kustomize+kubeconform / shellcheck)
+#   Tier 1  образ стартует в каждой топологии: compose (bundled + external БД), Kubernetes (kind)
+#   Tier 2  образ стартует на arm64 (эмуляция QEMU) — закрывает дыру publish.yml (собираем, но не запускаем)
+#   Tier 3  install-скрипты валидны на своей ОС: install.sh (Linux/macOS), install.ps1 (Windows)
+#   Tier 4  supply chain: скан образа на CVE (Trivy) + SBOM (syft)
+#
+# Образ Linux-only (в контейнере всегда Linux), поэтому весь реальный boot идёт на ubuntu (там есть KVM).
+# «Разные ОС» имеют смысл ровно для install-скриптов — путь оператора; это Tier 3.
+#
+# Не required-статус в branch protection (required — sentinel из ci.yml): часть джобов тяжёлая
+# (kind, QEMU) и отфильтрована по путям.
+
+on:
+  push:
+    branches: [master]
+    paths: &paths
+      - "Dockerfile"
+      - ".dockerignore"
+      - "backend/**"
+      - "frontend/**"
+      - "deploy/**"
+      - ".hadolint.yaml"
+      - ".github/workflows/deploy-smoke.yml"
+  pull_request:
+    branches: [master]
+    paths: *paths
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Совпадает с image в deploy/compose/*.yaml и deploy/k8s (lowercase, как требует GHCR):
+  # так smoke гоняет ровно ту ссылку на образ, которую видят пользователи в манифестах.
+  IMAGE: ghcr.io/alexeyshalaev/vpn-hub
+  CI_TAG: ci
+
+jobs:
+  # ── Tier 0 — статическая валидация артефактов деплоя (без запуска контейнеров) ──
+  validate:
+    name: Validate manifests & scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Hadolint (Dockerfile)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: warning
+
+      - name: docker compose config
+        run: |
+          set -euo pipefail
+          # Заглушки для обязательных (${VAR:?}) переменных — проверяем только синтаксис/интерполяцию.
+          export VPNHUB_MASTER_KEY=x POSTGRES_PASSWORD=x VPNHUB_TAG=ci \
+                 DATABASE_URL='postgresql+asyncpg://u:p@h:5432/db' \
+                 VPNHUB_DOMAIN=vpn.example.com
+          docker compose -f deploy/compose/compose.yaml config -q
+          docker compose -f deploy/compose/compose.external-db.yaml config -q
+          docker compose -f deploy/compose/compose.yaml -f deploy/compose/caddy.compose.yaml config -q
+          # без VPNHUB_DOMAIN оверлей обязан падать с понятной ошибкой (guard :?)
+          if (unset VPNHUB_DOMAIN; docker compose -f deploy/compose/compose.yaml -f deploy/compose/caddy.compose.yaml config -q 2>/dev/null); then
+            echo "::error::caddy-оверлей не требует VPNHUB_DOMAIN — guard сломан"; exit 1
+          fi
+          echo "✅ все compose-файлы валидны"
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Kustomize build + kubeconform
+        run: |
+          set -euo pipefail
+          KV=0.6.7
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/v${KV}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz kubeconform
+          for overlay in bundled-db external-db; do
+            echo "── overlay: $overlay ──"
+            kubectl kustomize "deploy/k8s/overlays/$overlay" \
+              | ./kubeconform -strict -summary -ignore-missing-schemas \
+                  -kubernetes-version 1.30.0
+          done
+          echo "✅ манифесты k8s валидны по схемам"
+
+      - name: Shellcheck (install/update/uninstall)
+        run: shellcheck deploy/scripts/*.sh
+
+  # ── Собираем образ ОДИН раз (amd64) и передаём артефактом в smoke-джобы ──
+  build:
+    name: Build image (amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Build & load
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE }}:${{ env.CI_TAG }}
+          build-args: VPNHUB_VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Save image
+        run: docker save -o image.tar "$IMAGE:$CI_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vpnhub-image
+          path: image.tar
+          retention-days: 1
+
+  # ── Tier 1 — образ реально стартует в обеих compose-топологиях ──
+  compose-smoke:
+    name: Compose smoke (${{ matrix.name }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: bundled-db
+            file: compose.yaml
+            external: "false"
+          - name: external-db
+            file: compose.external-db.yaml
+            external: "true"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: vpnhub-image
+      - name: Load image
+        run: docker load -i image.tar
+
+      - name: Up & smoke
+        working-directory: deploy/compose
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.external }}" = "true" ]; then
+            # Внешняя БД: отдельный Postgres в собственной сети; приложение ходит к нему по DNS-имени.
+            # CI-only override подключает app к этой сети — сам compose.external-db.yaml не трогаем.
+            docker network create vpnhub-ci
+            docker run -d --name extdb --network vpnhub-ci \
+              -e POSTGRES_DB=vpnhub -e POSTGRES_USER=vpnhub -e POSTGRES_PASSWORD=secret \
+              postgres:17
+            for _ in $(seq 1 30); do docker exec extdb pg_isready -U vpnhub -d vpnhub && break; sleep 2; done
+            cat > ci-net.override.yaml <<'YML'
+          services:
+            app:
+              networks: [default, ext]
+          networks:
+            ext:
+              name: vpnhub-ci
+              external: true
+          YML
+            {
+              echo "VPNHUB_TAG=$CI_TAG"
+              echo "VPNHUB_MASTER_KEY=$(openssl rand -hex 32)"
+              echo "DATABASE_URL=postgresql+asyncpg://vpnhub:secret@extdb:5432/vpnhub"
+              echo "VPNHUB_HTTP_ADDR=127.0.0.1:8000"
+            } > .env
+            COMPOSE_ARGS=(-f "${{ matrix.file }}" -f ci-net.override.yaml)
+          else
+            {
+              echo "VPNHUB_TAG=$CI_TAG"
+              echo "VPNHUB_MASTER_KEY=$(openssl rand -hex 32)"
+              echo "POSTGRES_PASSWORD=$(openssl rand -hex 32)"
+              echo "VPNHUB_HTTP_ADDR=127.0.0.1:8000"
+            } > .env
+            COMPOSE_ARGS=(-f "${{ matrix.file }}")
+          fi
+
+          # Локальный образ уже в docker (загружен из артефакта) → compose его не тянет.
+          docker compose "${COMPOSE_ARGS[@]}" up -d
+
+          echo "жду /healthz (приложение принимает трафик после миграций)…"
+          ok=0
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1 && { ok=1; break; }
+            sleep 3
+          done
+          [ "$ok" = 1 ] || { echo "::error::/healthz не поднялся"; docker compose "${COMPOSE_ARGS[@]}" logs --no-color; exit 1; }
+
+          echo "жду /readyz (проверка подключения к БД)…"
+          ready=0
+          for _ in $(seq 1 40); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/readyz || true)" = 200 ] && { ready=1; break; }
+            sleep 3
+          done
+          [ "$ready" = 1 ] || { echo "::error::/readyz != 200 (БД недоступна?)"; docker compose "${COMPOSE_ARGS[@]}" logs --no-color; exit 1; }
+          echo "✅ compose/${{ matrix.name }}: healthz + readyz OK"
+
+      - name: Teardown
+        if: always()
+        working-directory: deploy/compose
+        run: |
+          # Оба -f (для external — с override) + чистим внешний Postgres и его сеть.
+          docker compose -f "${{ matrix.file }}" $( [ -f ci-net.override.yaml ] && echo "-f ci-net.override.yaml" ) down -v || true
+          docker rm -f extdb || true
+          docker network rm vpnhub-ci || true
+
+  # ── Tier 1 — образ реально стартует в Kubernetes (kind + Kustomize bundled-db) ──
+  k8s-smoke:
+    name: Kubernetes smoke (kind)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: vpnhub-image
+      - name: Load image
+        run: docker load -i image.tar
+      - uses: azure/setup-kubectl@v4
+      - uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: vpnhub
+
+      - name: Deploy overlay bundled-db
+        run: |
+          set -euo pipefail
+          # Манифесты ссылаются на :latest (overlay newTag) c imagePullPolicy IfNotPresent →
+          # грузим наш образ в узел kind под этим тегом, kubelet возьмёт локальный, без pull из GHCR.
+          docker tag "$IMAGE:$CI_TAG" "$IMAGE:latest"
+          kind load docker-image "$IMAGE:latest" --name vpnhub
+
+          kubectl apply -f deploy/k8s/base/namespace.yaml
+          kubectl -n vpnhub create secret generic vpnhub-secrets \
+            --from-literal=VPNHUB_MASTER_KEY="$(openssl rand -hex 32)" \
+            --from-literal=POSTGRES_PASSWORD=secret \
+            --from-literal=DATABASE_URL='postgresql+asyncpg://vpnhub:secret@vpnhub-postgres:5432/vpnhub'
+          kubectl apply -k deploy/k8s/overlays/bundled-db
+
+          kubectl -n vpnhub rollout status statefulset/vpnhub-postgres --timeout=240s
+          kubectl -n vpnhub rollout status deployment/vpnhub --timeout=300s
+
+      - name: Smoke via port-forward
+        run: |
+          set -euo pipefail
+          kubectl -n vpnhub port-forward svc/vpnhub 8000:80 >/dev/null 2>&1 &
+          pf=$!
+          sleep 5
+          ok=0
+          for _ in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1 && { ok=1; break; }
+            sleep 3
+          done
+          kill "$pf" 2>/dev/null || true
+          [ "$ok" = 1 ] || { echo "::error::k8s /healthz timeout"; exit 1; }
+          echo "✅ k8s (kind, bundled-db): healthz OK"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl -n vpnhub get pods -o wide || true
+          kubectl -n vpnhub describe pods || true
+          kubectl -n vpnhub logs -l app.kubernetes.io/name=vpnhub --tail=200 || true
+          kubectl -n vpnhub logs -l app.kubernetes.io/name=vpnhub-postgres --tail=100 || true
+
+  # ── Tier 2 — образ стартует на arm64 (эмуляция). Тяжело → только push/manual, не на каждый PR ──
+  arm64-smoke:
+    name: arm64 boot (QEMU)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build arm64 & load
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/arm64
+          tags: ${{ env.IMAGE }}:${{ env.CI_TAG }}
+          build-args: VPNHUB_VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Import check (нативные колёса под arm64)
+        run: |
+          docker run --rm --platform linux/arm64 "$IMAGE:$CI_TAG" \
+            /app/.venv/bin/python -c "import vpnhub, asyncpg, cryptography, pydantic_core; print('arm64 imports OK')"
+
+      - name: Boot & smoke (compose bundled; app arm64 под QEMU, Postgres нативно)
+        working-directory: deploy/compose
+        run: |
+          set -euo pipefail
+          {
+            echo "VPNHUB_TAG=$CI_TAG"
+            echo "VPNHUB_MASTER_KEY=$(openssl rand -hex 32)"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 32)"
+            echo "VPNHUB_HTTP_ADDR=127.0.0.1:8000"
+          } > .env
+          docker compose up -d
+          echo "жду /healthz (эмуляция arm64 медленнее — до ~5 мин)…"
+          ok=0
+          for _ in $(seq 1 100); do
+            curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1 && { ok=1; break; }
+            sleep 3
+          done
+          [ "$ok" = 1 ] || { echo "::error::arm64 /healthz timeout"; docker compose logs --no-color; exit 1; }
+          echo "✅ arm64 (QEMU): boot + healthz OK"
+
+      - name: Teardown
+        if: always()
+        working-directory: deploy/compose
+        run: docker compose down -v || true
+
+  # ── Tier 3 — install-скрипты валидны на СВОЕЙ ОС (единственная честная ось Mac/Win/Linux) ──
+  install-scripts:
+    name: Install scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Shellcheck (Linux)
+        if: runner.os == 'Linux'
+        run: shellcheck deploy/scripts/*.sh
+
+      - name: install.sh syntax + dry-run (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          bash -n deploy/scripts/install.sh
+          bash deploy/scripts/install.sh --help >/dev/null
+          # --dry-run терпим к отсутствию Docker → проверяем разбор аргументов и поток на этой ОС.
+          bash deploy/scripts/install.sh --dry-run --dir "$RUNNER_TEMP/vpnhub-dry"
+          # профили в dry-run (offline: сетевые проверки в dry-run не выполняются)
+          bash deploy/scripts/install.sh --dry-run --dir "$RUNNER_TEMP/vpnhub-dry2" --domain smoke.example.org
+          bash deploy/scripts/install.sh --dry-run --dir "$RUNNER_TEMP/vpnhub-dry3" --lan \
+            --external-db 'postgresql+asyncpg://u:p@db.example.com:5432/vpnhub?ssl=require'
+          # валидации обязаны падать (`! cmd` не валит шаг под set -e — только явный exit)
+          for bad in "--domain vpn.example.com" "--admin-phone +7900" "--external-db mysql://u:p@h/db"; do
+            # shellcheck disable=SC2086
+            if bash deploy/scripts/install.sh --dry-run $bad 2>/dev/null; then
+              echo "::error::валидация не сработала: install.sh $bad"; exit 1
+            fi
+          done
+          # регрессия «не виснет без TTY»: пустой stdin, как при curl | bash
+          # (timeout есть только на Linux; на macOS страхует timeout-minutes шага)
+          T=""; command -v timeout >/dev/null && T="timeout 60"
+          echo '' | $T bash deploy/scripts/install.sh --dry-run --dir "$RUNNER_TEMP/vpnhub-dry4" </dev/null
+          echo "✅ install.sh валиден на ${{ runner.os }}"
+        timeout-minutes: 5
+
+      - name: install.ps1 lint + dry-run (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $issues = Invoke-ScriptAnalyzer -Path deploy/scripts/install.ps1 -Severity Error
+          if ($issues) { $issues | Format-Table -AutoSize; throw 'PSScriptAnalyzer нашёл ошибки' }
+          Write-Host 'PSScriptAnalyzer: ошибок нет'
+          $env:INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'vpnhub-dry'
+          ./deploy/scripts/install.ps1 -DryRun
+          Write-Host '✅ install.ps1 валиден на Windows'
+
+  # ── Tier 3+ — install.sh НЕ в dry-run: реальный install → healthz → reconfigure → uninstall ──
+  # Именно отсутствие такого теста позволило quoting-багу start_stack дожить до релиза:
+  # dry-run печатает команды, но не выполняет их.
+  install-e2e:
+    name: install.sh e2e (Linux)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: vpnhub-image
+      - name: Load image
+        run: docker load -i image.tar
+
+      - name: Install (профиль local, файлы из PR через file://)
+        run: |
+          set -euo pipefail
+          export VPNHUB_RAW_BASE="file://$PWD/deploy/compose"
+          # --no-pull: образ приложения уже загружен из артефакта; postgres:17 доедет через up
+          bash deploy/scripts/install.sh --dir "$RUNNER_TEMP/e2e" --tag "$CI_TAG" --no-pull | tee install.out
+          # машиночитаемый итог — последняя строка
+          tail -n1 install.out | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["profile"]=="local", d'
+          # .env: права и секреты
+          [ "$(stat -c '%a' "$RUNNER_TEMP/e2e/.env")" = "600" ]
+          grep -qE '^VPNHUB_MASTER_KEY=[0-9a-f]{64}$' "$RUNNER_TEMP/e2e/.env"
+          grep -qE '^COMPOSE_FILE=compose.yaml$' "$RUNNER_TEMP/e2e/.env"
+          curl -fsS http://127.0.0.1:8000/healthz >/dev/null
+          echo "✅ install: панель поднята и отвечает"
+
+      - name: Reconfigure (--lan) — секреты неизменны, .env переписан точечно
+        run: |
+          set -euo pipefail
+          export VPNHUB_RAW_BASE="file://$PWD/deploy/compose"
+          KEY_BEFORE="$(grep '^VPNHUB_MASTER_KEY=' "$RUNNER_TEMP/e2e/.env")"
+          bash deploy/scripts/install.sh --dir "$RUNNER_TEMP/e2e" --lan --no-pull | tee reconf.out
+          grep -q 'VPNHUB_HTTP_ADDR: 127.0.0.1:8000 → 0.0.0.0:8000' reconf.out
+          [ "$KEY_BEFORE" = "$(grep '^VPNHUB_MASTER_KEY=' "$RUNNER_TEMP/e2e/.env")" ]
+          curl -fsS http://127.0.0.1:8000/healthz >/dev/null
+          echo "✅ reconfigure: адрес изменён, секреты сохранены"
+
+      - name: Update (update.sh поверх живой установки)
+        run: |
+          set -euo pipefail
+          # --no-pull: CI-тег есть только локально, в реестре его нет
+          bash deploy/scripts/update.sh --dir "$RUNNER_TEMP/e2e" --no-pull
+          curl -fsS http://127.0.0.1:8000/healthz >/dev/null
+          echo "✅ update: стек жив после обновления"
+
+      - name: Uninstall (--purge, без TTY)
+        run: |
+          set -euo pipefail
+          bash deploy/scripts/uninstall.sh --dir "$RUNNER_TEMP/e2e" --purge
+          # контейнеров стека не осталось
+          if docker ps -a --format '{{.Names}}' | grep -q '^vpnhub-'; then
+            docker ps -a; echo "::error::после uninstall остались контейнеры"; exit 1
+          fi
+          echo "✅ uninstall: контейнеры и тома удалены"
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          cat install.out reconf.out 2>/dev/null || true
+          (cd "$RUNNER_TEMP/e2e" 2>/dev/null && docker compose logs --no-color) || true
+
+  # ── Tier 4 — supply chain: CVE-скан образа + SBOM ──
+  image-scan:
+    name: Vulnerability scan & SBOM
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vpnhub-image
+      - name: Load image
+        run: docker load -i image.tar
+
+      - name: Trivy (HIGH/CRITICAL, fixable)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ env.CI_TAG }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+      - name: SBOM (syft, SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}:${{ env.CI_TAG }}
+          format: spdx-json
+          artifact-name: vpnhub-sbom.spdx.json
+
+  # ── Sentinel: одна точка агрегации (можно повесить в branch protection при желании) ──
+  deploy-smoke-passed:
+    name: Deploy smoke passed
+    if: always()
+    needs: [validate, compose-smoke, k8s-smoke, arm64-smoke, install-scripts, install-e2e, image-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "Одна или несколько smoke-проверок упали."
+            exit 1
+          fi
+          echo "Все smoke-проверки прошли (пропущенные джобы — норма для PR)."

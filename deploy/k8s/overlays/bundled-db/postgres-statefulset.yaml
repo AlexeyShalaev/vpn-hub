@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vpnhub-postgres
+  namespace: vpnhub
+  labels:
+    app.kubernetes.io/name: vpnhub-postgres
+spec:
+  serviceName: vpnhub-postgres     # = имя headless Service
+  replicas: 1                      # один primary; HA — через оператор (CloudNativePG)
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vpnhub-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vpnhub-postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999            # пользователь postgres в официальном образе — uid 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: vpnhub
+            - name: POSTGRES_USER
+              value: vpnhub
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vpnhub-secrets
+                  key: POSTGRES_PASSWORD
+            # PGDATA — подкаталог тома (иначе initdb спотыкается о lost+found на PVC).
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "vpnhub", "-d", "vpnhub", "-h", "127.0.0.1"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "vpnhub", "-d", "vpnhub", "-h", "127.0.0.1"] }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { memory: "1Gi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 10Gi
