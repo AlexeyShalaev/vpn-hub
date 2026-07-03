@@ -1,0 +1,8 @@
+# Тот же домен, что и в patch-ingress.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpnhub-config
+  namespace: vpnhub
+data:
+  VPNHUB_BASE_URL: "https://vpn.example.com"

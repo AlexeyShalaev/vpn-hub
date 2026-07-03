@@ -109,9 +109,8 @@ images:
     newTag: "1.2.3"
 ```
 
-**Пропишите свой домен.** В `overlays/<выбранный>/patch-hostname.yaml` замените `vpn.example.com` на
-ваш FQDN — один патч правит Ingress (host + TLS-`secretName`) и `VPNHUB_BASE_URL` разом. Меняйте домен
-**в обоих** документах файла.
+**Пропишите свой домен.** Замените `vpn.example.com` на ваш FQDN в `overlays/<выбранный>/patch-ingress.yaml`
+(Ingress host + TLS-`secretName`) и `patch-config.yaml` (`VPNHUB_BASE_URL`) — **в обоих файлах** один и тот же домен.
 
 !!! warning "Домен, Ingress и мастер-ключ должны сойтись"
     `VPNHUB_BASE_URL` должен совпадать с `host` в Ingress. На `https` (а прод — всегда `https`) панель

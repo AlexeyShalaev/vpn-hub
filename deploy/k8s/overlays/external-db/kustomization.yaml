@@ -11,5 +11,14 @@ images:
   - name: ghcr.io/alexeyshalaev/vpn-hub
     newTag: latest
 
+# Раздельные одно-документные патчи с явным target: мульти-документный файл в одном
+# `patches[].path` не понимает kustomize из kubectl 1.27-1.30 (v5.0.x) → PatchTransformer error.
 patches:
-  - path: patch-hostname.yaml
+  - path: patch-ingress.yaml
+    target:
+      kind: Ingress
+      name: vpnhub
+  - path: patch-config.yaml
+    target:
+      kind: ConfigMap
+      name: vpnhub-config

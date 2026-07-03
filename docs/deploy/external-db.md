@@ -187,8 +187,8 @@ CREATE DATABASE vpnhub OWNER vpnhub;
     kubectl apply -k overlays/external-db
     ```
 
-    Домен и публичный адрес правятся в `overlays/external-db/patch-hostname.yaml` (Ingress host + TLS
-    + `VPNHUB_BASE_URL`), тег образа — в `overlays/external-db/kustomization.yaml` (`images: newTag`).
+    Домен и публичный адрес правятся в `overlays/external-db/patch-ingress.yaml` (Ingress host + TLS) и
+    `patch-config.yaml` (`VPNHUB_BASE_URL`), тег образа — в `overlays/external-db/kustomization.yaml` (`images: newTag`).
 
     Проверьте, что под поднялся:
 

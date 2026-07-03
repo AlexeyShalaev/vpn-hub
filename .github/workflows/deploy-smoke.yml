@@ -288,9 +288,11 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Import check (нативные колёса под arm64)
+        # --entrypoint: образ использует ENTRYPOINT (entrypoint.sh → uvicorn), поэтому команду
+        # после имени образа он бы проигнорировал и стартовал бы приложение (падало на DATABASE_URL).
         run: |
-          docker run --rm --platform linux/arm64 "$IMAGE:$CI_TAG" \
-            /app/.venv/bin/python -c "import vpnhub, asyncpg, cryptography, pydantic_core; print('arm64 imports OK')"
+          docker run --rm --platform linux/arm64 --entrypoint /app/.venv/bin/python "$IMAGE:$CI_TAG" \
+            -c "import vpnhub, asyncpg, cryptography, pydantic_core; print('arm64 imports OK')"
 
       - name: Boot & smoke (compose bundled; app arm64 под QEMU, Postgres нативно)
         working-directory: deploy/compose

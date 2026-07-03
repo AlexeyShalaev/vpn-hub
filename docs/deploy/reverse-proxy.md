@@ -144,8 +144,8 @@ server {
 ## Kubernetes
 
 В Kubernetes HTTPS делается не так: TLS терминирует **Ingress**, а сертификат выпускает
-**cert-manager**. Домен и TLS настраиваются в `overlays/*/patch-hostname.yaml` (host Ingress +
-`VPNHUB_BASE_URL`). Здесь это не дублируем — см. [Kubernetes](kubernetes.md).
+**cert-manager**. Домен и TLS настраиваются в `overlays/*/patch-ingress.yaml` (host Ingress) и
+`patch-config.yaml` (`VPNHUB_BASE_URL`). Здесь это не дублируем — см. [Kubernetes](kubernetes.md).
 
 ---
 
