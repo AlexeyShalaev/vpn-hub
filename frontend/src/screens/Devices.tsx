@@ -18,10 +18,12 @@ function DeviceCard({
   d,
   serverNames,
   onRemove,
+  onRevokeConfig,
 }: {
   d: Device;
   serverNames: Record<string, string>;
   onRemove: () => void;
+  onRevokeConfig: (c: DeviceConfig) => void;
 }) {
   const configs = d.configs ?? [];
   return (
@@ -76,13 +78,26 @@ function DeviceCard({
         {configs.length === 0 ? (
           <span style={{ fontSize: 13, color: "var(--text-3)" }}>пока нет — добавьте на вкладке «Доступно»</span>
         ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-            {configs.map((c) => (
-              <span key={`${c.serverId}-${c.type}-${c.proto ?? ""}`} className="chip">
-                <span className={`dot ${c.type}`} />
-                {configLabel(c, serverNames[c.serverId] ?? "—")}
-              </span>
-            ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {configs.map((c) => {
+              const revoked = c.status && c.status !== "active";
+              return (
+                <div
+                  key={`${c.serverId}-${c.type}-${c.proto ?? ""}`}
+                  className="rowflex"
+                  style={{ justifyContent: "space-between", gap: 8, opacity: revoked ? 0.55 : 1 }}
+                >
+                  <span className="chip" style={{ minWidth: 0 }}>
+                    <span className={`dot ${c.type}`} />
+                    {configLabel(c, serverNames[c.serverId] ?? "—")}
+                    {revoked ? " · отозван" : ""}
+                  </span>
+                  <Btn variant="ghost" sm aria-label="Отозвать конфиг" onClick={() => onRevokeConfig(c)}>
+                    <Icon name="trash" size={14} />
+                  </Btn>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -113,6 +128,10 @@ export function DevicesScreen() {
   const [name, setName] = useState("");
   const [platform, setPlatform] = useState<Platform>("ios");
   const [removing, setRemoving] = useState<Device | null>(null);
+  // отзыв одного своего конфига (снимет клиента на сервере + удалит запись)
+  const [revokingCfg, setRevokingCfg] = useState<{ deviceId: string; config: DeviceConfig; serverName: string } | null>(
+    null,
+  );
 
   const addMut = useMutation({
     mutationFn: () => q.addDevice({ name: name.trim(), platform }),
@@ -130,6 +149,17 @@ export function DevicesScreen() {
       setRemoving(null);
       toast("Устройство удалено");
     },
+  });
+
+  const revokeCfgMut = useMutation({
+    mutationFn: ({ deviceId, config }: { deviceId: string; config: DeviceConfig; serverName: string }) =>
+      q.removeConfig({ serverId: config.serverId, vpn: config.type, deviceId, proto: config.proto }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["devices"] });
+      setRevokingCfg(null);
+      toast("Конфиг отозван");
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось отозвать конфиг"),
   });
 
   function openAdd() {
@@ -177,7 +207,15 @@ export function DevicesScreen() {
       ) : (
         <div className="grid">
           {list.map((d) => (
-            <DeviceCard key={d.id} d={d} serverNames={serverNames} onRemove={() => setRemoving(d)} />
+            <DeviceCard
+              key={d.id}
+              d={d}
+              serverNames={serverNames}
+              onRemove={() => setRemoving(d)}
+              onRevokeConfig={(c) =>
+                setRevokingCfg({ deviceId: d.id, config: c, serverName: serverNames[c.serverId] ?? "—" })
+              }
+            />
           ))}
         </div>
       )}
@@ -241,6 +279,33 @@ export function DevicesScreen() {
         >
           <p className="muted" style={{ fontSize: 14 }}>
             «{removing.name}» будет удалено. Установленные на нём конфиги перестанут отслеживаться.
+          </p>
+        </Modal>
+      )}
+
+      {revokingCfg && (
+        <Modal
+          title="Отозвать конфиг?"
+          onClose={() => setRevokingCfg(null)}
+          footer={
+            <>
+              <Btn block onClick={() => setRevokingCfg(null)}>
+                Отмена
+              </Btn>
+              <Btn
+                variant="danger"
+                block
+                onClick={() => revokeCfgMut.mutate(revokingCfg)}
+                disabled={revokeCfgMut.isPending}
+              >
+                {revokeCfgMut.isPending ? "Отзыв…" : "Отозвать"}
+              </Btn>
+            </>
+          }
+        >
+          <p className="muted" style={{ fontSize: 14 }}>
+            «{configLabel(revokingCfg.config, revokingCfg.serverName)}» будет отозван: клиент снимется на сервере, и
+            подключение по этому конфигу перестанет работать. Позже его можно выдать заново на вкладке «Доступно».
           </p>
         </Modal>
       )}

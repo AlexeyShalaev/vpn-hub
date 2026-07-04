@@ -103,6 +103,7 @@ export interface DeviceConfig {
   serverId: string;
   type: VpnType;
   proto: string | null;
+  status?: string; // active | revoked
 }
 
 export interface Device {

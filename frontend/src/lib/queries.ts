@@ -115,6 +115,9 @@ export const genConfig = (b: { serverId: string; vpn: string; deviceId?: string;
   http.post<ConfigResult>("/configs", b);
 export const installConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string }) =>
   http.post<{ ok: boolean }>("/configs/install", b);
+// отозвать свой конфиг: снимает клиента на сервере (SSH) и удаляет запись (симметрично generate)
+export const removeConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string | null }) =>
+  http.post<{ ok: boolean }>("/configs/remove", b);
 
 // admin
 export const adminUsers = () => http.get<AdminUser[]>("/admin/users");
