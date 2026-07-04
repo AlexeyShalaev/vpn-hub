@@ -33,6 +33,47 @@ const EMPTY: FormState = {
   secret: "",
 };
 
+// Популярные локации VPN-серверов. Пользователь может выбрать из списка
+// или ввести любое своё значение — поле-датлист принимает и то, и другое.
+const LOCATION_OPTIONS = [
+  "Нидерланды",
+  "Германия",
+  "Финляндия",
+  "Франция",
+  "Швеция",
+  "Швейцария",
+  "Великобритания",
+  "США",
+  "Польша",
+  "Латвия",
+  "Литва",
+  "Эстония",
+  "Турция",
+  "Сербия",
+  "Чехия",
+  "Австрия",
+  "Испания",
+  "Италия",
+  "Казахстан",
+  "Россия",
+  "Армения",
+  "Грузия",
+  "ОАЭ",
+  "Сингапур",
+  "Япония",
+  "Гонконг",
+  "Канада",
+];
+
+// Название сервера по умолчанию: «Локация [Провайдер]». Провайдер опционален
+// (для «Другой» без имени — только локация). Без локации имя не предлагаем.
+function suggestName(location: string, provider: string): string {
+  const loc = location.trim();
+  const prov = provider.trim();
+  if (!loc) return "";
+  return prov ? `${loc} [${prov}]` : loc;
+}
+
 export function ServerFormScreen() {
   const params = useNav((s) => s.params);
   const go = useNav((s) => s.go);
@@ -57,6 +98,8 @@ export function ServerFormScreen() {
     return EMPTY;
   });
   const [loaded, setLoaded] = useState(!serverId);
+  // Пользователь правил название вручную → перестаём автоподставлять его.
+  const [nameTouched, setNameTouched] = useState(false);
 
   // Заполнить форму данными существующего сервера.
   useEffect(() => {
@@ -77,8 +120,22 @@ export function ServerFormScreen() {
     setLoaded(true);
   }, [serverId, loaded, serverQ.data, known]);
 
+  // Автоподстановка названия из локации и провайдера, пока пользователь
+  // не тронул поле вручную (только при создании — существующий сервер не трогаем).
+  useEffect(() => {
+    if (serverId || nameTouched) return;
+    const auto = suggestName(form.location, form.provider);
+    setForm((f) => (f.name === auto ? f : { ...f, name: auto }));
+  }, [serverId, nameTouched, form.provider, form.location]);
+
   function set<K extends keyof FormState>(key: K, val: FormState[K]) {
     setForm((p) => ({ ...p, [key]: val }));
+  }
+
+  // Ручная правка названия отключает автоподстановку; очистка поля — включает обратно.
+  function onNameChange(val: string) {
+    set("name", val);
+    setNameTouched(val.trim() !== "");
   }
 
   // Умное автозаполнение: пользователь вставляет письмо провайдера,
@@ -148,15 +205,15 @@ export function ServerFormScreen() {
   });
 
   function onSave() {
-    if (!form.name.trim() || !form.ip.trim()) {
-      toast("Заполните название и IP");
+    if (!form.name.trim() || !form.ip.trim() || !form.location.trim()) {
+      toast("Заполните название, IP и локацию");
       return;
     }
     save.mutate({
       name: form.name,
       provider: form.provider || "Другой",
       ip: form.ip,
-      location: form.location,
+      location: form.location.trim(),
       sshUser: form.sshUser || "root",
       sshPort: form.sshPort || "22",
       auth: form.auth,
@@ -364,35 +421,46 @@ export function ServerFormScreen() {
           </Field>
         )}
 
-        {/* Название */}
+        {/* Локация — выбирается до названия, т.к. подставляется в него */}
+        <Field label="Локация">
+          <input
+            className="input"
+            list="server-location-options"
+            value={form.location}
+            onChange={(e) => set("location", e.target.value)}
+            placeholder="Выберите или введите"
+          />
+          <datalist id="server-location-options">
+            {LOCATION_OPTIONS.map((loc) => (
+              <option key={loc} value={loc} />
+            ))}
+          </datalist>
+        </Field>
+
+        {/* Название — по умолчанию «Локация [Провайдер]», можно изменить */}
         <Field label="Название">
           <input
             className="input"
             value={form.name}
-            onChange={(e) => set("name", e.target.value)}
-            placeholder="например, Амстердам-1"
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="например, Нидерланды [FirstByte]"
           />
+          {!serverId && !nameTouched && (
+            <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: "6px 0 0" }}>
+              Составляется из локации и провайдера — можно изменить.
+            </p>
+          )}
         </Field>
 
-        {/* IP + локация */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label="IP-адрес">
-            <input
-              className="input mono"
-              value={form.ip}
-              onChange={(e) => set("ip", e.target.value)}
-              placeholder="203.0.113.10"
-            />
-          </Field>
-          <Field label="Локация">
-            <input
-              className="input"
-              value={form.location}
-              onChange={(e) => set("location", e.target.value)}
-              placeholder="Нидерланды"
-            />
-          </Field>
-        </div>
+        {/* IP */}
+        <Field label="IP-адрес">
+          <input
+            className="input mono"
+            value={form.ip}
+            onChange={(e) => set("ip", e.target.value)}
+            placeholder="203.0.113.10"
+          />
+        </Field>
 
         <div style={{ height: 1, background: "var(--border)" }} />
 
@@ -452,7 +520,11 @@ export function ServerFormScreen() {
         {/* Действия */}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
           <Btn onClick={onBack}>Отмена</Btn>
-          <Btn variant="primary" onClick={onSave} disabled={save.isPending || !form.name.trim() || !form.ip.trim()}>
+          <Btn
+            variant="primary"
+            onClick={onSave}
+            disabled={save.isPending || !form.name.trim() || !form.ip.trim() || !form.location.trim()}
+          >
             {save.isPending ? <Spinner /> : "Сохранить"}
           </Btn>
         </div>
