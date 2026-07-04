@@ -28,7 +28,7 @@ from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningServic
 
 log = structlog.get_logger(__name__)
 
-VPN_TYPES = ("amnezia", "openvpn", "outline")
+VPN_TYPES = ("amnezia", "openvpn", "outline", "hysteria2")
 
 
 def _parse_port(raw: str | None, default: int = 22) -> int:

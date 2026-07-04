@@ -160,12 +160,18 @@ def build_vless_url(
     sni: str,
     flow: str = c.XRAY_DEFAULT_FLOW,
     fingerprint: str = c.XRAY_DEFAULT_FINGERPRINT,
+    network: str = "tcp",
+    path: str = "",
+    mode: str = "",
     alias: str = "AmneziaVPN",
 ) -> str:
     """VLESS+REALITY ссылка (порт vless.cpp::Serialize).
 
     Порядок и guards: type(tcp — опускаем) / encryption / security / flow / sni / fp / pbk / sid.
     spiderX (spx) пуст — опускаем.
+
+    network="xhttp": транспорт задаётся type=xhttp + path/mode; flow (xtls-rprx-vision) не
+    применяется (работает только с raw/tcp), поэтому вызывающий передаёт flow="".
     """
     params = [
         ("encryption", "none"),
@@ -176,8 +182,42 @@ def build_vless_url(
         ("pbk", public_key),
         ("sid", short_id),
     ]
+    if network and network != "tcp":
+        params += [("type", network), ("path", path), ("mode", mode)]
     query = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params if v)
     return f"vless://{uuid}@{host}:{port}?{query}#{quote(alias)}"
+
+
+# ------------------------------------------------------------- hysteria2:// ---
+
+
+def build_hysteria2_url(
+    *,
+    password: str,
+    host: str,
+    port: str,
+    sni: str,
+    obfs_password: str = "",
+    pin_sha256: str = "",
+    alias: str = "VPNHub",
+) -> str:
+    """Hysteria2 ссылка: hysteria2://<password>@host:port/?sni=&obfs=&obfs-password=&pinSHA256=#alias.
+
+    pinSHA256 (hex с двоеточиями) закрепляет self-signed серт вместо публичного CA — двоеточия
+    оставляем как есть (safe=':'), их формат ждут клиенты Hysteria2.
+    """
+    params = [("sni", sni)]
+    if obfs_password:
+        params += [("obfs", "salamander"), ("obfs-password", obfs_password)]
+    if pin_sha256:
+        params.append(("pinSHA256", pin_sha256))
+
+    def _q(k: str, v: str) -> str:
+        return f"{k}={quote(str(v), safe=':' if k == 'pinSHA256' else '')}"
+
+    query = "&".join(_q(k, v) for k, v in params if v)
+    tail = f"/?{query}" if query else "/"
+    return f"hysteria2://{quote(password, safe='')}@{host}:{port}{tail}#{quote(alias)}"
 
 
 # ---------------------------------------------------------------------- ss:// ---

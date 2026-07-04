@@ -27,6 +27,7 @@ from vpnhub.common.retry import with_retries
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
+from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
 from vpnhub.infra.provisioning.provisioners.openvpn import OpenVpnProvisioner
 from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
@@ -164,6 +165,10 @@ class SyncService:
             material = await OutlineProvisioner(spec).adopt(ssh)
             adopted[spec.id] = (material.as_dict(), None)
             return OutlineProvisioner(spec, material=material)
+        if spec.kind == "hysteria2":
+            material = await HysteriaProvisioner(spec).adopt(ssh)
+            adopted[spec.id] = (material.as_dict(), None)
+            return HysteriaProvisioner(spec, material=material)
         material = await XrayProvisioner(spec).adopt(ssh)
         adopted[spec.id] = (material.as_dict(), None)
         return XrayProvisioner(spec, material=material)

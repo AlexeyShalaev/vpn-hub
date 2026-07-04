@@ -44,8 +44,17 @@ class XrayProvisioner:
         pub = await ssh.read_container_text(self.spec.container, self.spec.xray_public_key_path)
         short_id = await ssh.read_container_text(self.spec.container, self.spec.xray_short_id_path)
         boot_uuid = await ssh.read_container_text(self.spec.container, self.spec.xray_uuid_path)
-        self._material = ServerMaterial(xray_public_key=pub, short_id=short_id, bootstrap_uuid=boot_uuid, site=site)
+        xhttp_path = await self._read_xhttp_path(ssh)
+        self._material = ServerMaterial(
+            xray_public_key=pub, short_id=short_id, bootstrap_uuid=boot_uuid, site=site, xhttp_path=xhttp_path
+        )
         return self._material
+
+    async def _read_xhttp_path(self, ssh: SshClient) -> str:
+        """Путь XHTTP из контейнера (генерится configure_container.sh). Пусто для tcp-Reality."""
+        if self.spec.xray_network != "xhttp" or not self.spec.xray_xhttp_path_file:
+            return ""
+        return (await ssh.read_container_text(self.spec.container, self.spec.xray_xhttp_path_file)).strip()
 
     async def _read_server_json(self, ssh: SshClient) -> dict:
         raw = await ssh.read_container_text(self.spec.container, "/opt/amnezia/xray/server.json")
@@ -61,7 +70,9 @@ class XrayProvisioner:
         uuid = keys.gen_uuid()
         doc = await self._read_server_json(ssh)
         clients = doc["inbounds"][0]["settings"].setdefault("clients", [])
-        clients.append({"id": uuid, "flow": c.XRAY_DEFAULT_FLOW})
+        # flow (xtls-rprx-vision) — только для tcp; на XHTTP Vision не применяется
+        entry = {"id": uuid} if self.spec.xray_network == "xhttp" else {"id": uuid, "flow": c.XRAY_DEFAULT_FLOW}
+        clients.append(entry)
         await self._write_and_restart(ssh, doc)
         await base.append_client_row(ssh, self.spec, uuid, name)
         return ClientMaterial(client_id=uuid)
@@ -100,13 +111,17 @@ class XrayProvisioner:
                 site = names[0]
         except (KeyError, IndexError, ValueError):
             pass
-        return ServerMaterial(xray_public_key=pub, short_id=short, bootstrap_uuid=boot, site=site)
+        xhttp_path = await self._read_xhttp_path(ssh)
+        return ServerMaterial(
+            xray_public_key=pub, short_id=short, bootstrap_uuid=boot, site=site, xhttp_path=xhttp_path
+        )
 
     async def status(self, ssh: SshClient) -> bool:
         res = await ssh.run(f"sudo docker inspect -f '{{{{.State.Running}}}}' {self.spec.container}")
         return "true" in res.stdout.lower()
 
     def build_artifact(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> ConfigArtifact:
+        is_xhttp = self.spec.xray_network == "xhttp"
         vless = vpn_uri.build_vless_url(
             uuid=client.client_id,
             host=server_ip,
@@ -114,10 +129,19 @@ class XrayProvisioner:
             public_key=self.material.xray_public_key,
             short_id=self.material.short_id,
             sni=self.material.site or c.XRAY_DEFAULT_SITE,
+            flow="" if is_xhttp else c.XRAY_DEFAULT_FLOW,
+            network=self.spec.xray_network,
+            path=self.material.xhttp_path if is_xhttp else "",
+            mode=self.spec.xray_xhttp_mode if is_xhttp else "",
             alias=server_name or "AmneziaVPN",
+        )
+        hint = (
+            "Скопируйте ссылку vless:// и добавьте в клиент с поддержкой XHTTP (Hiddify / v2RayTun)."
+            if is_xhttp
+            else "Скопируйте ссылку vless:// и добавьте в AmneziaVPN → «+» → Xray (или v2RayTun)."
         )
         return ConfigArtifact(
             vless_url=vless,
-            filename=f"{server_name or 'server'}-xray.txt",
-            hint="Скопируйте ссылку vless:// и добавьте в AmneziaVPN → «+» → Xray (или v2RayTun).",
+            filename=f"{server_name or 'server'}-{self.spec.id}.txt",
+            hint=hint,
         )

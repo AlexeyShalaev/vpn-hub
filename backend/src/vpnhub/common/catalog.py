@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
-VPN_LABELS = {"amnezia": "Amnezia", "openvpn": "OpenVPN", "outline": "Outline"}
-VPN_DOT = {"amnezia": "#7C6CF0", "openvpn": "#E0833B", "outline": "#3E86E0"}
+VPN_LABELS = {"amnezia": "Amnezia", "openvpn": "OpenVPN", "outline": "Outline", "hysteria2": "Hysteria2"}
+VPN_DOT = {"amnezia": "#7C6CF0", "openvpn": "#E0833B", "outline": "#3E86E0", "hysteria2": "#28B98A"}
 VPN_DESC = {
     "amnezia": "Маскируется под обычный трафик — лучший против блокировок.",
     "openvpn": "Классика, максимальная совместимость с устройствами.",
     "outline": "Один ключ, проще всего для новичков.",
+    "hysteria2": "Быстрый QUIC-протокол с обфускацией — хорош на нестабильных и мобильных сетях.",
 }
 # OpenVPN — один контейнер amnezia-openvpn, транспорт (udp/tcp) — свойство установки,
 # поэтому в каталоге один протокол «OpenVPN» (не два UDP/TCP).
+# «Xray XHTTP» — отдельный протокол Amnezia (свой контейнер amnezia-xray-xhttp), сосуществует
+# с обычным «Xray» (tcp-Reality); транспорт XHTTP обходит троттлинг QUIC и даёт свежий DPI-профиль.
 PROTOS = {
-    "amnezia": ["AmneziaWG", "AmneziaWG Legacy", "Xray"],
+    "amnezia": ["AmneziaWG", "AmneziaWG Legacy", "Xray", "Xray XHTTP"],
     "openvpn": ["OpenVPN"],
     "outline": ["Shadowsocks"],
+    "hysteria2": ["Hysteria2"],
 }
 
-DEFAULT_PORTS = {"amnezia": "51820", "openvpn": "1194", "outline": "8443"}
+DEFAULT_PORTS = {"amnezia": "51820", "openvpn": "1194", "outline": "8443", "hysteria2": "443"}
 
 PLATFORM_LABEL = {
     "ios": "iPhone / iPad",
@@ -34,6 +38,7 @@ PLATFORM_LABEL = {
 _A = "https://amnezia.org/downloads"
 _O = "https://getoutline.org/get-started/"
 _V = "https://openvpn.net/client/"
+_H = "https://hiddify.com/"  # универсальный бесплатный клиент под Hysteria2/Xray на всех ОС
 
 CLIENTS: dict[str, dict[str, list[dict]]] = {
     "amnezia": {
@@ -117,6 +122,33 @@ CLIENTS: dict[str, dict[str, list[dict]]] = {
             {"name": "OpenVPN Connect", "store": "Linux", "url": "https://openvpn.net/openvpn-client-for-linux/"}
         ],
         "router": [{"name": "OpenVPN", "store": "прошивка роутера", "url": "https://openvpn.net/community-resources/"}],
+    },
+    "hysteria2": {
+        "ios": [
+            {
+                "name": "Hiddify",
+                "store": "App Store",
+                "url": "https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532",
+            },
+            {"name": "Karing", "store": "App Store", "url": "https://apps.apple.com/app/karing/id6472431552"},
+        ],
+        "android": [
+            {
+                "name": "Hiddify",
+                "store": "Google Play",
+                "url": "https://play.google.com/store/apps/details?id=app.hiddify.com",
+            },
+            {
+                "name": "NekoBox",
+                "store": "GitHub",
+                "note": "альтернативный клиент",
+                "url": "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases",
+            },
+        ],
+        "mac": [{"name": "Hiddify", "store": "macOS · .dmg", "url": _H}],
+        "windows": [{"name": "Hiddify", "store": "Windows · .exe", "url": _H}],
+        "linux": [{"name": "Hiddify", "store": "Linux · AppImage", "url": _H}],
+        "router": [],
     },
 }
 

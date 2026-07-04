@@ -20,7 +20,7 @@ class MeService:
                 s = await tx.servers.get(sid)
                 if not s:
                     continue
-                order = {"amnezia": 0, "openvpn": 1, "outline": 2}
+                order = {"amnezia": 0, "openvpn": 1, "outline": 2, "hysteria2": 3}
                 out.append(
                     {
                         "id": s.id,

@@ -31,6 +31,13 @@ DNS_NET_NAME = "amnezia-dns-net"
 VENDOR_AMNEZIA = "amnezia"
 VENDOR_OPENVPN = "openvpn"
 VENDOR_OUTLINE = "outline"
+VENDOR_HYSTERIA2 = "hysteria2"
+
+# --- Hysteria2 дефолты (apernet/hysteria) ---
+# маскировочный сайт: сервер отвечает как реальный HTTPS-хост на любой неаутентифицированный
+# запрос (masquerade proxy), а salamander-обфускация прячет сам QUIC от DPI.
+HYSTERIA2_DEFAULT_SNI = "www.bing.com"
+HYSTERIA2_STATE_DIR = "/opt/amnezia/hysteria2"
 
 # --- OpenVPN дефолты (protocolConstants.h namespace openvpn) ---
 OPENVPN_SUBNET_IP = "10.8.0.0"
@@ -68,6 +75,19 @@ class ProtoSpec:
     xray_public_key_path: str = ""
     xray_short_id_path: str = ""
     xray_uuid_path: str = ""
+    # транспорт Xray: tcp (VLESS+Reality+Vision) | xhttp (VLESS+Reality поверх XHTTP).
+    # Один XrayProvisioner обслуживает оба; различие — network в server.json и в vless://-ссылке.
+    xray_network: str = "tcp"
+    xray_xhttp_path_file: str = ""  # /opt/amnezia/xray/xray_xhttp_path.key (генерится в контейнере)
+    xray_xhttp_mode: str = "auto"
+
+    # --- поля hysteria2 (apernet/hysteria server) ---
+    # членство — через auth.type=command + файл токенов (без рестарта демона, как revoke у openvpn).
+    hysteria_config_path: str = ""  # /opt/amnezia/hysteria2/config.yaml
+    hysteria_users_path: str = ""  # /opt/amnezia/hysteria2/users (строки "<client_id> <password>")
+    hysteria_obfs_file: str = ""  # /opt/amnezia/hysteria2/obfs.key (salamander password)
+    hysteria_cert_sha_file: str = ""  # /opt/amnezia/hysteria2/cert_sha256.key (pinSHA256)
+    hysteria_sni: str = ""  # SNI/маскировочный домен self-signed серта
 
     # --- поля openvpn ---
     openvpn_ca_path: str = ""  # /opt/amnezia/openvpn/pki/ca.crt
@@ -121,6 +141,10 @@ AWG_LEGACY = ProtoSpec(
     is_awg2=False,
 )
 
+_XRAY_PUBKEY = "/opt/amnezia/xray/xray_public.key"
+_XRAY_SHORTID = "/opt/amnezia/xray/xray_short_id.key"
+_XRAY_UUID = "/opt/amnezia/xray/xray_uuid.key"
+
 XRAY = ProtoSpec(
     id="xray",
     label="Xray",
@@ -131,9 +155,32 @@ XRAY = ProtoSpec(
     proto_key="xray",
     default_port="443",
     transport="tcp",
-    xray_public_key_path="/opt/amnezia/xray/xray_public.key",
-    xray_short_id_path="/opt/amnezia/xray/xray_short_id.key",
-    xray_uuid_path="/opt/amnezia/xray/xray_uuid.key",
+    xray_public_key_path=_XRAY_PUBKEY,
+    xray_short_id_path=_XRAY_SHORTID,
+    xray_uuid_path=_XRAY_UUID,
+    xray_network="tcp",
+)
+
+# Xray XHTTP — тот же VLESS+Reality, но транспорт XHTTP (обходит троттлинг QUIC, ломает
+# pattern-анализ асимметрией upload/download). Отдельный контейнер/порт — как awg vs awg_legacy,
+# поэтому сосуществует с обычным «Xray» (tcp) на одном сервере, не заменяя его.
+# Порт отличается от 443 (там tcp-Reality) — иначе два контейнера дерутся за host-порт.
+XRAY_XHTTP = ProtoSpec(
+    id="xray_xhttp",
+    label="Xray XHTTP",
+    vendor=VENDOR_AMNEZIA,
+    kind="xray",
+    container="amnezia-xray-xhttp",
+    script_folder="xray_xhttp",
+    proto_key="xray",
+    default_port="2087",
+    transport="tcp",
+    xray_public_key_path=_XRAY_PUBKEY,
+    xray_short_id_path=_XRAY_SHORTID,
+    xray_uuid_path=_XRAY_UUID,
+    xray_network="xhttp",
+    xray_xhttp_path_file="/opt/amnezia/xray/xray_xhttp_path.key",
+    xray_xhttp_mode="auto",
 )
 
 OPENVPN = ProtoSpec(
@@ -170,15 +217,35 @@ OUTLINE = ProtoSpec(
     outline_access_config="/opt/outline/access.txt",
 )
 
-# протоколы одного вендора Amnezia (клиент Amnezia = 3 контейнера)
-AMNEZIA_PROTOCOLS: dict[str, ProtoSpec] = {p.id: p for p in (AWG, AWG_LEGACY, XRAY)}
+# Hysteria2 = один контейнер с QUIC-сервером apernet/hysteria. Вендор = один протокол «Hysteria2».
+# Управление клиентами — файл токенов + auth.type=command (без рестарта демона).
+HYSTERIA2 = ProtoSpec(
+    id="hysteria2",
+    label="Hysteria2",
+    vendor=VENDOR_HYSTERIA2,
+    kind="hysteria2",
+    container="amnezia-hysteria2",
+    script_folder="hysteria2",
+    proto_key="hysteria2",
+    default_port="443",  # UDP; не конфликтует с 443/tcp у amnezia-xray
+    transport="udp",
+    hysteria_config_path=f"{HYSTERIA2_STATE_DIR}/config.yaml",
+    hysteria_users_path=f"{HYSTERIA2_STATE_DIR}/users",
+    hysteria_obfs_file=f"{HYSTERIA2_STATE_DIR}/obfs.key",
+    hysteria_cert_sha_file=f"{HYSTERIA2_STATE_DIR}/cert_sha256.key",
+    hysteria_sni=HYSTERIA2_DEFAULT_SNI,
+)
+
+# протоколы одного вендора Amnezia (клиент Amnezia = 4 контейнера: awg2 + awg + xray + xray-xhttp)
+AMNEZIA_PROTOCOLS: dict[str, ProtoSpec] = {p.id: p for p in (AWG, AWG_LEGACY, XRAY, XRAY_XHTTP)}
 # глобальный реестр всех протоколов (для spec_by_id / spec_by_label поверх всех вендоров)
-PROTOCOLS: dict[str, ProtoSpec] = {p.id: p for p in (AWG, AWG_LEGACY, XRAY, OPENVPN, OUTLINE)}
+PROTOCOLS: dict[str, ProtoSpec] = {p.id: p for p in (AWG, AWG_LEGACY, XRAY, XRAY_XHTTP, OPENVPN, OUTLINE, HYSTERIA2)}
 # id протоколов по вендору — для установки/сверки всего вендора разом
 VENDOR_PROTOS: dict[str, tuple[str, ...]] = {
-    VENDOR_AMNEZIA: (AWG.id, AWG_LEGACY.id, XRAY.id),
+    VENDOR_AMNEZIA: (AWG.id, AWG_LEGACY.id, XRAY.id, XRAY_XHTTP.id),
     VENDOR_OPENVPN: (OPENVPN.id,),
     VENDOR_OUTLINE: (OUTLINE.id,),
+    VENDOR_HYSTERIA2: (HYSTERIA2.id,),
 }
 # label (как в catalog.PROTOS) -> ProtoSpec
 _BY_LABEL: dict[str, ProtoSpec] = {p.label: p for p in PROTOCOLS.values()}
@@ -192,7 +259,16 @@ XRAY_DEFAULT_SECURITY = "reality"
 # файл clientsTable внутри контейнера: /opt/amnezia/<proto>/clientsTable
 # <proto> = openvpn|wireguard|awg|xray (awg2 и awg legacy оба — "awg")
 # outline не использует clientsTable (членство хранит сам shadowbox), сюда не входит.
-CLIENTS_TABLE_PROTO = {"awg": "awg", "awg_legacy": "awg", "xray": "xray", "openvpn": "openvpn"}
+# xray и xray_xhttp — разные контейнеры, поэтому одинаковый путь /opt/amnezia/xray/clientsTable
+# внутри них не пересекается (namespace контейнера свой).
+CLIENTS_TABLE_PROTO = {
+    "awg": "awg",
+    "awg_legacy": "awg",
+    "xray": "xray",
+    "xray_xhttp": "xray",
+    "openvpn": "openvpn",
+    "hysteria2": "hysteria2",
+}
 
 
 def spec_by_id(proto_id: str) -> ProtoSpec:

@@ -11,6 +11,7 @@ const VPN_DOT: Record<VpnType, string> = {
   amnezia: "var(--amnezia)",
   openvpn: "var(--openvpn)",
   outline: "var(--outline)",
+  hysteria2: "var(--hysteria2)",
 };
 
 function plural(n: number, a: string, b: string, c: string) {

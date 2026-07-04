@@ -9,7 +9,7 @@ import { copyText, useStore } from "../store";
 import { ServerAccessSections } from "./ServerAccess";
 import { VpnAdvancedModal } from "./VpnAdvanced";
 
-const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline"];
+const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
 
 export function ServerDetailScreen() {
   const serverId = useNav((s) => s.params.serverId) || "";

@@ -1,6 +1,6 @@
 // Доменные типы (форма ответов бэкенда, camelCase как в прототипе).
 
-export type VpnType = "amnezia" | "openvpn" | "outline";
+export type VpnType = "amnezia" | "openvpn" | "outline" | "hysteria2";
 
 export interface Me {
   id: string;
@@ -266,17 +266,21 @@ export const VPN_LABEL: Record<VpnType, string> = {
   amnezia: "Amnezia",
   openvpn: "OpenVPN",
   outline: "Outline",
+  hysteria2: "Hysteria2",
 };
 export const VPN_DESC: Record<VpnType, string> = {
   amnezia: "Маскируется под обычный трафик — лучший против блокировок.",
   openvpn: "Классика, максимальная совместимость с устройствами.",
   outline: "Один ключ, проще всего для новичков.",
+  hysteria2: "Быстрый QUIC-протокол с обфускацией — хорош на нестабильных и мобильных сетях.",
 };
 export const PROTO_LABEL: Record<string, string> = {
   awg: "AmneziaWG",
   awg_legacy: "AmneziaWG Legacy",
   xray: "Xray",
+  xray_xhttp: "Xray XHTTP",
   openvpn: "OpenVPN",
+  hysteria2: "Hysteria2",
 };
 export const PROTO_STATE_LABEL: Record<ProtocolState, string> = {
   absent: "нет",

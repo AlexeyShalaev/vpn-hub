@@ -1,16 +1,19 @@
-"""Провизионеры протоколов (awg / awg_legacy / xray / openvpn / outline)."""
+"""Провизионеры протоколов (awg / awg_legacy / xray / xray_xhttp / openvpn / outline / hysteria2)."""
 
 from __future__ import annotations
 
 from vpnhub.infra.provisioning.constants import ProtoSpec, spec_by_id
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.base import ClientMaterial, ConfigArtifact, Provisioner, ServerMaterial
+from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
 from vpnhub.infra.provisioning.provisioners.openvpn import OpenVpnProvisioner
 from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 
 
-def get_provisioner(proto_id: str) -> AwgProvisioner | XrayProvisioner | OpenVpnProvisioner | OutlineProvisioner:
+def get_provisioner(
+    proto_id: str,
+) -> AwgProvisioner | XrayProvisioner | OpenVpnProvisioner | OutlineProvisioner | HysteriaProvisioner:
     spec: ProtoSpec = spec_by_id(proto_id)
     if spec.kind == "xray":
         return XrayProvisioner(spec)
@@ -18,6 +21,8 @@ def get_provisioner(proto_id: str) -> AwgProvisioner | XrayProvisioner | OpenVpn
         return OpenVpnProvisioner(spec)
     if spec.kind == "outline":
         return OutlineProvisioner(spec)
+    if spec.kind == "hysteria2":
+        return HysteriaProvisioner(spec)
     return AwgProvisioner(spec)
 
 
@@ -25,6 +30,7 @@ __all__ = [
     "AwgProvisioner",
     "ClientMaterial",
     "ConfigArtifact",
+    "HysteriaProvisioner",
     "OpenVpnProvisioner",
     "OutlineProvisioner",
     "Provisioner",

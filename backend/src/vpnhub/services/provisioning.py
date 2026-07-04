@@ -25,6 +25,7 @@ from vpnhub.infra.provisioning import errors, templates
 from vpnhub.infra.provisioning.awg_params import AwgParams
 from vpnhub.infra.provisioning.provisioners import ClientMaterial, ConfigArtifact, ServerMaterial
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
+from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
 from vpnhub.infra.provisioning.provisioners.openvpn import OpenVpnProvisioner
 from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
@@ -40,9 +41,10 @@ log = structlog.get_logger()
 AMNEZIA_PROTO_IDS = pc.VENDOR_PROTOS[pc.VENDOR_AMNEZIA]
 OPENVPN_PROTO_IDS = pc.VENDOR_PROTOS[pc.VENDOR_OPENVPN]
 OUTLINE_PROTO_IDS = pc.VENDOR_PROTOS[pc.VENDOR_OUTLINE]
+HYSTERIA2_PROTO_IDS = pc.VENDOR_PROTOS[pc.VENDOR_HYSTERIA2]
 # все протоколы с реальным provisioning (для сверки/reconcile)
-PROVISIONED_PROTO_IDS = AMNEZIA_PROTO_IDS + OPENVPN_PROTO_IDS + OUTLINE_PROTO_IDS
-PROVISIONED_VENDORS = (pc.VENDOR_AMNEZIA, pc.VENDOR_OPENVPN, pc.VENDOR_OUTLINE)
+PROVISIONED_PROTO_IDS = AMNEZIA_PROTO_IDS + OPENVPN_PROTO_IDS + OUTLINE_PROTO_IDS + HYSTERIA2_PROTO_IDS
+PROVISIONED_VENDORS = (pc.VENDOR_AMNEZIA, pc.VENDOR_OPENVPN, pc.VENDOR_OUTLINE, pc.VENDOR_HYSTERIA2)
 
 # держим ссылки на фоновые задачи, чтобы их не собрал GC
 _bg_tasks: set[asyncio.Task] = set()
@@ -79,7 +81,7 @@ class ProvisioningService:
 
     def loaded_provisioner(
         self, sp: m.ServerProtocol
-    ) -> AwgProvisioner | XrayProvisioner | OpenVpnProvisioner | OutlineProvisioner:
+    ) -> AwgProvisioner | XrayProvisioner | OpenVpnProvisioner | OutlineProvisioner | HysteriaProvisioner:
         spec = pc.spec_by_id(sp.proto)
         material = ServerMaterial.from_dict(self._dec(sp.material_encrypted))
         if spec.kind == "xray":
@@ -88,6 +90,8 @@ class ProvisioningService:
             return OpenVpnProvisioner(spec, material=material)
         if spec.kind == "outline":
             return OutlineProvisioner(spec, material=material)
+        if spec.kind == "hysteria2":
+            return HysteriaProvisioner(spec, material=material)
         params = AwgParams.from_dict(json.loads(sp.params_json)) if sp.params_json else None
         return AwgProvisioner(spec, params=params, material=material)
 
@@ -162,6 +166,8 @@ class ProvisioningService:
                     material = await OpenVpnProvisioner(spec).install(ssh, server_ip, spec.default_port)
                 elif spec.kind == "outline":
                     material = await OutlineProvisioner(spec).install(ssh, server_ip, spec.default_port)
+                elif spec.kind == "hysteria2":
+                    material = await HysteriaProvisioner(spec).install(ssh, server_ip, spec.default_port)
                 else:
                     material = await XrayProvisioner(spec).install(
                         ssh, server_ip, spec.default_port, pc.XRAY_DEFAULT_SITE
