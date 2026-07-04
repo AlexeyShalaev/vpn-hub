@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote, unquote, urlparse
+
 import pytest
 
 from vpnhub.api.config import Settings
@@ -13,6 +15,31 @@ from vpnhub.api.config import Settings
 pytestmark = pytest.mark.unit
 
 _DSN = "postgresql+asyncpg://u:p@h:5432/d"
+
+
+def test__settings__dsn_password_special_chars__roundtrips() -> None:
+    """Регресс: пароль managed-Postgres со спецсимволами (@ ? [ ] / :) ломал реконструкцию DSN.
+
+    `_parse_dsn` разбирает DATABASE_URL, а `to_dsn()` собирает его обратно — без quote() сырой
+    пароль с `@`/`?` съедал host (asyncpg падал с `Name or service not known`). Проверяем, что
+    и разбор, и обратная сборка (`async_dsn`) сохраняют host и пароль.
+    """
+    pw = "p@ss?w/o:rd[+]="
+    dsn = f"postgresql+asyncpg://vpnhub:{quote(pw, safe='')}@pg-host.internal:5432/vpnhub"
+    # database_url читается через validation_alias DATABASE_URL (kwarg по имени поля не населяет).
+    s = Settings(_env_file=None, **{"DATABASE_URL": dsn})
+
+    conn = s.postgres.connection
+    assert conn.password == pw
+    assert conn.user == "vpnhub"
+    assert conn.host == "pg-host.internal"
+
+    u = urlparse(s.async_dsn)
+    assert u.hostname == "pg-host.internal"
+    assert u.port == 5432
+    assert u.username == "vpnhub"
+    # пароль в реконструированном DSN снова корректно декодируется
+    assert unquote(u.password or "") == pw
 
 
 @pytest.mark.parametrize(

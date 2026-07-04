@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,7 +56,11 @@ class PostgresConfig:
 
     def to_dsn(self) -> str:
         c = self.connection
-        return f"postgresql+asyncpg://{c.user}:{c.password}@{c.host}:{c.port}/{c.database}"
+        # user/password переэнкодим: пароли managed-Postgres часто содержат @ ? [ ] / :,
+        # без quote() пересобранный DSN парсится с битым host (asyncpg: Name or service not known).
+        user = quote(c.user, safe="")
+        password = quote(c.password, safe="")
+        return f"postgresql+asyncpg://{user}:{password}@{c.host}:{c.port}/{c.database}"
 
 
 def _parse_dsn(url: str) -> _Connection:
