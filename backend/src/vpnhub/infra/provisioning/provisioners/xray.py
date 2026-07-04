@@ -120,6 +120,18 @@ class XrayProvisioner:
         res = await ssh.run(f"sudo docker inspect -f '{{{{.State.Running}}}}' {self.spec.container}")
         return "true" in res.stdout.lower()
 
+    def build_container(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> dict:
+        """Элемент containers[] для мульти-протокольного vpn:// (tcp-Reality; xhttp сюда не попадает)."""
+        return vpn_uri.build_xray_container(
+            container=self.spec.container,
+            host=server_ip,
+            port=port or self.spec.default_port,
+            uuid=client.client_id,
+            public_key=self.material.xray_public_key,
+            short_id=self.material.short_id,
+            sni=self.material.site or c.XRAY_DEFAULT_SITE,
+        )
+
     def build_artifact(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> ConfigArtifact:
         is_xhttp = self.spec.xray_network == "xhttp"
         vless = vpn_uri.build_vless_url(

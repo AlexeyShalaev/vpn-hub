@@ -302,6 +302,38 @@ def test__build_vless_url__xhttp__adds_transport_and_omits_flow() -> None:
     assert "flow=" not in url  # Vision не применяется на XHTTP
 
 
+def test__build_bundle_vpn_url__multi_container__roundtrips_with_default_container() -> None:
+    """Один vpn:// со списком containers[]: раскодируется в тот же host/default/контейнеры и xray-last_config."""
+    # Arrange / Act
+    xray = vpn_uri.build_xray_container(
+        container="amnezia-xray",
+        host="203.0.113.9",
+        port="443",
+        uuid="UUID-1",
+        public_key="PBK",
+        short_id="SID",
+        sni="www.bing.com",
+    )
+    url = vpn_uri.build_bundle_vpn_url(
+        containers=[{"container": "amnezia-awg2", "awg": {"last_config": "x"}}, xray],
+        host="203.0.113.9",
+        description="Finland [FirstByte]",
+        default_container="amnezia-xray",
+    )
+    # Assert
+    assert url.startswith("vpn://")
+    doc = vpn_uri.decode_vpn_url(url)
+    assert doc["hostName"] == "203.0.113.9"
+    assert doc["description"] == "Finland [FirstByte]"
+    assert doc["defaultContainer"] == "amnezia-xray"
+    assert [c["container"] for c in doc["containers"]] == ["amnezia-awg2", "amnezia-xray"]
+    # xray last_config — строка с клиентским vless-outbound
+    xr = json.loads(doc["containers"][1]["xray"]["last_config"])
+    user = xr["outbounds"][0]["settings"]["vnext"][0]["users"][0]
+    assert user["id"] == "UUID-1" and user["flow"] == "xtls-rprx-vision"
+    assert xr["outbounds"][0]["streamSettings"]["realitySettings"]["publicKey"] == "PBK"
+
+
 def test__build_hysteria2_url__formats_expected_uri() -> None:
     """hysteria2://<pass>@host:port/?sni&obfs&obfs-password&pinSHA256#alias; двоеточия pinSHA256 не экранируются."""
     # Arrange / Act

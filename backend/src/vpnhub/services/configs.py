@@ -14,6 +14,7 @@ from vpnhub.common.catalog import PROTOS, clients_for
 from vpnhub.core.errors import BadRequest, Forbidden, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
+from vpnhub.infra.provisioning import vpn_uri
 from vpnhub.infra.provisioning.errors import ProvisioningError
 from vpnhub.infra.provisioning.provisioners import ClientMaterial
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
@@ -21,6 +22,10 @@ from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
 from vpnhub.services.access import effective_access
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
+
+# протоколы Amnezia, которые объединяются в один vpn:// (multi-container).
+# xray_xhttp исключён: в клиенте нет контейнера amnezia-xray-xhttp — его отдаём отдельным vless://.
+_BUNDLABLE_AMNEZIA = ("awg", "awg_legacy", "xray")
 
 
 def _amnezia_formats(artifact: Any, server_name: str, proto_id: str) -> list[dict]:
@@ -206,6 +211,13 @@ class ConfigService:
         text = artifact.conf_text or artifact.vless_url
         uri = artifact.vpn_url or artifact.vless_url
         formats = _provisioned_formats(vpn_type, artifact, server_name, spec.id)
+        # Amnezia: формат «AmneziaVPN» (.vpn) = ОДИН vpn:// со всеми протоколами сервера
+        # (импортируется как один сервер с переключателем). Чипы протокола остаются для сырых экспортов.
+        if vpn_type == pc.VENDOR_AMNEZIA:
+            bundle = await self._build_amnezia_bundle(user_id, server_id, device_id)
+            formats = self._with_bundle_format(formats, bundle, server_name)
+            if bundle:
+                uri = bundle
         return {
             "type": vpn_type,
             "proto": spec.label,
@@ -218,6 +230,91 @@ class ConfigService:
             "serverId": server_id,
             "formats": formats,
         }
+
+    @staticmethod
+    def _with_bundle_format(formats: list[dict], bundle: str | None, server_name: str) -> list[dict]:
+        """Заменить одиночный формат amnezia на объединённый .vpn (бандл всех протоколов сервера)."""
+        out = [f for f in formats if f.get("id") != "amnezia"]
+        if bundle:
+            base = (server_name or "amnezia").replace(" ", "_")
+            out.insert(
+                0,
+                {
+                    "id": "amnezia",
+                    "label": "AmneziaVPN",
+                    "sub": "все протоколы в одном сервере",
+                    "text": bundle,
+                    "filename": f"{base}.vpn",
+                    "qr": bundle,
+                },
+            )
+        return out
+
+    async def _build_amnezia_bundle(self, user_id: str, server_id: str, device_id: str | None) -> str | None:
+        """Собрать ОДИН vpn:// со всеми установленными бандлящимися amnezia-протоколами сервера.
+
+        Клиент импортирует его как один сервер с переключателем протоколов. Для протоколов без
+        активного конфига на устройстве создаём клиента (одна SSH-сессия), затем строим containers[].
+        SSH нужен только на первую выдачу — потом конфиги переиспользуются из DeviceConfig.
+        """
+        if not device_id:
+            return None
+        prov = ProvisioningService(self.uow, self.settings)
+        # фаза 1: план (spec, port, provisioner, существующий клиент) по установленным протоколам
+        async with self.uow.query() as tx:
+            s = await self._owned_server(tx, server_id)
+            device = await tx.devices.get(device_id)
+            if not device or device.user_id != user_id:
+                return None
+            user = await tx.users.get(user_id)
+            client_name = self._client_name(user, device)
+            server_ip, server_name = s.ip, s.name
+            creds = prov.creds(s)
+            plan: list[tuple[pc.ProtoSpec, str, Any, ClientMaterial | None]] = []
+            for sp in s.protocols:
+                if sp.vendor != pc.VENDOR_AMNEZIA or not sp.installed or sp.proto not in _BUNDLABLE_AMNEZIA:
+                    continue
+                spec = pc.spec_by_id(sp.proto)
+                existing = self._find_config(device, server_id, spec)
+                client = self._client_from_config(existing) if existing else None
+                plan.append((spec, sp.port, prov.loaded_provisioner(sp), client))
+        if not plan:
+            return None
+        plan.sort(key=lambda t: _BUNDLABLE_AMNEZIA.index(t[0].id))
+
+        # фаза 2: для протоколов без клиента — add_client в ОДНОЙ SSH-сессии, затем persist
+        missing = [(spec, port, provisioner) for spec, port, provisioner, client in plan if client is None]
+        created: dict[str, ClientMaterial] = {}
+        if missing:
+            try:
+                async with SshClient(creds) as ssh:
+                    for spec, port, provisioner in missing:
+                        created[spec.id] = await provisioner.add_client(ssh, server_ip, port, client_name)
+            except (SshError, ProvisioningError) as e:
+                raise BadRequest(f"Не удалось создать конфиг на сервере: {e}") from e
+            for spec, _port, _prov in missing:
+                await self._persist_client(device_id, server_id, spec, created[spec.id], client_name)
+
+        # фаза 3: собрать containers[] (без SSH)
+        containers: list[dict] = []
+        default_container = ""
+        for spec, port, provisioner, client in plan:
+            cm = client or created.get(spec.id)
+            if cm is None:
+                continue
+            containers.append(
+                provisioner.build_container(server_ip=server_ip, port=port, server_name=server_name, client=cm)
+            )
+            if spec.id == "xray":  # xray-reality — предпочтительный defaultContainer клиента
+                default_container = spec.container
+        if not containers:
+            return None
+        return vpn_uri.build_bundle_vpn_url(
+            containers=containers,
+            host=server_ip,
+            description=server_name,
+            default_container=default_container or containers[0]["container"],
+        )
 
     # -------------------------------------------------------------- install ---
 

@@ -99,12 +99,11 @@ def build_awg_client_json(
     return obj
 
 
-def build_awg_native_config(
+def build_awg_container(
     *,
     container: str,
     is_awg2: bool,
     server_ip: str,
-    server_name: str,
     port: str,
     params: AwgParams,
     conf_text: str,
@@ -115,7 +114,7 @@ def build_awg_native_config(
     psk: str,
     mtu: str = c.DEFAULT_MTU,
 ) -> dict:
-    """Полный native-конфиг Amnezia для AmneziaWG/Legacy (готов к encode_vpn_url)."""
+    """Один элемент containers[] для AmneziaWG/Legacy: {"container": ..., "awg": proto_obj}."""
     proto_obj: dict = {
         "port": port,
         "subnet_address": params.subnet_address,
@@ -138,13 +137,106 @@ def build_awg_native_config(
         mtu=mtu,
     )
     proto_obj["last_config"] = _compact(client_json)
+    return {"container": container, "awg": proto_obj}
 
+
+def build_awg_native_config(
+    *,
+    container: str,
+    is_awg2: bool,
+    server_ip: str,
+    server_name: str,
+    port: str,
+    params: AwgParams,
+    conf_text: str,
+    client_ip: str,
+    client_priv_key: str,
+    client_pub_key: str,
+    server_pub_key: str,
+    psk: str,
+    mtu: str = c.DEFAULT_MTU,
+) -> dict:
+    """Полный native-конфиг Amnezia для AmneziaWG/Legacy (готов к encode_vpn_url) — один контейнер."""
+    element = build_awg_container(
+        container=container,
+        is_awg2=is_awg2,
+        server_ip=server_ip,
+        port=port,
+        params=params,
+        conf_text=conf_text,
+        client_ip=client_ip,
+        client_priv_key=client_priv_key,
+        client_pub_key=client_pub_key,
+        server_pub_key=server_pub_key,
+        psk=psk,
+        mtu=mtu,
+    )
     return {
-        "containers": [{"container": container, "awg": proto_obj}],
+        "containers": [element],
         "defaultContainer": container,
         "description": server_name,
         "hostName": server_ip,
     }
+
+
+def build_xray_container(
+    *,
+    container: str,
+    host: str,
+    port: str,
+    uuid: str,
+    public_key: str,
+    short_id: str,
+    sni: str,
+    flow: str = c.XRAY_DEFAULT_FLOW,
+    fingerprint: str = c.XRAY_DEFAULT_FINGERPRINT,
+) -> dict:
+    """Один элемент containers[] для Xray (VLESS+Reality, tcp): {"container": ..., "xray": {last_config}}.
+
+    last_config — строка с КЛИЕНТСКИМ xray-JSON (socks-inbound → vless-outbound), порт xrayConfigurator.
+    Только tcp-Reality: xray_xhttp в бандл не входит (в клиенте нет контейнера amnezia-xray-xhttp).
+    """
+    last_config = {
+        "inbounds": [{"listen": "127.0.0.1", "port": 10808, "protocol": "socks", "settings": {"udp": True}}],
+        "outbounds": [
+            {
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": host,
+                            "port": int(port),
+                            "users": [{"id": uuid, "encryption": "none", "flow": flow}],
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "tcp",
+                    "security": c.XRAY_DEFAULT_SECURITY,
+                    "realitySettings": {
+                        "publicKey": public_key,
+                        "shortId": short_id,
+                        "serverName": sni,
+                        "fingerprint": fingerprint,
+                        "spiderX": "",
+                    },
+                },
+            }
+        ],
+    }
+    return {"container": container, "xray": {"last_config": _compact(last_config)}}
+
+
+def build_bundle_vpn_url(*, containers: list[dict], host: str, description: str, default_container: str) -> str:
+    """Один vpn:// на весь сервер: несколько контейнеров-протоколов в одном объекте (переключатель клиента)."""
+    return encode_vpn_url(
+        {
+            "containers": containers,
+            "defaultContainer": default_container,
+            "description": description,
+            "hostName": host,
+        }
+    )
 
 
 # -------------------------------------------------------------------- vless:// ---
