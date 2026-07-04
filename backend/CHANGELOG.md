@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.2.0...v0.3.0) (2026-07-04)
+
+
+### Features
+
+* **updates:** check official GitHub Releases by default (zero-config) ([cd6a010](https://github.com/AlexeyShalaev/vpn-hub/commit/cd6a010e1984b9688bf91d05aaae35fe21e7ae61))
+
 ## [0.2.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.1.1...v0.2.0) (2026-07-04)
 
 
