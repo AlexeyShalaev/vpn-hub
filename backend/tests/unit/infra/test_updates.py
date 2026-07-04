@@ -8,7 +8,7 @@ import pytest
 from pytest_lazy_fixtures import lf
 
 import vpnhub.infra.updates as updates_mod
-from vpnhub.infra.updates import fetch_feed, is_newer, parse_version
+from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed, parse_version
 
 pytestmark = pytest.mark.unit
 
@@ -221,12 +221,15 @@ async def test__fetch_feed__valid_json_object__returns_dict(monkeypatch: pytest.
     assert result == feed
 
 
-async def test__fetch_feed__non_dict_payload__raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Если фид отдаёт не объект (например, список) — поднимается ValueError."""
+async def test__fetch_feed__scalar_payload__raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Если фид отдаёт скаляр (не объект и не массив) — поднимается ValueError.
+
+    Массив теперь валиден (формат GitHub Releases), поэтому проверяем именно скаляр.
+    """
     # Arrange
-    _patch_urlopen(monkeypatch, json.dumps(["1.2.3"]).encode("utf-8"))
+    _patch_urlopen(monkeypatch, json.dumps("1.2.3").encode("utf-8"))
     # Act / Assert
-    with pytest.raises(ValueError, match="feed is not an object"):
+    with pytest.raises(ValueError, match="feed must be a JSON object or array"):
         await fetch_feed("https://example.test/feed.json")
 
 
@@ -247,3 +250,92 @@ async def test__fetch_feed__custom_timeout__passed_to_urlopen(monkeypatch: pytes
     await fetch_feed("https://example.test/feed.json", timeout=3.5)
     # Assert
     assert seen_timeouts == [3.5]
+
+
+async def test__fetch_feed__json_array_payload__returned_as_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Массив (формат GitHub Releases) — валидный ответ, возвращается как список."""
+    # Arrange
+    _patch_urlopen(monkeypatch, json.dumps([{"tag_name": "v1.0.0"}]).encode("utf-8"))
+    # Act
+    result = await fetch_feed("https://example.test/releases")
+    # Assert
+    assert result == [{"tag_name": "v1.0.0"}]
+
+
+# --- feed_disabled ----------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["", "  ", "off", "OFF", "none", "disabled", "-", "false"])
+def test__feed_disabled__blank_or_off__true(value: str) -> None:
+    """Пустой URL или явный флаг выключения → проверка отключена."""
+    assert feed_disabled(value) is True
+
+
+@pytest.mark.parametrize("value", ["https://api.github.com/x", "http://feed.local/f.json"])
+def test__feed_disabled__real_url__false(value: str) -> None:
+    """Настоящий URL → проверка включена."""
+    assert feed_disabled(value) is False
+
+
+# --- normalize_feed ---------------------------------------------------------
+
+
+def test__normalize_feed__custom_format__passthrough() -> None:
+    """Наш простой формат {latest, releases} пробрасывается как есть."""
+    # Arrange
+    data = {"latest": "1.2.3", "releases": [{"v": "1.2.3", "date": "01.07.2026", "notes": ["a"]}]}
+    # Act
+    out = normalize_feed(data)
+    # Assert
+    assert out["latest"] == "1.2.3"
+    assert out["releases"] == data["releases"]
+
+
+def test__normalize_feed__github_array__maps_and_picks_latest_by_version() -> None:
+    """Массив GitHub → latest выбирается по версии (не по порядку), теги без v-префикса."""
+    # Arrange — намеренно не по порядку версий
+    data = [
+        {"tag_name": "v0.1.1", "published_at": "2026-06-29T10:00:00Z", "body": "* fix: a"},
+        {"tag_name": "v0.2.0", "published_at": "2026-07-04T17:14:06Z", "body": "* feat: b ([abc](http://x))"},
+    ]
+    # Act
+    out = normalize_feed(data)
+    # Assert
+    assert out["latest"] == "0.2.0"
+    assert out["releases"][0]["v"] == "0.2.0"
+    assert out["releases"][0]["date"] == "04.07.2026"
+    assert out["releases"][0]["notes"] == ["feat: b"]  # markdown и ссылка на коммит вычищены
+
+
+def test__normalize_feed__github_skips_draft_and_prerelease() -> None:
+    """draft/prerelease релизы GitHub отбрасываются."""
+    # Arrange
+    data = [
+        {"tag_name": "v0.3.0", "draft": True, "published_at": "2026-08-01T00:00:00Z"},
+        {"tag_name": "v0.2.5", "prerelease": True, "published_at": "2026-07-20T00:00:00Z"},
+        {"tag_name": "v0.2.0", "published_at": "2026-07-04T00:00:00Z"},
+    ]
+    # Act
+    out = normalize_feed(data)
+    # Assert
+    assert out["latest"] == "0.2.0"
+    assert [r["v"] for r in out["releases"]] == ["0.2.0"]
+
+
+def test__normalize_feed__github_single_object__wrapped() -> None:
+    """Одиночный релиз GitHub (объект с tag_name) тоже нормализуется."""
+    # Arrange
+    data = {"tag_name": "v0.2.0", "published_at": "2026-07-04T00:00:00Z", "body": "- feat: x"}
+    # Act
+    out = normalize_feed(data)
+    # Assert
+    assert out["latest"] == "0.2.0"
+    assert out["releases"][0]["notes"] == ["feat: x"]
+
+
+def test__normalize_feed__empty_array__empty_result() -> None:
+    """Пустой массив релизов → latest пустой, releases пустые."""
+    # Act
+    out = normalize_feed([])
+    # Assert
+    assert out == {"latest": "", "releases": []}
