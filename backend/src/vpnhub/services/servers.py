@@ -76,8 +76,9 @@ class ServerService:
     async def create(self, owner_id: str, data: dict) -> dict:
         name = (data.get("name") or "").strip()
         ip = (data.get("ip") or "").strip()
-        if not name or not ip:
-            raise BadRequest("Название и IP обязательны")
+        location = (data.get("location") or "").strip()
+        if not name or not ip or not location:
+            raise BadRequest("Название, IP и локация обязательны")
         if not is_valid_host(ip):
             raise BadRequest("Некорректный IP или хост сервера")
         async with self.uow.transaction() as tx:
@@ -90,7 +91,7 @@ class ServerService:
                 ssh_port=str(data.get("sshPort") or "22"),
                 ssh_auth=data.get("auth") or "key",
                 ssh_secret_encrypted=encrypt_secret(self.settings.secret_key, data.get("secret") or ""),
-                location=data.get("location") or "",
+                location=location,
                 status="unknown",
             )
             tx.servers.add(s)
@@ -107,6 +108,11 @@ class ServerService:
             if not is_valid_host(ip):
                 raise BadRequest("Некорректный IP или хост сервера")
             data = {**data, "ip": ip}  # хранить обрезанное значение (валидатор строг к пробелам)
+        if data.get("location") is not None:
+            location = str(data["location"]).strip()
+            if not location:
+                raise BadRequest("Локация обязательна")
+            data = {**data, "location": location}  # хранить обрезанное значение
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
             for field, key in [

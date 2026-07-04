@@ -137,15 +137,21 @@ def empty_name() -> dict:
 @pytest.fixture
 def empty_ip() -> dict:
     """Данные создания с пустым ip."""
-    return {"name": "srv", "ip": ""}
+    return {"name": "srv", "ip": "", "location": "DE"}
+
+
+@pytest.fixture
+def empty_location() -> dict:
+    """Данные создания с пустой локацией (только пробелы)."""
+    return {"name": "srv", "ip": "203.0.113.31", "location": "   "}
 
 
 # --- create -----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("data", [lf("empty_name"), lf("empty_ip")])
-async def test__create__empty_name_or_ip__raises_bad_request(uow, settings, session_maker, data) -> None:
-    """Пустое name или ip → BadRequest."""
+@pytest.mark.parametrize("data", [lf("empty_name"), lf("empty_ip"), lf("empty_location")])
+async def test__create__empty_name_or_ip_or_location__raises_bad_request(uow, settings, session_maker, data) -> None:
+    """Пустое name, ip или локация → BadRequest (все три обязательны)."""
     # Arrange
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79001110030")
@@ -178,7 +184,7 @@ async def test__update__shell_unsafe_ip__raises_bad_request(uow, settings, sessi
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79001110036")
     svc = ServerService(uow, settings)
-    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.36"})
+    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.36", "location": "DE"})
     # Act / Assert
     with pytest.raises(BadRequest):
         await svc.update(owner.id, created["id"], {"ip": "1.1.1.1; rm -rf /"})
@@ -191,7 +197,7 @@ async def test__create__hostname_ip__accepted(uow, settings, session_maker) -> N
         owner = await make_user(s, phone="+79001110037")
     svc = ServerService(uow, settings)
     # Act
-    created = await svc.create(owner.id, {"name": "srv", "ip": "vm0000001.example.com"})
+    created = await svc.create(owner.id, {"name": "srv", "ip": "vm0000001.example.com", "location": "DE"})
     # Assert
     assert created["ip"] == "vm0000001.example.com"
 
@@ -211,17 +217,17 @@ async def test__create__valid__creates_server_with_fields(uow, settings, session
     assert created["status"] == "unknown"
 
 
-async def test__create__valid__creates_three_vpns_with_default_ports(uow, settings, session_maker) -> None:
-    """create заводит 3 ServerVpn (amnezia/openvpn/outline) с портами из DEFAULT_PORTS."""
+async def test__create__valid__creates_vpns_with_default_ports(uow, settings, session_maker) -> None:
+    """create заводит ServerVpn для каждого типа VPN (VPN_TYPES) с портами из DEFAULT_PORTS."""
     # Arrange
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79001110050")
     svc = ServerService(uow, settings)
     # Act
-    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.50"})
+    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.50", "location": "DE"})
     # Assert
     ports_by_type = {v["type"]: v["port"] for v in created["vpns"]}
-    assert ports_by_type == {t: DEFAULT_PORTS[t] for t in ("amnezia", "openvpn", "outline")}
+    assert ports_by_type == {t: DEFAULT_PORTS[t] for t in srv_mod.VPN_TYPES}
 
 
 async def test__create__with_secret__stored_encrypted_returned_decrypted(uow, settings, session_maker) -> None:
@@ -231,7 +237,7 @@ async def test__create__with_secret__stored_encrypted_returned_decrypted(uow, se
         owner = await make_user(s, phone="+79001110060")
     svc = ServerService(uow, settings)
     # Act
-    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.60", "secret": "mypass"})
+    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.60", "location": "DE", "secret": "mypass"})
     fetched = await svc.get(owner.id, created["id"])
     # Assert: в БД зашифровано (не равно исходнику), а наружу — исходник
     async with session_maker() as check_s:
@@ -257,6 +263,19 @@ async def test__update__changes_fields(uow, settings, session_maker) -> None:
     assert result["location"] == "NL"
 
 
+async def test__update__empty_location__raises_bad_request(uow, settings, session_maker) -> None:
+    """Локация обязательна: попытка очистить её через update → BadRequest."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110071")
+        server = await make_server(s, owner_id=owner.id, name="srv", ip="203.0.113.71")
+    svc = ServerService(uow, settings)
+    # Act / Assert
+    with pytest.raises(BadRequest) as exc:
+        await svc.update(owner.id, server.id, {"location": "   "})
+    assert exc.value.http_status == 400
+
+
 async def test__update__foreign_server__raises_not_found(uow, settings, session_maker) -> None:
     """update чужого сервера → NotFound."""
     # Arrange
@@ -276,7 +295,9 @@ async def test__update__nonempty_secret__reencrypts_and_returns_new(uow, setting
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79001110090")
     svc = ServerService(uow, settings)
-    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.90", "secret": "old-secret"})
+    created = await svc.create(
+        owner.id, {"name": "srv", "ip": "203.0.113.90", "location": "DE", "secret": "old-secret"}
+    )
     # Act
     updated = await svc.update(owner.id, created["id"], {"secret": "new-secret"})
     # Assert
@@ -289,7 +310,7 @@ async def test__update__empty_secret__keeps_old(uow, settings, session_maker) ->
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79001110091")
     svc = ServerService(uow, settings)
-    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.91", "secret": "keep-me"})
+    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.91", "location": "DE", "secret": "keep-me"})
     # Act
     updated = await svc.update(owner.id, created["id"], {"secret": ""})
     # Assert
@@ -389,5 +410,5 @@ async def _create_with_secret(uow, settings, session_maker, *, secret: str) -> d
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79008880001")
     svc = ServerService(uow, settings)
-    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.200", "secret": secret})
+    created = await svc.create(owner.id, {"name": "srv", "ip": "203.0.113.200", "location": "DE", "secret": secret})
     return {"owner_id": owner.id, "server_id": created["id"]}
