@@ -23,6 +23,10 @@ class ServerMaterial:
     short_id: str = ""
     bootstrap_uuid: str = ""
     site: str = ""
+    xhttp_path: str = ""  # путь XHTTP (только для xray_xhttp); пусто для tcp-Reality
+    # hysteria2: salamander-пароль обфускации + pinSHA256 self-signed серта
+    hysteria_obfs_password: str = ""
+    hysteria_cert_sha256: str = ""
     # openvpn (shared per-server: CA cert + tls-auth key + выбранный транспорт)
     ca_cert: str = ""
     ta_key: str = ""
@@ -39,6 +43,9 @@ class ServerMaterial:
             "short_id": self.short_id,
             "bootstrap_uuid": self.bootstrap_uuid,
             "site": self.site,
+            "xhttp_path": self.xhttp_path,
+            "hysteria_obfs_password": self.hysteria_obfs_password,
+            "hysteria_cert_sha256": self.hysteria_cert_sha256,
             "ca_cert": self.ca_cert,
             "ta_key": self.ta_key,
             "transport": self.transport,

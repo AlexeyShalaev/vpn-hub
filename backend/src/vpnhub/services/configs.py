@@ -97,11 +97,29 @@ def _outline_formats(artifact: Any, server_name: str) -> list[dict]:
     ]
 
 
+def _hysteria2_formats(artifact: Any, server_name: str) -> list[dict]:
+    """Единственный формат Hysteria2 — ссылка hysteria2:// (в conf_text и vpn_url). QR помещается."""
+    base = (server_name or "hysteria2").replace(" ", "_")
+    url = artifact.vpn_url or artifact.conf_text
+    return [
+        {
+            "id": "hysteria2",
+            "label": "Hysteria2",
+            "sub": "ссылка hysteria2:// — Hiddify / Karing / sing-box",
+            "text": url,
+            "filename": artifact.filename or f"{base}-hysteria2.txt",
+            "qr": url,
+        }
+    ]
+
+
 def _provisioned_formats(vpn_type: str, artifact: Any, server_name: str, proto_id: str) -> list[dict]:
     if vpn_type == pc.VENDOR_OUTLINE:
         return _outline_formats(artifact, server_name)
     if vpn_type == pc.VENDOR_OPENVPN:
         return _openvpn_formats(artifact, server_name)
+    if vpn_type == pc.VENDOR_HYSTERIA2:
+        return _hysteria2_formats(artifact, server_name)
     return _amnezia_formats(artifact, server_name, proto_id)
 
 

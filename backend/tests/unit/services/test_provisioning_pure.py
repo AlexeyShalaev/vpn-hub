@@ -23,7 +23,9 @@ from vpnhub.infra.provisioning.awg_params import AwgParams
 from vpnhub.infra.provisioning.errors import ProvisioningError
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.base import ClientMaterial, ServerMaterial
+from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
 from vpnhub.infra.provisioning.provisioners.openvpn import OpenVpnProvisioner, _sanitize_static_key
+from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.ssh import SshResult
 
 pytestmark = pytest.mark.unit
@@ -275,6 +277,50 @@ def test__build_vless_url__reality_params__formats_expected_uri() -> None:
     assert "sni=www.googletagmanager.com" in url
     assert url.endswith("#AmneziaVPN")
     assert "type=" not in url  # tcp опускается
+
+
+def test__build_vless_url__xhttp__adds_transport_and_omits_flow() -> None:
+    """XHTTP: type=xhttp + path/mode присутствуют, flow (Vision) опущен, security=reality сохранён."""
+    # Arrange / Act
+    url = vpn_uri.build_vless_url(
+        uuid="11111111-2222-3333-4444-555555555555",
+        host="203.0.113.9",
+        port="2087",
+        public_key="PBK",
+        short_id="abcdef0123456789",
+        sni="www.googletagmanager.com",
+        flow="",
+        network="xhttp",
+        path="/secretpath",
+        mode="auto",
+    )
+    # Assert
+    assert "type=xhttp" in url
+    assert "path=%2Fsecretpath" in url  # слэш экранирован
+    assert "mode=auto" in url
+    assert "security=reality" in url
+    assert "flow=" not in url  # Vision не применяется на XHTTP
+
+
+def test__build_hysteria2_url__formats_expected_uri() -> None:
+    """hysteria2://<pass>@host:port/?sni&obfs&obfs-password&pinSHA256#alias; двоеточия pinSHA256 не экранируются."""
+    # Arrange / Act
+    url = vpn_uri.build_hysteria2_url(
+        password="secretpass",
+        host="203.0.113.9",
+        port="443",
+        sni="www.bing.com",
+        obfs_password="obf123",
+        pin_sha256="AB:CD:EF",
+        alias="My Server",
+    )
+    # Assert
+    assert url.startswith("hysteria2://secretpass@203.0.113.9:443/?")
+    assert "sni=www.bing.com" in url
+    assert "obfs=salamander" in url
+    assert "obfs-password=obf123" in url
+    assert "pinSHA256=AB:CD:EF" in url  # hex-двоеточия сохранены (safe=':')
+    assert url.endswith("#My%20Server")
 
 
 # -------------------------------------------------------------- templates ---
@@ -544,3 +590,209 @@ async def test__awg_list_peer_ids__two_peers__returns_their_public_keys() -> Non
     result = await prov.list_peer_ids(ssh)
     # Assert
     assert result == {"AAA", "BBB"}
+
+
+# ----------------------------------------------------------- xray xhttp ---
+
+
+def test__constants_registry__xray_xhttp__is_amnezia_variant_of_xray() -> None:
+    """xray_xhttp — отдельный протокол Amnezia (свой контейнер/порт/network), reuse XrayProvisioner."""
+    # Arrange / Act
+    spec = c.spec_by_id("xray_xhttp")
+    # Assert
+    assert spec.vendor == "amnezia" and spec.kind == "xray"
+    assert spec.container == "amnezia-xray-xhttp"  # отдельный контейнер, не дерётся с amnezia-xray
+    assert spec.default_port != c.XRAY.default_port  # разные host-порты
+    assert spec.xray_network == "xhttp"
+    assert c.spec_by_label("Xray XHTTP") is spec
+    assert "xray_xhttp" in c.AMNEZIA_PROTOCOLS
+    assert "xray_xhttp" in c.VENDOR_PROTOS["amnezia"]
+    # clientsTable внутри своего контейнера — путь как у xray, но namespace отдельный
+    assert c.clients_table_path(spec) == "/opt/amnezia/xray/clientsTable"
+
+
+def test__xray_build_artifact__xhttp__vless_url_has_transport_and_no_flow() -> None:
+    """build_artifact для xray_xhttp: vless-ссылка с type=xhttp + path из материала, без flow."""
+    # Arrange
+    spec = c.spec_by_id("xray_xhttp")
+    material = ServerMaterial(xray_public_key="PBK", short_id="sid123", site="www.bing.com", xhttp_path="/p9")
+    prov = XrayProvisioner(spec, material=material)
+    # Act
+    art = prov.build_artifact(
+        server_ip="203.0.113.9", port="2087", server_name="srv", client=ClientMaterial(client_id="uuid-1")
+    )
+    # Assert
+    assert "type=xhttp" in art.vless_url
+    assert "path=%2Fp9" in art.vless_url
+    assert "flow=" not in art.vless_url
+    assert art.filename == "srv-xray_xhttp.txt"
+
+
+def test__xray_build_artifact__tcp__keeps_vision_flow() -> None:
+    """build_artifact для обычного xray (tcp): flow=xtls-rprx-vision присутствует, type= опущен."""
+    # Arrange
+    spec = c.spec_by_id("xray")
+    material = ServerMaterial(xray_public_key="PBK", short_id="sid123", site="www.bing.com")
+    prov = XrayProvisioner(spec, material=material)
+    # Act
+    art = prov.build_artifact(
+        server_ip="203.0.113.9", port="443", server_name="srv", client=ClientMaterial(client_id="uuid-1")
+    )
+    # Assert
+    assert "flow=xtls-rprx-vision" in art.vless_url
+    assert "type=" not in art.vless_url
+
+
+# ------------------------------------------------------------- hysteria2 ---
+
+
+class _FilesSsh:
+    """Фейк ssh: read по конкретному пути, upload_to_container записывает (append учитывается)."""
+
+    def __init__(self, files: dict[str, str]) -> None:
+        self.files = dict(files)
+        self.uploads: list[tuple[str, str, bool]] = []  # (path, text, append)
+
+    async def read_container_text(self, container: str, path: str) -> str:
+        return self.files.get(path, "")
+
+    async def upload_to_container(self, container: str, text: str, path: str, append: bool = False) -> None:
+        self.uploads.append((path, text, append))
+        self.files[path] = (self.files.get(path, "") + text) if append else text
+
+
+def _hysteria_prov() -> HysteriaProvisioner:
+    spec = c.spec_by_id("hysteria2")
+    material = ServerMaterial(hysteria_obfs_password="OBF", hysteria_cert_sha256="AB:CD", site="www.bing.com")
+    return HysteriaProvisioner(spec, material=material)
+
+
+def test__constants_registry__hysteria2__is_standalone_vendor() -> None:
+    """hysteria2 — отдельный вендор с одним протоколом; свой контейнер и clientsTable."""
+    # Arrange / Act
+    spec = c.spec_by_id("hysteria2")
+    # Assert
+    assert spec.vendor == "hysteria2" and spec.kind == "hysteria2"
+    assert spec.container == "amnezia-hysteria2"
+    assert c.spec_by_label("Hysteria2") is spec
+    assert c.VENDOR_PROTOS["hysteria2"] == ("hysteria2",)
+    assert "hysteria2" not in c.AMNEZIA_PROTOCOLS
+    assert c.clients_table_path(spec) == "/opt/amnezia/hysteria2/clientsTable"
+
+
+def test__hysteria2_build_artifact__formats_hysteria2_url_from_material() -> None:
+    """build_artifact: hysteria2://<password>@ip:port с obfs/pinSHA256 из материала."""
+    # Arrange
+    prov = _hysteria_prov()
+    client = ClientMaterial(client_id="CID", client_private_key="PASSWORD")
+    # Act
+    art = prov.build_artifact(server_ip="203.0.113.9", port="443", server_name="srv", client=client)
+    # Assert
+    assert art.vpn_url.startswith("hysteria2://PASSWORD@203.0.113.9:443/?")
+    assert "obfs-password=OBF" in art.vpn_url
+    assert "pinSHA256=AB:CD" in art.vpn_url
+    assert art.filename == "srv-hysteria2.txt"
+
+
+async def test__hysteria2_add_client__appends_token_line_and_returns_split_material() -> None:
+    """add_client: в файл users дописывается «<client_id> <password>»; id и секрет разведены."""
+    # Arrange
+    prov = _hysteria_prov()
+    spec = prov.spec
+    ssh = _FilesSsh({spec.hysteria_users_path: "", c.clients_table_path(spec): "[]"})
+    # Act
+    cm = await prov.add_client(ssh, "203.0.113.9", "443", "dev")
+    # Assert
+    assert ssh.files[spec.hysteria_users_path].strip() == f"{cm.client_id} {cm.client_private_key}"
+    assert cm.client_id and cm.client_private_key and cm.client_id != cm.client_private_key
+
+
+async def test__hysteria2_revoke_client__removes_only_target_token_line() -> None:
+    """revoke_client: из users вычищается строка ровно с этим client_id, остальные сохранены."""
+    # Arrange
+    prov = _hysteria_prov()
+    spec = prov.spec
+    ssh = _FilesSsh(
+        {spec.hysteria_users_path: "AAAA passA\nBBBB passB\nCCCC passC\n", c.clients_table_path(spec): "[]"}
+    )
+    # Act
+    await prov.revoke_client(ssh, "BBBB")
+    # Assert
+    assert ssh.files[spec.hysteria_users_path] == "AAAA passA\nCCCC passC\n"
+
+
+async def test__hysteria2_list_client_ids__healthy_config__parses_first_column() -> None:
+    """list_client_ids: при живом config.yaml (sentinel listen:) возвращает id из первого столбца users."""
+    # Arrange
+    prov = _hysteria_prov()
+    spec = prov.spec
+    ssh = _FilesSsh(
+        {spec.hysteria_config_path: "listen: :443\ntls:\n", spec.hysteria_users_path: "AAAA passA\nBBBB passB\n"}
+    )
+    # Act
+    result = await prov.list_client_ids(ssh)
+    # Assert
+    assert result == {"AAAA", "BBBB"}
+
+
+async def test__hysteria2_list_client_ids__empty_users_healthy_config__returns_empty_set() -> None:
+    """Пустой users при живом config — легитимный «ноль клиентов», не ошибка."""
+    # Arrange
+    prov = _hysteria_prov()
+    spec = prov.spec
+    ssh = _FilesSsh({spec.hysteria_config_path: "listen: :443\n", spec.hysteria_users_path: ""})
+    # Act
+    result = await prov.list_client_ids(ssh)
+    # Assert
+    assert result == set()
+
+
+async def test__hysteria2_list_client_ids__unreadable_config__raises() -> None:
+    """Нечитаемый config.yaml (нет sentinel listen:) → ошибка, чтобы sync не сделал ложный revoke."""
+    # Arrange
+    prov = _hysteria_prov()
+    spec = prov.spec
+    ssh = _FilesSsh({spec.hysteria_config_path: "", spec.hysteria_users_path: "AAAA passA\n"})
+    # Act / Assert
+    with pytest.raises(ProvisioningError):
+        await prov.list_client_ids(ssh)
+
+
+def test__xray_xhttp_install_vars__cover_script_tokens_and_render_xhttp() -> None:
+    """install_vars закрывает install-токены скриптов xray_xhttp; server.json — network xhttp, порт открыт."""
+    # Arrange
+    spec = c.spec_by_id("xray_xhttp")
+    prov = XrayProvisioner(spec)
+    # Act
+    variables = prov.install_vars("203.0.113.7", "2087", "www.bing.com")
+    # Assert: install-токены (не шелл-переменные) подставлены во всех скриптах
+    for name in ("configure_container.sh", "run_container.sh", "start.sh"):
+        rendered = templates.replace_vars(templates.load_protocol(spec.script_folder, name), variables)
+        for tok in ("$XRAY_SERVER_PORT", "$XRAY_SITE_NAME", "$CONTAINER_NAME", "$DOCKERFILE_FOLDER"):
+            assert tok not in rendered, f"{name}: незакрытый токен {tok}"
+    conf = templates.replace_vars(templates.load_protocol(spec.script_folder, "configure_container.sh"), variables)
+    assert '"network": "xhttp"' in conf
+    assert "$XRAY_XHTTP_PATH" in conf  # шелл-переменная контейнера (её install не подставляет)
+    start = templates.replace_vars(templates.load_protocol(spec.script_folder, "start.sh"), variables)
+    assert "--dport 2087 -j ACCEPT" in start  # нестандартный порт открыт внутри контейнера
+
+
+def test__hysteria2_install_vars__cover_script_tokens_and_render_config() -> None:
+    """install_vars закрывает install-токены скриптов hysteria2; config.yaml — listen/obfs/masquerade."""
+    # Arrange
+    spec = c.spec_by_id("hysteria2")
+    prov = HysteriaProvisioner(spec)
+    # Act
+    variables = prov.install_vars("203.0.113.7", "443")
+    # Assert
+    for name in ("configure_container.sh", "run_container.sh", "start.sh"):
+        rendered = templates.replace_vars(templates.load_protocol(spec.script_folder, name), variables)
+        for tok in ("$HYSTERIA_PORT", "$HYSTERIA_SNI", "$CONTAINER_NAME", "$DOCKERFILE_FOLDER"):
+            assert tok not in rendered, f"{name}: незакрытый токен {tok}"
+    conf = templates.replace_vars(templates.load_protocol(spec.script_folder, "configure_container.sh"), variables)
+    assert "listen: :443" in conf
+    assert "CN=www.bing.com" in conf
+    assert "type: salamander" in conf
+    assert "$HYSTERIA_OBFS" in conf  # шелл-переменная контейнера (не install-токен)
+    start = templates.replace_vars(templates.load_protocol(spec.script_folder, "start.sh"), variables)
+    assert "-p udp --dport 443 -j ACCEPT" in start

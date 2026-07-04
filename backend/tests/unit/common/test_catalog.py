@@ -17,8 +17,8 @@ from vpnhub.common.catalog import (
 
 pytestmark = pytest.mark.unit
 
-# Тройка поддерживаемых типов VPN — эталон для проверки согласованности словарей.
-VPN_TYPES = ("amnezia", "openvpn", "outline")
+# Поддерживаемые типы VPN — эталон для проверки согласованности словарей.
+VPN_TYPES = ("amnezia", "openvpn", "outline", "hysteria2")
 # Платформы, для которых каталог обязан вернуть непустой список клиентов у каждого типа.
 PLATFORMS_WITH_CLIENTS = ("ios", "android", "mac", "windows", "linux")
 
@@ -127,9 +127,9 @@ def test__clients_for__unknown_combo__returns_empty_list(case: tuple[str, str]) 
 
 
 def test__default_ports__covers_all_vpn_types__with_numeric_ports() -> None:
-    """DEFAULT_PORTS покрывает amnezia/openvpn/outline, значения — числовые строки."""
+    """DEFAULT_PORTS покрывает все типы VPN, значения — числовые строки."""
     # Arrange
-    expected = {"amnezia", "openvpn", "outline"}
+    expected = set(VPN_TYPES)
 
     # Act
     keys = set(DEFAULT_PORTS)
