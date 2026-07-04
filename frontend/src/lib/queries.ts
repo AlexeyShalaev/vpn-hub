@@ -110,7 +110,8 @@ export const listAvailable = () => http.get<AvailableServer[]>("/me/available");
 export const listDevices = () => http.get<Device[]>("/me/devices");
 export const addDevice = (b: { name: string; platform: string }) => http.post<Device>("/me/devices", b);
 export const removeDevice = (id: string) => http.del(`/me/devices/${id}`);
-export const genConfig = (b: { serverId: string; vpn: string; deviceId?: string; proto?: string }) =>
+// peek=true: только список протоколов/приложений для выбора, БЕЗ провижининга конфига на сервере
+export const genConfig = (b: { serverId: string; vpn: string; deviceId?: string; proto?: string; peek?: boolean }) =>
   http.post<ConfigResult>("/configs", b);
 export const installConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string }) =>
   http.post<{ ok: boolean }>("/configs/install", b);

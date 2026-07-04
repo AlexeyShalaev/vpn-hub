@@ -150,16 +150,13 @@ function GetConfigModal({
   const [proto, setProto] = useState<string | undefined>(undefined);
   const [fmt, setFmt] = useState<string | undefined>(undefined);
 
-  // По умолчанию выбираем первое устройство, как только список загрузился.
-  useEffect(() => {
-    if (!deviceId && devices && devices.length > 0) {
-      setDeviceId(devices[0].id);
-    }
-  }, [devices, deviceId]);
-
+  // НЕ автовыбираем устройство/протокол: на шаге выбора запрашиваем только СПИСОК (peek) —
+  // без провижининга. Реальная выдача (создание клиента на сервере) — только на шаге config,
+  // т.е. после явного «Показать конфиг».
+  const peek = step !== "config";
   const { data: cfg, isFetching: cfgFetching } = useQuery({
-    queryKey: ["config", target.serverId, target.vpn, deviceId, proto],
-    queryFn: () => q.genConfig({ serverId: target.serverId, vpn: target.vpn, deviceId, proto }),
+    queryKey: ["config", target.serverId, target.vpn, deviceId, proto, peek],
+    queryFn: () => q.genConfig({ serverId: target.serverId, vpn: target.vpn, deviceId, proto, peek }),
     enabled: !!deviceId,
   });
 
@@ -209,6 +206,27 @@ function GetConfigModal({
     } catch {
       /* пользователь отменил или формат не поддержан — noop */
     }
+  }
+
+  // шаг 2 (загрузка): вход в config меняет запрос на peek=false → провижининг на сервере; ждём конфиг
+  if (step === "config" && (cfgFetching || !cfg || (cfg.formats?.length ?? 0) === 0)) {
+    return (
+      <Modal
+        title={title}
+        onClose={onClose}
+        footer={
+          <Btn onClick={() => setStep("pick")}>
+            <Icon name="back" size={16} />
+            Назад
+          </Btn>
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 28 }}>
+          <Spinner />
+          <span style={{ fontSize: 13.5, color: "var(--text-2)" }}>Готовим конфиг…</span>
+        </div>
+      </Modal>
+    );
   }
 
   // ----- шаг 2: готовый конфиг -----
@@ -378,7 +396,7 @@ function GetConfigModal({
                   <button
                     key={p}
                     type="button"
-                    className={`chip ${p === cfg.proto ? "selected" : ""}`}
+                    className={`chip ${p === proto ? "selected" : ""}`}
                     onClick={() => setProto(p)}
                     style={{ cursor: "pointer", padding: "8px 14px" }}
                   >
@@ -466,8 +484,21 @@ function GetConfigModal({
             </>
           )}
 
-          <Btn variant="primary" block disabled={!deviceId || cfgFetching || !cfg} onClick={() => setStep("config")}>
-            {cfgFetching ? <Spinner /> : "Показать конфиг"}
+          <Btn
+            variant="primary"
+            block
+            disabled={!deviceId || cfgFetching || !cfg || ((cfg.protos?.length ?? 0) > 1 && !proto)}
+            onClick={() => setStep("config")}
+          >
+            {cfgFetching ? (
+              <Spinner />
+            ) : !deviceId ? (
+              "Выберите устройство"
+            ) : (cfg?.protos?.length ?? 0) > 1 && !proto ? (
+              "Выберите протокол"
+            ) : (
+              "Показать конфиг"
+            )}
           </Btn>
         </>
       )}

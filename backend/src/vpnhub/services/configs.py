@@ -136,8 +136,16 @@ class ConfigService:
     # ------------------------------------------------------------- generate ---
 
     async def generate(
-        self, user_id: str, server_id: str, vpn_type: str, device_id: str | None, proto: str | None
+        self,
+        user_id: str,
+        server_id: str,
+        vpn_type: str,
+        device_id: str | None,
+        proto: str | None,
+        peek: bool = False,
     ) -> dict:
+        """peek=True: вернуть только список протоколов/клиентов для выбора в модалке БЕЗ провижининга
+        (не создаёт клиента на сервере и не собирает бандл). Реальная выдача — с peek=False."""
         async with self.uow.query() as tx:
             access, _ = await effective_access(tx, user_id)
             if vpn_type not in access.get(server_id, set()):
@@ -153,10 +161,17 @@ class ConfigService:
 
         if vpn_type not in PROVISIONED_VENDORS:
             raise BadRequest("Неизвестный тип VPN")
-        return await self._generate_provisioned(vpn_type, user_id, server_id, device_id, proto, platform)
+        return await self._generate_provisioned(vpn_type, user_id, server_id, device_id, proto, platform, peek)
 
     async def _generate_provisioned(
-        self, vpn_type: str, user_id: str, server_id: str, device_id: str | None, proto: str | None, platform: str
+        self,
+        vpn_type: str,
+        user_id: str,
+        server_id: str,
+        device_id: str | None,
+        proto: str | None,
+        platform: str,
+        peek: bool = False,
     ) -> dict:
         if not device_id:
             raise BadRequest("Выберите устройство")
@@ -194,6 +209,25 @@ class ConfigService:
             client_name = self._client_name(user, device)
             existing = self._find_config(device, server_id, spec)
             client = self._client_from_config(existing) if existing else None
+
+        # peek: только метаданные для выбора в модалке (протоколы + приложения) — БЕЗ провижининга
+        # (не создаём клиента и не собираем бандл, иначе выбор устройства/протокола сам бы выдал конфиг).
+        if peek:
+            clients = clients_for(vpn_type, platform)
+            if spec.kind == "xray":
+                clients = [c for c in clients if not c.get("wgOnly")]
+            return {
+                "type": vpn_type,
+                "proto": spec.label,
+                "filename": "",
+                "text": "",
+                "uri": "",
+                "hint": "",
+                "clients": clients,
+                "protos": installed_labels,
+                "serverId": server_id,
+                "formats": [],
+            }
 
         # фаза 2: если материала нет — добавляем клиента на сервере и сохраняем
         if client is None:
