@@ -8,7 +8,7 @@ import os
 from alembic import context
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy_foundation_kit import load_orm_metadata
+from sqlalchemy_foundation_kit import AsyncCConnection, load_orm_metadata
 
 config = context.config
 
@@ -39,7 +39,20 @@ def _run(connection) -> None:
 
 
 async def _run_async() -> None:
-    engine = create_async_engine(_url(), poolclass=None)
+    url = _url()
+    # За PgBouncer в transaction-режиме миграционному движку нужна та же pgbouncer-safe
+    # настройка, что и у приложения: AsyncCConnection выдаёт UUID-имена prepared statements.
+    # Без неё asyncpg именует их счётчиком (``__asyncpg_stmt_1__``), и на переиспользуемом
+    # бэкенде они сталкиваются → DuplicatePreparedStatementError уже на version-чеке.
+    # connect_args специфичны для asyncpg — применяем только к нему (в тестах SQLite).
+    connect_args: dict[str, object] = {}
+    if url.startswith("postgresql+asyncpg"):
+        connect_args = {
+            "connection_class": AsyncCConnection,
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        }
+    engine = create_async_engine(url, poolclass=None, connect_args=connect_args)
     async with engine.connect() as conn:
         await conn.run_sync(_run)
     await engine.dispose()
