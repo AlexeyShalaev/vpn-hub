@@ -67,8 +67,14 @@ async def gen_config(
     ident: Identity = Depends(require_user),
     svc: ConfigService = Depends(service(ConfigService)),
 ) -> dict:
+    # peek=true: список протоколов/приложений для выбора БЕЗ провижининга (модалка выдачи конфига)
     return await svc.generate(
-        ident.id, body.get("serverId", ""), body.get("vpn", ""), body.get("deviceId"), body.get("proto")
+        ident.id,
+        body.get("serverId", ""),
+        body.get("vpn", ""),
+        body.get("deviceId"),
+        body.get("proto"),
+        bool(body.get("peek", False)),
     )
 
 

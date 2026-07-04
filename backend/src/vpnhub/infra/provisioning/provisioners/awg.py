@@ -125,7 +125,8 @@ class AwgProvisioner:
 
     # ---- сборка артефактов (чистая, без SSH) ----
 
-    def build_artifact(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> ConfigArtifact:
+    def _render_conf(self, server_ip: str, port: str, client: ClientMaterial) -> str:
+        """Клиентский WireGuard .conf (подстановка template.conf) — общий для artifact и bundle-контейнера."""
         conf_vars = {
             "$WIREGUARD_CLIENT_IP": client.client_ip,
             "$WIREGUARD_CLIENT_PRIVATE_KEY": client.client_private_key,
@@ -137,8 +138,27 @@ class AwgProvisioner:
             "$AWG_SERVER_PORT": port or self.spec.default_port,
         }
         conf_vars.update(self.params.script_vars())
-        conf_text = templates.replace_vars(templates.load_protocol(self.spec.script_folder, "template.conf"), conf_vars)
+        return templates.replace_vars(templates.load_protocol(self.spec.script_folder, "template.conf"), conf_vars)
 
+    def build_container(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> dict:
+        """Элемент containers[] для мульти-протокольного vpn:// (без SSH). server_name не нужен (общий на бандл)."""
+        conf_text = self._render_conf(server_ip, port, client)
+        return vpn_uri.build_awg_container(
+            container=self.spec.container,
+            is_awg2=self.spec.is_awg2,
+            server_ip=server_ip,
+            port=port or self.spec.default_port,
+            params=self.params,
+            conf_text=conf_text,
+            client_ip=client.client_ip,
+            client_priv_key=client.client_private_key,
+            client_pub_key=client.client_public_key,
+            server_pub_key=self.material.server_public_key,
+            psk=self.material.psk,
+        )
+
+    def build_artifact(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> ConfigArtifact:
+        conf_text = self._render_conf(server_ip, port, client)
         native = vpn_uri.build_awg_native_config(
             container=self.spec.container,
             is_awg2=self.spec.is_awg2,

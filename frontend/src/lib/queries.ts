@@ -59,9 +59,16 @@ export const updateServer = (id: string, b: Record<string, unknown>) => http.pat
 export const deleteServer = (id: string) => http.del(`/servers/${id}`);
 export const checkServer = (id: string) => http.post<Server>(`/servers/${id}/check`);
 export const syncServer = (id: string) => http.post<Server>(`/servers/${id}/sync`);
-export const vpnOp = (id: string, type: string, op: string) => http.post<Server>(`/servers/${id}/vpns/${type}/${op}`);
+// install: protos — выбранные протоколы вендора (id); пусто → все. Для start/stop/remove тело игнорируется.
+export const vpnOp = (id: string, type: string, op: string, protos?: string[]) =>
+  http.post<Server>(`/servers/${id}/vpns/${type}/${op}`, protos?.length ? { protos } : undefined);
 // автофикс ошибки установки: устранить причину по SSH и переустановить (роутится через {op}=fix)
 export const vpnFix = (id: string, type: string) => http.post<Server>(`/servers/${id}/vpns/${type}/fix`);
+// операция над одним протоколом: op ∈ {start, stop, remove}
+// (start/stop — свитчер контейнера; remove — снос + отзыв конфигов этого протокола)
+export const protocolOp = (id: string, proto: string, op: string) =>
+  http.post<Server>(`/servers/${id}/protocols/${proto}/${op}`);
+export const removeProtocol = (id: string, proto: string) => protocolOp(id, proto, "remove");
 export const listProviders = () => http.get<Provider[]>("/providers");
 
 // server access overview (владелец: пулы/группы/пользователи+конфиги этого сервера)
@@ -103,10 +110,14 @@ export const listAvailable = () => http.get<AvailableServer[]>("/me/available");
 export const listDevices = () => http.get<Device[]>("/me/devices");
 export const addDevice = (b: { name: string; platform: string }) => http.post<Device>("/me/devices", b);
 export const removeDevice = (id: string) => http.del(`/me/devices/${id}`);
-export const genConfig = (b: { serverId: string; vpn: string; deviceId?: string; proto?: string }) =>
+// peek=true: только список протоколов/приложений для выбора, БЕЗ провижининга конфига на сервере
+export const genConfig = (b: { serverId: string; vpn: string; deviceId?: string; proto?: string; peek?: boolean }) =>
   http.post<ConfigResult>("/configs", b);
 export const installConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string }) =>
   http.post<{ ok: boolean }>("/configs/install", b);
+// отозвать свой конфиг: снимает клиента на сервере (SSH) и удаляет запись (симметрично generate)
+export const removeConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string | null }) =>
+  http.post<{ ok: boolean }>("/configs/remove", b);
 
 // admin
 export const adminUsers = () => http.get<AdminUser[]>("/admin/users");

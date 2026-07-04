@@ -140,10 +140,25 @@ async def vpn_op(
     sid: str,
     vtype: str,
     op: str,
+    body: dict[str, Any] = Body(default={}),
     ident: Identity = Depends(require_user),
     svc: ServerService = Depends(service(ServerService)),
 ) -> dict:
-    return await svc.vpn_op(ident.id, sid, vtype, op)
+    # install: body.protos — выбранные протоколы вендора (id); пусто/нет → все (обратная совместимость)
+    protos = body.get("protos") if isinstance(body, dict) else None
+    return await svc.vpn_op(ident.id, sid, vtype, op, protos)
+
+
+@router.post("/servers/{sid}/protocols/{proto}/{op}")
+async def protocol_op(
+    sid: str,
+    proto: str,
+    op: str,
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    # op ∈ {start, stop, remove}: свитчер контейнера одного протокола или снос с отзывом конфигов
+    return await svc.protocol_op(ident.id, sid, proto, op)
 
 
 # ---------- pools ----------

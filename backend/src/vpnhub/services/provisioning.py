@@ -132,16 +132,29 @@ class ProvisioningService:
 
     # -------------------------------------------------- install (фоново) ---
 
-    async def mark_installing(self, tx: UowTransaction, server_id: str, vendor: str) -> None:
-        """Пометить все протоколы вендора как installing (перед фоновой установкой)."""
-        for proto_id in pc.VENDOR_PROTOS[vendor]:
+    @staticmethod
+    def resolve_proto_ids(vendor: str, proto_ids: tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
+        """Подмножество протоколов вендора в каталожном порядке; None/пусто → все протоколы вендора."""
+        allowed = pc.VENDOR_PROTOS[vendor]
+        if not proto_ids:
+            return allowed
+        wanted = set(proto_ids)
+        return tuple(p for p in allowed if p in wanted)
+
+    async def mark_installing(
+        self, tx: UowTransaction, server_id: str, vendor: str, proto_ids: tuple[str, ...] | list[str] | None = None
+    ) -> None:
+        """Пометить выбранные протоколы вендора как installing (перед фоновой установкой; None → все)."""
+        for proto_id in self.resolve_proto_ids(vendor, proto_ids):
             sp = await self._get_or_create_sp(tx, server_id, proto_id)
             sp.state, sp.error, sp.error_code, sp.installed, sp.running = "installing", None, None, False, False
 
-    def schedule_install(self, server_id: str, vendor: str) -> None:
-        _spawn(self._install_vendor(server_id, vendor))
+    def schedule_install(
+        self, server_id: str, vendor: str, proto_ids: tuple[str, ...] | list[str] | None = None
+    ) -> None:
+        _spawn(self._install_vendor(server_id, vendor, tuple(proto_ids) if proto_ids else None))
 
-    async def _install_vendor(self, server_id: str, vendor: str) -> None:
+    async def _install_vendor(self, server_id: str, vendor: str, proto_ids: tuple[str, ...] | None = None) -> None:
         async with self.uow.query() as tx:
             server = await tx.servers.get(server_id)
             if not server:
@@ -149,7 +162,7 @@ class ProvisioningService:
             creds = self.creds(server)
             server_ip, server_name = server.ip, server.name
 
-        for proto_id in pc.VENDOR_PROTOS[vendor]:
+        for proto_id in self.resolve_proto_ids(vendor, proto_ids):
             await self._install_one(server_id, proto_id, creds, server_ip, server_name)
 
         async with self.uow.transaction() as tx:
@@ -194,20 +207,32 @@ class ProvisioningService:
 
     async def remove_vendor(self, server: m.Server, vendor: str) -> None:
         """Снести контейнеры всех протоколов вендора (best-effort)."""
+        await self._remove_containers(server, pc.VENDOR_PROTOS[vendor], vendor_cleanup=vendor)
+
+    async def remove_protocol(self, server: m.Server, proto_id: str) -> None:
+        """Снести контейнер ОДНОГО протокола (best-effort). Пиры уходят вместе с контейнером."""
+        spec = pc.spec_by_id(proto_id)
+        # для одно-протокольных вендоров (outline) снос протокола = снос вендора (чистим и состояние)
+        cleanup = spec.vendor if pc.VENDOR_PROTOS[spec.vendor] == (proto_id,) else None
+        await self._remove_containers(server, (proto_id,), vendor_cleanup=cleanup)
+
+    async def _remove_containers(
+        self, server: m.Server, proto_ids: tuple[str, ...], *, vendor_cleanup: str | None
+    ) -> None:
         creds = self.creds(server)
         try:
             async with SshClient(creds) as ssh:
-                for proto_id in pc.VENDOR_PROTOS[vendor]:
+                for proto_id in proto_ids:
                     spec = pc.spec_by_id(proto_id)
                     await remove_container(ssh, {"$CONTAINER_NAME": spec.container})
-                if vendor == pc.VENDOR_OUTLINE:
+                if vendor_cleanup == pc.VENDOR_OUTLINE:
                     # у Outline состояние (ключи) — на хостовом томе, а не в контейнере; чистим для
                     # честного reinstall. Заодно гасим watchtower (следит только за Outline-метками).
                     state_dir = pc.OUTLINE.outline_state_dir
                     await ssh.run("sudo docker rm -f watchtower 2>/dev/null || true")
                     await ssh.run(f"sudo rm -rf {state_dir} 2>/dev/null || true")
         except SshError as e:
-            log.warning("vendor remove failed", server=server.id, vendor=vendor, error=str(e))
+            log.warning("container remove failed", server=server.id, protos=proto_ids, error=str(e))
 
     async def run_fix(self, server: m.Server, fix_id: str) -> None:
         """Выполнить идемпотентный фикс-скрипт по SSH перед авто-переустановкой.
@@ -227,12 +252,27 @@ class ProvisioningService:
             raise errors.make("internal", fx.fail_hint)
 
     async def lifecycle_vendor(self, server: m.Server, vendor: str, op: str) -> None:
-        """op ∈ {start, stop} — docker start/stop контейнеров протоколов вендора."""
+        """op ∈ {start, stop} — docker start/stop контейнеров протоколов вендора.
+
+        Толерантно к отсутствующим контейнерам (при пер-протокольной установке часть протоколов
+        вендора может быть не установлена) — несуществующий контейнер не роняет операцию.
+        """
         creds = self.creds(server)
         async with SshClient(creds) as ssh:
             for proto_id in pc.VENDOR_PROTOS[vendor]:
                 spec = pc.spec_by_id(proto_id)
-                await ssh.run(f"sudo docker {op} {spec.container}")
+                await ssh.run(f"sudo docker {op} {spec.container} 2>/dev/null || true")
+
+    async def lifecycle_protocol(self, server: m.Server, proto_id: str, op: str) -> None:
+        """op ∈ {start, stop} — docker start/stop контейнера ОДНОГО протокола (свитчер).
+
+        Контейнер должен существовать (вызывается только для installed-протокола), поэтому строго —
+        сбой поднимаем наверх, чтобы UI показал ошибку.
+        """
+        spec = pc.spec_by_id(proto_id)
+        creds = self.creds(server)
+        async with SshClient(creds) as ssh:
+            await ssh.run(f"sudo docker {op} {spec.container}")
 
     async def check_server(self, server: m.Server) -> tuple[bool, int | None, dict[str, str]]:
         """Реальная проверка: (online, latency_ms, {container: port}) через docker ps по SSH."""
