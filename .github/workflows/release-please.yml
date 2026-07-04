@@ -7,12 +7,23 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write # чтобы задиспатчить publish.yml для нового тега (см. шаг ниже)
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v5
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Тег создаёт release-please под GITHUB_TOKEN, а push от GITHUB_TOKEN НЕ триггерит другие
+      # воркфлоу — publish.yml сам бы не запустился. Но workflow_dispatch — исключение из этого
+      # правила, поэтому явно дёргаем publish.yml для нового тега. PAT/App не нужен.
+      - name: Trigger image publish for the new tag
+        if: ${{ steps.release.outputs['backend--release_created'] == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run publish.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs['backend--tag_name'] }}"
