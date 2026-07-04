@@ -19,6 +19,7 @@ from vpnhub.common.serializers import server_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.probe import ProbeResult, probe_tcp
+from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning import remediation
 from vpnhub.infra.provisioning.errors import ProvisioningError
 from vpnhub.infra.provisioning.ssh import SshError
@@ -222,15 +223,15 @@ class ServerService:
         log.info("server_monitor_tick", total=len(results), online=online, offline=len(results) - online)
         return len(results)
 
-    async def vpn_op(self, owner_id: str, sid: str, vtype: str, op: str) -> dict:
+    async def vpn_op(self, owner_id: str, sid: str, vtype: str, op: str, protos: list[str] | None = None) -> dict:
         if vtype not in VPN_TYPES:
             raise BadRequest("Неизвестный тип VPN")
         if op == "fix":
             return await self.apply_fix(owner_id, sid, vtype)
         if op not in ("install", "remove", "start", "stop"):
             raise BadRequest("Неизвестная операция")
-        # все вендоры (amnezia/openvpn/outline) — реальный provisioning
-        return await self._provisioned_op(owner_id, sid, vtype, op)
+        # все вендоры (amnezia/openvpn/outline/hysteria2) — реальный provisioning
+        return await self._provisioned_op(owner_id, sid, vtype, op, protos)
 
     async def apply_fix(self, owner_id: str, sid: str, vtype: str) -> dict:
         """Автофикс ошибки установки вендора: устранить причину по SSH и переустановить.
@@ -264,22 +265,28 @@ class ServerService:
         prov.schedule_install(sid, vtype)
         return result
 
-    async def _provisioned_op(self, owner_id: str, sid: str, vendor: str, op: str) -> dict:
-        """Реальный provisioning вендора (amnezia/openvpn/outline): install(фон)/remove/start/stop."""
+    async def _provisioned_op(
+        self, owner_id: str, sid: str, vendor: str, op: str, protos: list[str] | None = None
+    ) -> dict:
+        """Реальный provisioning вендора: install(фон, выбранные протоколы)/remove/start/stop."""
         prov = ProvisioningService(self.uow, self.settings)
 
         if op == "install":
+            # выбранное подмножество протоколов вендора (пусто/None → все); докачка = install части
+            proto_ids = ProvisioningService.resolve_proto_ids(vendor, protos)
+            if not proto_ids:
+                raise BadRequest("Не выбрано ни одного протокола для установки")
             async with self.uow.transaction() as tx:
                 s = await self._owned(tx, owner_id, sid)
                 vpn = next((v for v in s.vpns if v.type == vendor), None)
                 if vpn is None:
                     vpn = m.ServerVpn(server_id=sid, type=vendor, port=DEFAULT_PORTS[vendor])
                     tx.session.add(vpn)
-                await prov.mark_installing(tx, sid, vendor)
+                await prov.mark_installing(tx, sid, vendor, proto_ids)
                 await tx.session.flush()
                 await tx.session.refresh(s)
                 result = server_to_dict(s, self._secret(s))
-            prov.schedule_install(sid, vendor)  # долгая установка — в фоне
+            prov.schedule_install(sid, vendor, proto_ids)  # долгая установка — в фоне
             return result
 
         if op == "remove":
@@ -325,6 +332,37 @@ class ServerService:
             vpn = next((v for v in s.vpns if v.type == vendor), None)
             if vpn:
                 vpn.running = running
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            return server_to_dict(s, self._secret(s))
+
+    async def remove_protocol(self, owner_id: str, sid: str, proto_id: str) -> dict:
+        """Снять ОДИН протокол: снести контейнер + отозвать (удалить) выданные конфиги этого протокола.
+
+        Групповой доступ (GroupServerAccess) — вендор-уровневый и остаётся, пока у вендора есть
+        хоть один протокол; config-gen всё равно не отдаст конфиг по неустановленному протоколу.
+        """
+        if proto_id not in pc.PROTOCOLS:
+            raise BadRequest("Неизвестный протокол")
+        spec = pc.spec_by_id(proto_id)
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.query() as tx:
+            s = await self._owned(tx, owner_id, sid)
+        await prov.remove_protocol(s, proto_id)  # docker rm контейнера (пиры уходят вместе с ним)
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            sp = next((p for p in s.protocols if p.proto == proto_id), None)
+            if sp is not None:
+                sp.state, sp.installed, sp.running, sp.error, sp.error_code = "absent", False, False, None, None
+            # отзыв конфигов: контейнер снесён → удаляем DeviceConfig этого протокола (server, vendor, label)
+            await tx.session.execute(
+                sa_delete(m.DeviceConfig).where(
+                    m.DeviceConfig.server_id == sid,
+                    m.DeviceConfig.vpn_type == spec.vendor,
+                    m.DeviceConfig.proto == spec.label,
+                )
+            )
+            await ProvisioningService._refresh_vendor_flags(tx, sid, spec.vendor)
             await tx.session.flush()
             await tx.session.refresh(s)
             return server_to_dict(s, self._secret(s))

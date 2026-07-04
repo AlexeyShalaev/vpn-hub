@@ -155,12 +155,10 @@ class ConfigService:
     ) -> dict:
         if not device_id:
             raise BadRequest("Выберите устройство")
-        # протокол должен принадлежать вендору vpn_type; иначе — дефолтный протокол вендора
-        spec = pc.spec_by_label(proto or "")
-        if spec is None or spec.vendor != vpn_type:
-            spec = pc.spec_by_label(PROTOS[vpn_type][0])
-        if spec is None:
-            raise BadRequest("Неизвестный протокол")
+        # запрошенный протокол должен принадлежать вендору; иначе решаем по установленным ниже
+        requested = pc.spec_by_label(proto or "")
+        if requested is not None and requested.vendor != vpn_type:
+            requested = None
 
         prov = ProvisioningService(self.uow, self.settings)
 
@@ -170,9 +168,20 @@ class ConfigService:
             device = await tx.devices.get(device_id)
             if not device or device.user_id != user_id:
                 raise NotFound("Устройство не найдено")
-            sp = next((p for p in s.protocols if p.proto == spec.id), None)
-            if not sp or not sp.installed:
+            # только установленные протоколы вендора (в каталожном порядке) — их отдаём и из них выбираем
+            installed_ids = {p.proto for p in s.protocols if p.vendor == vpn_type and p.installed}
+            installed_labels = [
+                lbl for lbl in PROTOS.get(vpn_type, []) if (x := pc.spec_by_label(lbl)) and x.id in installed_ids
+            ]
+            # выбранный протокол должен быть установлен; иначе — первый установленный протокол вендора
+            spec = (
+                requested
+                if (requested and requested.id in installed_ids)
+                else (pc.spec_by_label(installed_labels[0]) if installed_labels else None)
+            )
+            if spec is None:
                 raise BadRequest("Протокол ещё не установлен на этом сервере")
+            sp = next(p for p in s.protocols if p.proto == spec.id)
             server_ip, server_name, port = s.ip, s.name, sp.port
             creds = prov.creds(s)
             prov_obj = prov.loaded_provisioner(sp)
@@ -205,7 +214,7 @@ class ConfigService:
             "uri": uri,
             "hint": artifact.hint,
             "clients": clients,
-            "protos": PROTOS.get(vpn_type, []),
+            "protos": installed_labels,
             "serverId": server_id,
             "formats": formats,
         }

@@ -140,10 +140,23 @@ async def vpn_op(
     sid: str,
     vtype: str,
     op: str,
+    body: dict[str, Any] = Body(default={}),
     ident: Identity = Depends(require_user),
     svc: ServerService = Depends(service(ServerService)),
 ) -> dict:
-    return await svc.vpn_op(ident.id, sid, vtype, op)
+    # install: body.protos — выбранные протоколы вендора (id); пусто/нет → все (обратная совместимость)
+    protos = body.get("protos") if isinstance(body, dict) else None
+    return await svc.vpn_op(ident.id, sid, vtype, op, protos)
+
+
+@router.post("/servers/{sid}/protocols/{proto}/remove")
+async def remove_protocol(
+    sid: str,
+    proto: str,
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    return await svc.remove_protocol(ident.id, sid, proto)
 
 
 # ---------- pools ----------

@@ -282,6 +282,19 @@ export const PROTO_LABEL: Record<string, string> = {
   openvpn: "OpenVPN",
   hysteria2: "Hysteria2",
 };
+// Полный набор протоколов вендора (id → label) для выбора при установке/докачке.
+// Зеркалит backend VENDOR_PROTOS + catalog.PROTOS — держать в синхроне при добавлении протокола.
+export const VENDOR_PROTOCOLS: Record<VpnType, { id: string; label: string }[]> = {
+  amnezia: [
+    { id: "awg", label: "AmneziaWG" },
+    { id: "awg_legacy", label: "AmneziaWG Legacy" },
+    { id: "xray", label: "Xray" },
+    { id: "xray_xhttp", label: "Xray XHTTP" },
+  ],
+  openvpn: [{ id: "openvpn", label: "OpenVPN" }],
+  outline: [{ id: "outline", label: "Shadowsocks" }],
+  hysteria2: [{ id: "hysteria2", label: "Hysteria2" }],
+};
 export const PROTO_STATE_LABEL: Record<ProtocolState, string> = {
   absent: "нет",
   installing: "устанавливается…",

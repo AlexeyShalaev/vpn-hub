@@ -595,6 +595,24 @@ async def test__awg_list_peer_ids__two_peers__returns_their_public_keys() -> Non
 # ----------------------------------------------------------- xray xhttp ---
 
 
+def test__resolve_proto_ids__none_or_empty__returns_all_vendor_protocols() -> None:
+    """resolve_proto_ids(vendor, None|[]) → все протоколы вендора в каталожном порядке."""
+    from vpnhub.services.provisioning import ProvisioningService
+
+    assert ProvisioningService.resolve_proto_ids("amnezia", None) == c.VENDOR_PROTOS["amnezia"]
+    assert ProvisioningService.resolve_proto_ids("amnezia", []) == c.VENDOR_PROTOS["amnezia"]
+
+
+def test__resolve_proto_ids__subset__keeps_catalog_order_and_drops_unknown() -> None:
+    """resolve_proto_ids сохраняет порядок вендора и отбрасывает чужие/несуществующие id."""
+    from vpnhub.services.provisioning import ProvisioningService
+
+    # порядок берётся из VENDOR_PROTOS (awg, awg_legacy, xray, xray_xhttp), не из аргумента
+    assert ProvisioningService.resolve_proto_ids("amnezia", ["xray", "awg"]) == ("awg", "xray")
+    # чужой (openvpn) и несуществующий id выбрасываются
+    assert ProvisioningService.resolve_proto_ids("amnezia", ["openvpn", "nope"]) == ()
+
+
 def test__constants_registry__xray_xhttp__is_amnezia_variant_of_xray() -> None:
     """xray_xhttp — отдельный протокол Amnezia (свой контейнер/порт/network), reuse XrayProvisioner."""
     # Arrange / Act

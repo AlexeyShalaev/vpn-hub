@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Btn, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
 import type { Protocol, Server, Vpn, VpnType } from "../lib/types";
-import { PROTO_LABEL, PROTO_STATE_LABEL, VPN_DESC, VPN_LABEL } from "../lib/types";
+import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_LABEL } from "../lib/types";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
 import { ServerAccessSections } from "./ServerAccess";
@@ -19,8 +19,18 @@ export function ServerDetailScreen() {
 
   const [reveal, setReveal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmRemoveVpn, setConfirmRemoveVpn] = useState<VpnType | null>(null);
   const [advancedVpn, setAdvancedVpn] = useState<VpnType | null>(null);
+  // подтверждение сноса всего вендора (все его протоколы + доступы разом)
+  const [confirmRemoveVpn, setConfirmRemoveVpn] = useState<VpnType | null>(null);
+  // модалка выбора протоколов для установки/докачки: активный вендор + отмеченные id
+  const [addProtoVendor, setAddProtoVendor] = useState<VpnType | null>(null);
+  const [checkedProtos, setCheckedProtos] = useState<Set<string>>(new Set());
+  // подтверждение удаления одного протокола (сносит контейнер + отзывает его конфиги)
+  const [confirmRemoveProto, setConfirmRemoveProto] = useState<{
+    vendor: VpnType;
+    proto: string;
+    label: string;
+  } | null>(null);
 
   const serverQ = useQuery({
     queryKey: ["server", serverId],
@@ -59,13 +69,14 @@ export function ServerDetailScreen() {
   });
 
   const opMut = useMutation({
-    mutationFn: ({ type, op }: { type: VpnType; op: string }) => q.vpnOp(serverId, type, op),
+    mutationFn: ({ type, op, protos }: { type: VpnType; op: string; protos?: string[] }) =>
+      q.vpnOp(serverId, type, op, protos),
     onSuccess: (_s, vars) => {
       qc.invalidateQueries({ queryKey: ["server", serverId] });
       const label = VPN_LABEL[vars.type];
       const msg =
         vars.op === "install"
-          ? // установка любого вендора идёт в фоне (mark_installing + schedule_install),
+          ? // установка идёт в фоне (mark_installing + schedule_install),
             // ответ приходит мгновенно — сообщаем о старте, а не о завершении
             `${label}: установка запущена — займёт пару минут`
           : vars.op === "remove"
@@ -76,6 +87,15 @@ export function ServerDetailScreen() {
       toast(msg);
     },
     onError: (e) => toast(e instanceof Error ? e.message : "Ошибка операции"),
+  });
+
+  const removeProtoMut = useMutation({
+    mutationFn: ({ proto }: { proto: string; label: string }) => q.removeProtocol(serverId, proto),
+    onSuccess: (_s, vars) => {
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast(`${vars.label} удалён — связанные конфиги отозваны`);
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить протокол"),
   });
 
   const fixMut = useMutation({
@@ -232,6 +252,8 @@ export function ServerDetailScreen() {
           {VPN_TYPES.map((type) => {
             const v = vpnByType(type);
             const protos = protosByVendor(type);
+            const catalog = VENDOR_PROTOCOLS[type]; // все протоколы вендора (для выбора/докачки)
+            const notInstalled = catalog.filter((pr) => !protos.find((x) => x.proto === pr.id)?.installed);
             const installing = protos.some((p) => p.state === "installing");
             const errored = protos.find((p) => p.state === "error");
             const rem = errored?.remediation ?? null;
@@ -282,16 +304,36 @@ export function ServerDetailScreen() {
                   <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
                     {VPN_DESC[type]}
                   </div>
-                  {protos.length > 0 && (
-                    <div className="rowflex" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                      {protos.map((p) => (
-                        <span key={p.proto} className={`badge ${p.state === "installed" ? "ok" : "neutral"}`}>
-                          {PROTO_LABEL[p.proto] ?? p.proto} · {PROTO_STATE_LABEL[p.state]}
-                          {p.externalClients > 0 ? ` · +${p.externalClients} внешн.` : ""}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {/* пер-протокольный список: состояние каждого + корзина у установленных */}
+                  <div className="stack" style={{ gap: 4, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                    {catalog.map((pr) => {
+                      const p = protos.find((x) => x.proto === pr.id);
+                      const st = p?.state ?? "absent";
+                      const inst = p?.installed ?? false;
+                      const ext = p?.externalClients ?? 0;
+                      return (
+                        <div key={pr.id} className="rowflex" style={{ justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ fontSize: 12.5, minWidth: 0 }}>
+                            <span className={`badge ${inst ? "ok" : "neutral"}`}>{pr.label}</span>
+                            <span className="muted-3" style={{ marginLeft: 6, fontSize: 11.5 }}>
+                              {PROTO_STATE_LABEL[st] ?? st}
+                              {ext > 0 ? ` · +${ext} внешн.` : ""}
+                            </span>
+                          </span>
+                          {inst && (
+                            <Btn
+                              variant="ghost"
+                              sm
+                              disabled={removeProtoMut.isPending}
+                              onClick={() => setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })}
+                            >
+                              <Icon name="trash" size={13} />
+                            </Btn>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                   {errored && (
                     <div style={{ marginTop: 6 }} onClick={(e) => e.stopPropagation()}>
                       {rem ? (
@@ -333,36 +375,45 @@ export function ServerDetailScreen() {
                       Устанавливается…
                     </span>
                   </div>
-                ) : !v.installed ? (
-                  <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
-                    {rem?.canAutoFix && (
-                      <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
-                        {rem.fixLabel ?? "Исправить"}
-                      </Btn>
-                    )}
-                    <Btn
-                      variant={rem?.canAutoFix ? "ghost" : "primary"}
-                      sm
-                      onClick={() => opMut.mutate({ type, op: "install" })}
-                    >
-                      Установить
-                    </Btn>
-                  </div>
                 ) : (
                   <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
-                    {/* частичный сбой вендора: один протокол установлен, другой упал с auto-ошибкой —
-                        кнопка фикса должна быть доступна и в installed-состоянии */}
+                    {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
                     {rem?.canAutoFix && (
                       <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
                         {rem.fixLabel ?? "Исправить"}
                       </Btn>
                     )}
-                    <Btn sm disabled={!online} onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}>
-                      {v.running ? "Стоп" : "Запустить"}
-                    </Btn>
-                    <Btn variant="ghost" sm onClick={() => setConfirmRemoveVpn(type)}>
-                      <Icon name="trash" size={15} />
-                    </Btn>
+                    {v.installed && (
+                      <Btn
+                        sm
+                        disabled={!online}
+                        onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
+                      >
+                        {v.running ? "Стоп" : "Запустить"}
+                      </Btn>
+                    )}
+                    {notInstalled.length > 0 && (
+                      <Btn
+                        variant={v.installed || rem?.canAutoFix ? "ghost" : "primary"}
+                        sm
+                        onClick={() => {
+                          setCheckedProtos(new Set(notInstalled.map((p) => p.id)));
+                          setAddProtoVendor(type);
+                        }}
+                      >
+                        {v.installed ? "+ Протоколы" : "Установить"}
+                      </Btn>
+                    )}
+                    {v.installed && (
+                      <Btn
+                        variant="ghost"
+                        sm
+                        title={`Удалить ${VPN_LABEL[type]} целиком`}
+                        onClick={() => setConfirmRemoveVpn(type)}
+                      >
+                        <Icon name="trash" size={15} />
+                      </Btn>
+                    )}
                   </div>
                 )}
               </div>
@@ -394,9 +445,97 @@ export function ServerDetailScreen() {
         </Modal>
       )}
 
+      {/* Выбор протоколов для установки/докачки (галочки) */}
+      {addProtoVendor && (
+        <Modal
+          title={`${VPN_LABEL[addProtoVendor]}: установить протоколы`}
+          onClose={() => setAddProtoVendor(null)}
+          footer={
+            <>
+              <Btn variant="ghost" onClick={() => setAddProtoVendor(null)}>
+                Отмена
+              </Btn>
+              <Btn
+                variant="primary"
+                disabled={checkedProtos.size === 0 || opMut.isPending}
+                onClick={() => {
+                  const type = addProtoVendor;
+                  const protos = [...checkedProtos];
+                  setAddProtoVendor(null);
+                  opMut.mutate({ type, op: "install", protos });
+                }}
+              >
+                Установить{checkedProtos.size ? ` (${checkedProtos.size})` : ""}
+              </Btn>
+            </>
+          }
+        >
+          <div className="stack" style={{ gap: 8 }}>
+            <p className="muted" style={{ fontSize: 13 }}>
+              Отметьте протоколы для установки — каждый развернётся в своём контейнере. Уже установленные протоколы
+              здесь не показаны.
+            </p>
+            {VENDOR_PROTOCOLS[addProtoVendor]
+              .filter((pr) => !protosByVendor(addProtoVendor).find((x) => x.proto === pr.id)?.installed)
+              .map((pr) => {
+                const on = checkedProtos.has(pr.id);
+                return (
+                  <label key={pr.id} className="rowflex" style={{ gap: 10, cursor: "pointer", padding: "6px 2px" }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() =>
+                        setCheckedProtos((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.delete(pr.id);
+                          else next.add(pr.id);
+                          return next;
+                        })
+                      }
+                    />
+                    <span style={{ fontWeight: 600 }}>{pr.label}</span>
+                  </label>
+                );
+              })}
+          </div>
+        </Modal>
+      )}
+
+      {/* Удаление одного протокола (сносит контейнер + отзывает его конфиги) */}
+      {confirmRemoveProto && (
+        <Modal
+          title={`Удалить ${confirmRemoveProto.label}?`}
+          onClose={() => setConfirmRemoveProto(null)}
+          footer={
+            <>
+              <Btn variant="ghost" onClick={() => setConfirmRemoveProto(null)}>
+                Отмена
+              </Btn>
+              <Btn
+                variant="danger"
+                disabled={removeProtoMut.isPending}
+                onClick={() => {
+                  const { proto, label } = confirmRemoveProto;
+                  setConfirmRemoveProto(null);
+                  removeProtoMut.mutate({ proto, label });
+                }}
+              >
+                Удалить
+              </Btn>
+            </>
+          }
+        >
+          <p className="muted">
+            Контейнер протокола будет снесён, а выданные по нему конфиги — отозваны. Другие протоколы этого VPN не
+            затрагиваются.
+          </p>
+        </Modal>
+      )}
+
+      {/* Снос всего вендора: все его протоколы + групповые доступы разом */}
       {confirmRemoveVpn && (
         <Modal
-          title={`Удалить ${VPN_LABEL[confirmRemoveVpn]}?`}
+          title={`Удалить ${VPN_LABEL[confirmRemoveVpn]} целиком?`}
           onClose={() => setConfirmRemoveVpn(null)}
           footer={
             <>
@@ -412,12 +551,14 @@ export function ServerDetailScreen() {
                   opMut.mutate({ type, op: "remove" });
                 }}
               >
-                Удалить
+                Удалить всё
               </Btn>
             </>
           }
         >
-          <p className="muted">ПО будет помечено как не установленное, доступы к нему снимутся.</p>
+          <p className="muted">
+            Будут снесены все протоколы этого VPN, а связанные конфиги и групповые доступы к нему — отозваны.
+          </p>
         </Modal>
       )}
     </div>
