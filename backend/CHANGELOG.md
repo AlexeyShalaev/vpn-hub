@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.1.0...v0.1.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **db:** external Postgres behind PgBouncer — transaction-mode migrations & DSN credential encoding ([#12](https://github.com/AlexeyShalaev/vpn-hub/issues/12)) ([005f076](https://github.com/AlexeyShalaev/vpn-hub/commit/005f0766517a548d15f5c6a1ddb27d27e7f7f32c))
+
 ## 0.1.0 (2026-07-03)
 
 
