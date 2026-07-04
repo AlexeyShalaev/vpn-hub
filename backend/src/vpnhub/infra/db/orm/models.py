@@ -103,6 +103,7 @@ class ServerProtocol(BaseTable, DatetimeColumnsMixin):
     installed: Mapped[bool] = mapped_column(Boolean, default=False)
     running: Mapped[bool] = mapped_column(Boolean, default=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(48), nullable=True)  # стабильный код (ProvisioningError.code)
     external_clients: Mapped[int] = mapped_column(Integer, default=0)  # клиенты, заведённые внешним клиентом
     params_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # AwgParams (для awg/awg_legacy)
     material_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet(JSON ServerMaterial)

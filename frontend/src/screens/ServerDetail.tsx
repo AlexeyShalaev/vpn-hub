@@ -78,6 +78,16 @@ export function ServerDetailScreen() {
     onError: (e) => toast(e instanceof Error ? e.message : "Ошибка операции"),
   });
 
+  const fixMut = useMutation({
+    mutationFn: ({ type }: { type: VpnType }) => q.vpnFix(serverId, type),
+    onSuccess: (_s, vars) => {
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      // фикс устраняет причину и запускает переустановку в фоне — сообщаем о старте
+      toast(`${VPN_LABEL[vars.type]}: исправление запущено — займёт пару минут`);
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось запустить исправление"),
+  });
+
   const deleteMut = useMutation({
     mutationFn: () => q.deleteServer(serverId),
     onSuccess: () => {
@@ -224,7 +234,10 @@ export function ServerDetailScreen() {
             const protos = protosByVendor(type);
             const installing = protos.some((p) => p.state === "installing");
             const errored = protos.find((p) => p.state === "error");
-            const busy = opMut.isPending && opMut.variables?.type === type;
+            const rem = errored?.remediation ?? null;
+            const busy =
+              (opMut.isPending && opMut.variables?.type === type) ||
+              (fixMut.isPending && fixMut.variables?.type === type);
             const runLabel = installing
               ? "устанавливается…"
               : !v.installed
@@ -279,9 +292,34 @@ export function ServerDetailScreen() {
                       ))}
                     </div>
                   )}
-                  {errored?.error && (
-                    <div className="muted-3" style={{ fontSize: 11.5, marginTop: 4, wordBreak: "break-word" }}>
-                      Ошибка: {errored.error}
+                  {errored && (
+                    <div style={{ marginTop: 6 }} onClick={(e) => e.stopPropagation()}>
+                      {rem ? (
+                        <div className="stack" style={{ gap: 3 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)" }}>{rem.title}</div>
+                          <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                            {rem.explanation}
+                          </div>
+                          {rem.manualSteps.length > 0 && (
+                            <ol
+                              className="muted-3"
+                              style={{ fontSize: 11.5, margin: "2px 0 0", paddingLeft: 16, lineHeight: 1.5 }}
+                            >
+                              {rem.manualSteps.map((step, i) => (
+                                <li key={i} style={{ wordBreak: "break-word" }}>
+                                  {step}
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                        </div>
+                      ) : (
+                        errored.error && (
+                          <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                            Ошибка: {errored.error}
+                          </div>
+                        )
+                      )}
                     </div>
                   )}
                 </div>
@@ -296,11 +334,29 @@ export function ServerDetailScreen() {
                     </span>
                   </div>
                 ) : !v.installed ? (
-                  <Btn variant="primary" sm onClick={() => opMut.mutate({ type, op: "install" })}>
-                    Установить
-                  </Btn>
+                  <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
+                    {rem?.canAutoFix && (
+                      <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
+                        {rem.fixLabel ?? "Исправить"}
+                      </Btn>
+                    )}
+                    <Btn
+                      variant={rem?.canAutoFix ? "ghost" : "primary"}
+                      sm
+                      onClick={() => opMut.mutate({ type, op: "install" })}
+                    >
+                      Установить
+                    </Btn>
+                  </div>
                 ) : (
-                  <div className="rowflex" style={{ flexWrap: "nowrap" }}>
+                  <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
+                    {/* частичный сбой вендора: один протокол установлен, другой упал с auto-ошибкой —
+                        кнопка фикса должна быть доступна и в installed-состоянии */}
+                    {rem?.canAutoFix && (
+                      <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
+                        {rem.fixLabel ?? "Исправить"}
+                      </Btn>
+                    )}
                     <Btn sm disabled={!online} onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}>
                       {v.running ? "Стоп" : "Запустить"}
                     </Btn>

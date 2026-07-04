@@ -287,6 +287,8 @@ def test__protocol_to_dict__maps_external_clients_to_camelcase() -> None:
         "installed": True,
         "running": True,
         "error": None,
+        "errorCode": None,
+        "remediation": None,
         "externalClients": 3,
     }
 

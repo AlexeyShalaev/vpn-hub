@@ -20,6 +20,15 @@ export interface Vpn {
 
 export type ProtocolState = "absent" | "installing" | "installed" | "external" | "error";
 
+export interface Remediation {
+  kind: "auto" | "manual" | "none";
+  title: string;
+  explanation: string;
+  canAutoFix: boolean;
+  fixLabel: string | null;
+  manualSteps: string[];
+}
+
 export interface Protocol {
   vendor: VpnType;
   proto: string; // awg | awg_legacy | xray | openvpn
@@ -29,6 +38,8 @@ export interface Protocol {
   installed: boolean;
   running: boolean;
   error: string | null;
+  errorCode?: string | null;
+  remediation?: Remediation | null;
   externalClients: number;
 }
 

@@ -60,6 +60,8 @@ export const deleteServer = (id: string) => http.del(`/servers/${id}`);
 export const checkServer = (id: string) => http.post<Server>(`/servers/${id}/check`);
 export const syncServer = (id: string) => http.post<Server>(`/servers/${id}/sync`);
 export const vpnOp = (id: string, type: string, op: string) => http.post<Server>(`/servers/${id}/vpns/${type}/${op}`);
+// автофикс ошибки установки: устранить причину по SSH и переустановить (роутится через {op}=fix)
+export const vpnFix = (id: string, type: string) => http.post<Server>(`/servers/${id}/vpns/${type}/fix`);
 export const listProviders = () => http.get<Provider[]>("/providers");
 
 // server access overview (владелец: пулы/группы/пользователи+конфиги этого сервера)

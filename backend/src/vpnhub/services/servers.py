@@ -19,6 +19,7 @@ from vpnhub.common.serializers import server_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.probe import ProbeResult, probe_tcp
+from vpnhub.infra.provisioning import remediation
 from vpnhub.infra.provisioning.errors import ProvisioningError
 from vpnhub.infra.provisioning.ssh import SshError
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
@@ -224,10 +225,44 @@ class ServerService:
     async def vpn_op(self, owner_id: str, sid: str, vtype: str, op: str) -> dict:
         if vtype not in VPN_TYPES:
             raise BadRequest("Неизвестный тип VPN")
+        if op == "fix":
+            return await self.apply_fix(owner_id, sid, vtype)
         if op not in ("install", "remove", "start", "stop"):
             raise BadRequest("Неизвестная операция")
         # все вендоры (amnezia/openvpn/outline) — реальный provisioning
         return await self._provisioned_op(owner_id, sid, vtype, op)
+
+    async def apply_fix(self, owner_id: str, sid: str, vtype: str) -> dict:
+        """Автофикс ошибки установки вендора: устранить причину по SSH и переустановить.
+
+        Работает только для kind="auto"-ошибок (см. remediation): подбираем подсказку по
+        error_code/error первого сбойного протокола вендора, гоняем идемпотентный фикс-скрипт
+        (если есть), затем запускаем обычную фоновую переустановку вендора.
+        """
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.query() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            errored = next((p for p in s.protocols if p.vendor == vtype and p.state == "error"), None)
+            if errored is None:
+                raise BadRequest("Нет ошибки для исправления")
+            rem = remediation.resolve(errored.error_code, errored.error)
+            if rem is None or rem.kind != "auto" or rem.fix_id is None:
+                raise BadRequest("Эту ошибку нельзя исправить автоматически")
+            fix_id = rem.fix_id
+        # SSH-фикс — вне транзакции (может занять время)
+        try:
+            await prov.run_fix(s, fix_id)
+        except (SshError, ProvisioningError) as e:
+            raise BadRequest(f"Не удалось выполнить исправление: {e}") from e
+        # авто-переустановка вендора (как install): помечаем installing и уходим в фон
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            await prov.mark_installing(tx, sid, vtype)
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            result = server_to_dict(s, self._secret(s))
+        prov.schedule_install(sid, vtype)
+        return result
 
     async def _provisioned_op(self, owner_id: str, sid: str, vendor: str, op: str) -> dict:
         """Реальный provisioning вендора (amnezia/openvpn/outline): install(фон)/remove/start/stop."""
