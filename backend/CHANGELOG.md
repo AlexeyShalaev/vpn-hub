@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.1.1...v0.2.0) (2026-07-04)
+
+
+### Features
+
+* **provisioning:** add Hysteria2 and Xray XHTTP protocols ([46e76a9](https://github.com/AlexeyShalaev/vpn-hub/commit/46e76a993cb9a0a4f598c03445c81f9475f53a7e))
+* **provisioning:** auto-fix for failed VPN installs ([848d6b5](https://github.com/AlexeyShalaev/vpn-hub/commit/848d6b58fa04cc7a0d86d1aa244a9aa216ca5e52))
+* **servers:** required location with select + auto-named servers ([2555c00](https://github.com/AlexeyShalaev/vpn-hub/commit/2555c0063ada4c03699369001e2430ca5df393d5))
+
 ## [0.1.1](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.1.0...v0.1.1) (2026-07-04)
 
 
