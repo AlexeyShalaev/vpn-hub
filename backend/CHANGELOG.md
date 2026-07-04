@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.3.0...v0.4.0) (2026-07-04)
+
+
+### Features
+
+* **configs:** let members revoke their own issued configs ([3bf856a](https://github.com/AlexeyShalaev/vpn-hub/commit/3bf856a7f7db2af3f771648354f1bed3ab804ac0))
+* **configs:** bundle a server's Amnezia protocols into one vpn:// ([191ec4e](https://github.com/AlexeyShalaev/vpn-hub/commit/191ec4e4e2f1be1dec3182171e0206f2b3d48316))
+* **provisioning:** install Amnezia protocols individually with add/remove ([e730306](https://github.com/AlexeyShalaev/vpn-hub/commit/e7303061e8b8ca4c97c546b15ac98552328aa8de))
+* **provisioning:** start/stop individual Amnezia protocols (switchers) ([7aa325a](https://github.com/AlexeyShalaev/vpn-hub/commit/7aa325a72ad51ba9925f63458a56c0e9ed56e155))
+
+
+### Bug Fixes
+
+* **configs:** require explicit device & protocol before issuing a config ([542b8af](https://github.com/AlexeyShalaev/vpn-hub/commit/542b8af3de2e43104d7fd4ee2cd38fa38324684c))
+
 ## [0.3.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.2.0...v0.3.0) (2026-07-04)
 
 
