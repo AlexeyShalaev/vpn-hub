@@ -18,7 +18,7 @@ from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra import keyring
 from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
-from vpnhub.infra.updates import fetch_feed, is_newer
+from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed
 from vpnhub.services.backups import BackupService
 
 log = structlog.get_logger(__name__)
@@ -156,7 +156,7 @@ class AdminService:
         """Реальная проверка: тянет фид релизов, сравнивает версии, кэширует результат."""
         current = self.settings.version
         url = self.settings.update_feed_url
-        if not url:
+        if feed_disabled(url):
             cache = await self._update_cache()
             latest = cache.get("latest") or current
             return {
@@ -165,10 +165,10 @@ class AdminService:
                 "latest": latest,
                 "checked": False,
                 "releases": cache.get("releases") or _FALLBACK_RELEASES,
-                "reason": "Фид обновлений не настроен (VPNHUB_UPDATE_FEED_URL)",
+                "reason": "Проверка обновлений отключена (VPNHUB_UPDATE_FEED_URL=off)",
             }
         try:
-            feed = await fetch_feed(url)
+            feed = normalize_feed(await fetch_feed(url))
         except Exception as exc:
             log.warning("update_check_failed", error=str(exc))
             cache = await self._update_cache()
@@ -182,7 +182,7 @@ class AdminService:
                 "reason": f"Не удалось получить фид обновлений: {exc}",
             }
         latest = str(feed.get("latest") or current)
-        releases = feed.get("releases") if isinstance(feed.get("releases"), list) else _FALLBACK_RELEASES
+        releases = feed.get("releases") or _FALLBACK_RELEASES
         async with self.uow.transaction() as tx:
             await tx.settings.set_value(
                 _CACHE_KEY, json.dumps({"latest": latest, "releases": releases, "at": time.time()})

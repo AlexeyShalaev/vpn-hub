@@ -32,6 +32,7 @@ def settings(tmp_path) -> Settings:
         monitor_timeout=0.05,
         monitor_concurrency=4,
         backup_dir=str(tmp_path),
+        update_feed_url="",  # офлайн в тестах: не ходить в сеть (дефолт продукта — GitHub Releases)
     )
 
 

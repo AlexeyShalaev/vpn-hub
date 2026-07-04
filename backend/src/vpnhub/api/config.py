@@ -129,7 +129,9 @@ class Settings(BaseSettings):
     # а новые самостоятельные регистрации подтверждает администратор вручную.
 
     # обновления
-    update_feed_url: str = ""  # JSON-фид релизов; пусто → апдейт-чек в офлайне (last-known)
+    # по умолчанию — официальные GitHub Releases (работает из коробки, без настройки);
+    # переопределяется под форк/зеркало; `off`/пусто → офлайн-режим (last-known из кэша).
+    update_feed_url: str = "https://api.github.com/repos/AlexeyShalaev/vpn-hub/releases"
     update_command: str = ""  # команда применения апдейта (напр. скрипт); пусто → ручной путь
     built: str = ""  # дата сборки (проставляется при build образа: VPNHUB_BUILT); пусто → mtime кода
     # ТОЛЬКО `PORT` (не `VPNHUB_PORT`): в Kubernetes сервис по имени `vpnhub` инжектит legacy-переменную
