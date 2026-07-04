@@ -5,7 +5,7 @@
 
 ### Features
 
-* Amnezia per-protocol management + config self-service ([a7b09bd](https://github.com/AlexeyShalaev/vpn-hub/commit/a7b09bd4c2f00db0cefc8dc0b7b4f1057ac87520))
+* **configs:** let members revoke their own issued configs ([3bf856a](https://github.com/AlexeyShalaev/vpn-hub/commit/3bf856a7f7db2af3f771648354f1bed3ab804ac0))
 * **configs:** bundle a server's Amnezia protocols into one vpn:// ([191ec4e](https://github.com/AlexeyShalaev/vpn-hub/commit/191ec4e4e2f1be1dec3182171e0206f2b3d48316))
 * **provisioning:** install Amnezia protocols individually with add/remove ([e730306](https://github.com/AlexeyShalaev/vpn-hub/commit/e7303061e8b8ca4c97c546b15ac98552328aa8de))
 * **provisioning:** start/stop individual Amnezia protocols (switchers) ([7aa325a](https://github.com/AlexeyShalaev/vpn-hub/commit/7aa325a72ad51ba9925f63458a56c0e9ed56e155))
