@@ -149,14 +149,16 @@ async def vpn_op(
     return await svc.vpn_op(ident.id, sid, vtype, op, protos)
 
 
-@router.post("/servers/{sid}/protocols/{proto}/remove")
-async def remove_protocol(
+@router.post("/servers/{sid}/protocols/{proto}/{op}")
+async def protocol_op(
     sid: str,
     proto: str,
+    op: str,
     ident: Identity = Depends(require_user),
     svc: ServerService = Depends(service(ServerService)),
 ) -> dict:
-    return await svc.remove_protocol(ident.id, sid, proto)
+    # op ∈ {start, stop, remove}: свитчер контейнера одного протокола или снос с отзывом конфигов
+    return await svc.protocol_op(ident.id, sid, proto, op)
 
 
 # ---------- pools ----------

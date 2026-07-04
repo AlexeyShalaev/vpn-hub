@@ -336,6 +336,41 @@ class ServerService:
             await tx.session.refresh(s)
             return server_to_dict(s, self._secret(s))
 
+    async def protocol_op(self, owner_id: str, sid: str, proto_id: str, op: str) -> dict:
+        """Операция над ОДНИМ протоколом: remove (снос+отзыв) / start / stop (свитчер контейнера)."""
+        if proto_id not in pc.PROTOCOLS:
+            raise BadRequest("Неизвестный протокол")
+        if op == "remove":
+            return await self.remove_protocol(owner_id, sid, proto_id)
+        if op not in ("start", "stop"):
+            raise BadRequest("Неизвестная операция")
+        return await self._lifecycle_protocol(owner_id, sid, proto_id, op)
+
+    async def _lifecycle_protocol(self, owner_id: str, sid: str, proto_id: str, op: str) -> dict:
+        """Временно остановить/снова запустить контейнер одного протокола (docker start/stop)."""
+        spec = pc.spec_by_id(proto_id)
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.query() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            if s.status != "online":
+                raise BadRequest("Сервер должен быть онлайн")
+            sp = next((p for p in s.protocols if p.proto == proto_id), None)
+            if not sp or not sp.installed:
+                raise BadRequest("Протокол не установлен")
+        try:
+            await prov.lifecycle_protocol(s, proto_id, op)
+        except (SshError, ProvisioningError) as e:
+            raise BadRequest(f"Не удалось выполнить операцию на сервере: {e}") from e
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            sp = next((p for p in s.protocols if p.proto == proto_id), None)
+            if sp is not None:
+                sp.running = op == "start"
+            await ProvisioningService._refresh_vendor_flags(tx, sid, spec.vendor)
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            return server_to_dict(s, self._secret(s))
+
     async def remove_protocol(self, owner_id: str, sid: str, proto_id: str) -> dict:
         """Снять ОДИН протокол: снести контейнер + отозвать (удалить) выданные конфиги этого протокола.
 

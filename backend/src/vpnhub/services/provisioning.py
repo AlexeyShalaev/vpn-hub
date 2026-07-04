@@ -263,6 +263,17 @@ class ProvisioningService:
                 spec = pc.spec_by_id(proto_id)
                 await ssh.run(f"sudo docker {op} {spec.container} 2>/dev/null || true")
 
+    async def lifecycle_protocol(self, server: m.Server, proto_id: str, op: str) -> None:
+        """op ∈ {start, stop} — docker start/stop контейнера ОДНОГО протокола (свитчер).
+
+        Контейнер должен существовать (вызывается только для installed-протокола), поэтому строго —
+        сбой поднимаем наверх, чтобы UI показал ошибку.
+        """
+        spec = pc.spec_by_id(proto_id)
+        creds = self.creds(server)
+        async with SshClient(creds) as ssh:
+            await ssh.run(f"sudo docker {op} {spec.container}")
+
     async def check_server(self, server: m.Server) -> tuple[bool, int | None, dict[str, str]]:
         """Реальная проверка: (online, latency_ms, {container: port}) через docker ps по SSH."""
         creds = self.creds(server)

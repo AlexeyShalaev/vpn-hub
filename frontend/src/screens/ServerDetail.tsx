@@ -98,6 +98,16 @@ export function ServerDetailScreen() {
     onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить протокол"),
   });
 
+  // свитчер отдельного протокола: временно остановить / снова запустить его контейнер
+  const protoOpMut = useMutation({
+    mutationFn: ({ proto, op }: { proto: string; label: string; op: string }) => q.protocolOp(serverId, proto, op),
+    onSuccess: (_s, vars) => {
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast(`${vars.label} ${vars.op === "start" ? "запущен" : "остановлен"}`);
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Ошибка операции"),
+  });
+
   const fixMut = useMutation({
     mutationFn: ({ type }: { type: VpnType }) => q.vpnFix(serverId, type),
     onSuccess: (_s, vars) => {
@@ -304,31 +314,45 @@ export function ServerDetailScreen() {
                   <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
                     {VPN_DESC[type]}
                   </div>
-                  {/* пер-протокольный список: состояние каждого + корзина у установленных */}
+                  {/* пер-протокольный список: состояние + свитчер стоп/пуск + корзина у установленных */}
                   <div className="stack" style={{ gap: 4, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
                     {catalog.map((pr) => {
                       const p = protos.find((x) => x.proto === pr.id);
                       const st = p?.state ?? "absent";
                       const inst = p?.installed ?? false;
+                      const running = p?.running ?? false;
                       const ext = p?.externalClients ?? 0;
+                      // у установленного показываем работает/остановлен, иначе — состояние установки
+                      const stateText = inst ? (running ? "работает" : "остановлен") : (PROTO_STATE_LABEL[st] ?? st);
                       return (
                         <div key={pr.id} className="rowflex" style={{ justifyContent: "space-between", gap: 8 }}>
                           <span style={{ fontSize: 12.5, minWidth: 0 }}>
-                            <span className={`badge ${inst ? "ok" : "neutral"}`}>{pr.label}</span>
+                            <span className={`badge ${inst && running ? "ok" : "neutral"}`}>{pr.label}</span>
                             <span className="muted-3" style={{ marginLeft: 6, fontSize: 11.5 }}>
-                              {PROTO_STATE_LABEL[st] ?? st}
+                              {stateText}
                               {ext > 0 ? ` · +${ext} внешн.` : ""}
                             </span>
                           </span>
                           {inst && (
-                            <Btn
-                              variant="ghost"
-                              sm
-                              disabled={removeProtoMut.isPending}
-                              onClick={() => setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })}
-                            >
-                              <Icon name="trash" size={13} />
-                            </Btn>
+                            <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
+                              <Btn
+                                sm
+                                disabled={!online || protoOpMut.isPending}
+                                onClick={() =>
+                                  protoOpMut.mutate({ proto: pr.id, label: pr.label, op: running ? "stop" : "start" })
+                                }
+                              >
+                                {running ? "Стоп" : "Запустить"}
+                              </Btn>
+                              <Btn
+                                variant="ghost"
+                                sm
+                                disabled={removeProtoMut.isPending}
+                                onClick={() => setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })}
+                              >
+                                <Icon name="trash" size={13} />
+                              </Btn>
+                            </div>
                           )}
                         </div>
                       );

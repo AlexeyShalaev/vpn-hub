@@ -64,9 +64,11 @@ export const vpnOp = (id: string, type: string, op: string, protos?: string[]) =
   http.post<Server>(`/servers/${id}/vpns/${type}/${op}`, protos?.length ? { protos } : undefined);
 // автофикс ошибки установки: устранить причину по SSH и переустановить (роутится через {op}=fix)
 export const vpnFix = (id: string, type: string) => http.post<Server>(`/servers/${id}/vpns/${type}/fix`);
-// снять один протокол вендора (сносит контейнер + отзывает выданные конфиги этого протокола)
-export const removeProtocol = (id: string, proto: string) =>
-  http.post<Server>(`/servers/${id}/protocols/${proto}/remove`);
+// операция над одним протоколом: op ∈ {start, stop, remove}
+// (start/stop — свитчер контейнера; remove — снос + отзыв конфигов этого протокола)
+export const protocolOp = (id: string, proto: string, op: string) =>
+  http.post<Server>(`/servers/${id}/protocols/${proto}/${op}`);
+export const removeProtocol = (id: string, proto: string) => protocolOp(id, proto, "remove");
 export const listProviders = () => http.get<Provider[]>("/providers");
 
 // server access overview (владелец: пулы/группы/пользователи+конфиги этого сервера)

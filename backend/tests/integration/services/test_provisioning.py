@@ -13,7 +13,7 @@ import vpnhub.services.provisioning as prov_mod
 from tests.factories.orm import make_server, make_user, seed
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
-from vpnhub.infra.provisioning.ssh import SshError
+from vpnhub.infra.provisioning.ssh import SshError, SshResult
 from vpnhub.services.provisioning import ProvisioningService
 
 pytestmark = pytest.mark.integration
@@ -23,7 +23,7 @@ PROTO_ID = pc.VENDOR_PROTOS[VENDOR][0]
 
 
 class _NoopSsh:
-    """Успешное SSH-подключение без реальных операций."""
+    """Успешное SSH-подключение; .run() возвращает пустой успешный результат (docker start/stop и т.п.)."""
 
     def __init__(self, creds, *, connect_timeout=20.0):
         self.creds = creds
@@ -33,6 +33,9 @@ class _NoopSsh:
 
     async def __aexit__(self, *exc):
         return False
+
+    async def run(self, _cmd):
+        return SshResult(stdout="", stderr="", exit_status=0)
 
 
 class _RaisingSsh:
@@ -238,3 +241,54 @@ async def test__remove_protocol__marks_absent_and_revokes_only_its_configs(uow, 
             .all()
         )
     assert {r.proto for r in rows} == {"AmneziaWG"}
+
+
+async def test__protocol_op__stop_then_start__flips_only_that_protocol_running(
+    uow, settings, session_maker, monkeypatch
+):
+    """protocol_op(stop|start) одного протокола меняет только его sp.running, не трогая соседний."""
+    # Arrange
+    from tests.factories.orm import make_server_protocol
+    from vpnhub.services.servers import ServerService
+
+    async with seed(session_maker) as s:
+        owner = await make_user(s)
+        server = await make_server(s, owner_id=owner.id, status="online")
+        await make_server_protocol(
+            s,
+            server_id=server.id,
+            proto="xray",
+            vendor="amnezia",
+            container="amnezia-xray",
+            state="installed",
+            installed=True,
+            running=True,
+        )
+        await make_server_protocol(
+            s,
+            server_id=server.id,
+            proto="awg",
+            vendor="amnezia",
+            container="amnezia-awg2",
+            state="installed",
+            installed=True,
+            running=True,
+        )
+    monkeypatch.setattr(prov_mod, "SshClient", _NoopSsh)
+    svc = ServerService(uow, settings)
+
+    # Act — останавливаем только xray
+    await svc.protocol_op(owner.id, server.id, "xray", "stop")
+
+    # Assert — xray остановлен, awg работает; state обоих остаётся installed
+    sp_xray = await _fetch_sp(uow, server.id, "xray")
+    sp_awg = await _fetch_sp(uow, server.id, "awg")
+    assert sp_xray.installed and not sp_xray.running and sp_xray.state == "installed"
+    assert sp_awg.installed and sp_awg.running
+
+    # Act — снова запускаем xray
+    await svc.protocol_op(owner.id, server.id, "xray", "start")
+
+    # Assert — xray снова работает
+    sp_xray = await _fetch_sp(uow, server.id, "xray")
+    assert sp_xray.installed and sp_xray.running
