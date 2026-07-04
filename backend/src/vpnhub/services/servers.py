@@ -7,6 +7,7 @@ Provisioning VPN-ПО — реальный, по SSH (см. services.provisionin
 from __future__ import annotations
 
 import asyncio
+import builtins
 import time
 
 import structlog
@@ -223,7 +224,9 @@ class ServerService:
         log.info("server_monitor_tick", total=len(results), online=online, offline=len(results) - online)
         return len(results)
 
-    async def vpn_op(self, owner_id: str, sid: str, vtype: str, op: str, protos: list[str] | None = None) -> dict:
+    async def vpn_op(
+        self, owner_id: str, sid: str, vtype: str, op: str, protos: builtins.list[str] | None = None
+    ) -> dict:
         if vtype not in VPN_TYPES:
             raise BadRequest("Неизвестный тип VPN")
         if op == "fix":
@@ -266,7 +269,7 @@ class ServerService:
         return result
 
     async def _provisioned_op(
-        self, owner_id: str, sid: str, vendor: str, op: str, protos: list[str] | None = None
+        self, owner_id: str, sid: str, vendor: str, op: str, protos: builtins.list[str] | None = None
     ) -> dict:
         """Реальный provisioning вендора: install(фон, выбранные протоколы)/remove/start/stop."""
         prov = ProvisioningService(self.uow, self.settings)
