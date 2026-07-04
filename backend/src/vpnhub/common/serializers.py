@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from vpnhub.infra.db.orm import models as m
+from vpnhub.infra.provisioning import remediation
 
 
 def rel_time(epoch: float | None) -> str | None:
@@ -71,6 +72,14 @@ def vpn_to_dict(v: m.ServerVpn) -> dict:
     return {"type": v.type, "installed": v.installed, "running": v.running, "port": v.port}
 
 
+def _remediation_dict(p: m.ServerProtocol) -> dict | None:
+    """Подсказка-ремедиация для сбойного протокола (None, если состояние не error или код неизвестен)."""
+    if p.state != "error":
+        return None
+    rem = remediation.resolve(p.error_code, p.error)
+    return remediation.to_dict(rem) if rem is not None else None
+
+
 def protocol_to_dict(p: m.ServerProtocol) -> dict:
     return {
         "vendor": p.vendor,
@@ -81,6 +90,8 @@ def protocol_to_dict(p: m.ServerProtocol) -> dict:
         "installed": p.installed,
         "running": p.running,
         "error": p.error,
+        "errorCode": p.error_code,
+        "remediation": _remediation_dict(p),
         "externalClients": p.external_clients,
     }
 

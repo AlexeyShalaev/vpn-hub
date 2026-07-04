@@ -21,12 +21,14 @@ from sqlalchemy import select
 from vpnhub.api.config import Settings
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
+from vpnhub.infra.provisioning import errors, templates
 from vpnhub.infra.provisioning.awg_params import AwgParams
 from vpnhub.infra.provisioning.provisioners import ClientMaterial, ConfigArtifact, ServerMaterial
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.openvpn import OpenVpnProvisioner
 from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
+from vpnhub.infra.provisioning.remediation import FIXES
 from vpnhub.infra.provisioning.script_runner import already_installed_containers, remove_container
 from vpnhub.infra.provisioning.ssh import ServerCreds, SshClient, SshError
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
@@ -130,7 +132,7 @@ class ProvisioningService:
         """Пометить все протоколы вендора как installing (перед фоновой установкой)."""
         for proto_id in pc.VENDOR_PROTOS[vendor]:
             sp = await self._get_or_create_sp(tx, server_id, proto_id)
-            sp.state, sp.error, sp.installed, sp.running = "installing", None, False, False
+            sp.state, sp.error, sp.error_code, sp.installed, sp.running = "installing", None, None, False, False
 
     def schedule_install(self, server_id: str, vendor: str) -> None:
         _spawn(self._install_vendor(server_id, vendor))
@@ -166,7 +168,7 @@ class ProvisioningService:
                     )
             async with self.uow.transaction() as tx:
                 sp = await self._get_or_create_sp(tx, server_id, proto_id)
-                sp.state, sp.installed, sp.running, sp.error = "installed", True, True, None
+                sp.state, sp.installed, sp.running, sp.error, sp.error_code = "installed", True, True, None, None
                 sp.container, sp.port = spec.container, spec.default_port
                 sp.material_encrypted = self._enc(material.as_dict())
                 if params is not None:
@@ -174,9 +176,11 @@ class ProvisioningService:
                 await self._refresh_vendor_flags(tx, server_id, spec.vendor)  # видно сразу, не дожидаясь всех
             log.info("protocol installed", server=server_id, proto=proto_id)
         except Exception as e:  # фоновая задача: любая ошибка → error-состояние, не роняем loop
+            # стабильный код для движка подсказок: ProvisioningError.code, ssh — для транспортных сбоев
+            code = getattr(e, "code", None) or ("ssh" if isinstance(e, SshError) else "internal")
             async with self.uow.transaction() as tx:
                 sp = await self._get_or_create_sp(tx, server_id, proto_id)
-                sp.state, sp.installed, sp.running, sp.error = "error", False, False, str(e)
+                sp.state, sp.installed, sp.running, sp.error, sp.error_code = "error", False, False, str(e), code
                 await self._refresh_vendor_flags(tx, server_id, spec.vendor)
             log.warning("protocol install failed", server=server_id, proto=proto_id, error=str(e))
 
@@ -198,6 +202,23 @@ class ProvisioningService:
                     await ssh.run(f"sudo rm -rf {state_dir} 2>/dev/null || true")
         except SshError as e:
             log.warning("vendor remove failed", server=server.id, vendor=vendor, error=str(e))
+
+    async def run_fix(self, server: m.Server, fix_id: str) -> None:
+        """Выполнить идемпотентный фикс-скрипт по SSH перед авто-переустановкой.
+
+        fix_id="reinstall" (или неизвестный) — пред-скрипт не нужен, чистит переустановка.
+        Иначе гоняем scripts/<fix.script> и проверяем маркер успеха в объединённом выводе.
+        """
+        fx = FIXES.get(fix_id)
+        if fx is None:  # reinstall-only
+            return
+        try:
+            async with SshClient(self.creds(server)) as ssh:
+                out = (await ssh.run_script(templates.load_shared(fx.script))).output
+        except SshError as e:
+            raise errors.make("ssh", str(e)) from e
+        if fx.ok_marker not in out:
+            raise errors.make("internal", fx.fail_hint)
 
     async def lifecycle_vendor(self, server: m.Server, vendor: str, op: str) -> None:
         """op ∈ {start, stop} — docker start/stop контейнеров протоколов вендора."""
