@@ -15,9 +15,11 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 
 from vpnhub.infra.provisioning import constants as c
+from vpnhub.infra.provisioning import errors
 
 INT32_MAX = 2**31 - 1
 
@@ -219,3 +221,134 @@ def generate(is_awg2: bool, rng: random.Random | None = None) -> AwgParams:
         h1=h1, h2=h2, h3=h3, h4=h4,
         protocol_version="2" if is_awg2 else "",
     )  # fmt: skip
+
+
+# --------------------------------------------------------------- пресеты ---
+
+# Редактируемые obfuscation-поля (subnet/i-junk/protocol_version НЕ трогаем — иначе слетит адресация).
+EDITABLE_FIELDS = ("jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4")
+
+# Только редактируемые поля; остальное (subnet/i1-i5/protocol_version) берётся из текущего AwgParams.
+# H1-H4 для legacy — одиночные числа; для awg2 форма/бэкенд принимают диапазоны "a-b" при ручном вводе,
+# в пресетах держим одиночные значения (валидны и для awg2 как вырожденный диапазон "n-n" после нормализации).
+PRESETS: dict[str, dict[str, str]] = {
+    # default — «сгенерировать заново» (спецкейс, значения не из этого словаря; см. build_target_params)
+    "default": {},
+    # aggressive — больший объём junk (сильнее маскировка, выше оверхед)
+    "aggressive": {"jc": "6", "jmin": "40", "jmax": "70", "s1": "120", "s2": "140", "s3": "40", "s4": "15"},
+    # mobile — минимальный оверхед под мобильные сети
+    "mobile": {"jc": "4", "jmin": "10", "jmax": "30", "s1": "20", "s2": "35", "s3": "5", "s4": "3"},
+}
+
+
+def _as_int(name: str, value: str) -> int:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError) as e:
+        raise errors.make("invalid_params", f"{name}: ожидается целое число, получено {value!r}") from e
+
+
+def _parse_header(name: str, value: str, is_awg2: bool) -> tuple[int, int]:
+    """H1-H4: legacy — одиночное число >4; awg2 — диапазон 'a-b' (a≤b) либо одиночное число."""
+    raw = str(value).strip()
+    if is_awg2 and "-" in raw:
+        a_s, b_s = raw.split("-", 1)
+        a, b = _as_int(name, a_s), _as_int(name, b_s)
+        if a > b:
+            raise errors.make("invalid_params", f"{name}: диапазон '{raw}' должен быть возрастающим (a≤b)")
+        lo, hi = a, b
+    else:
+        lo = hi = _as_int(name, raw)
+    if lo <= 4:
+        raise errors.make("invalid_params", f"{name}: значение заголовка должно быть > 4")
+    return lo, hi
+
+
+def validate(params: AwgParams, is_awg2: bool) -> None:
+    """Проверить obfuscation-параметры; при нарушении — errors.make('invalid_params', ...)."""
+    jc = _as_int("Jc", params.jc)
+    if not 1 <= jc <= 10:
+        raise errors.make("invalid_params", "Jc должно быть в диапазоне [1, 10]")
+    jmin, jmax = _as_int("Jmin", params.jmin), _as_int("Jmax", params.jmax)
+    if jmin >= jmax:
+        raise errors.make("invalid_params", "Jmin должно быть меньше Jmax")
+
+    s1, s2 = _as_int("S1", params.s1), _as_int("S2", params.s2)
+    for nm, val in (("S1", s1), ("S2", s2)):
+        if not 1 <= val <= 1000:
+            raise errors.make("invalid_params", f"{nm} должно быть в диапазоне [1, 1000]")
+    sizes = {"S1": s1, "S2": s2}
+    if s1 + MSG_INITIATION_SIZE == s2 + MSG_RESPONSE_SIZE:
+        raise errors.make("invalid_params", "S1 и S2 дают одинаковый размер пакета — запрещено")
+    if is_awg2:
+        s3, s4 = _as_int("S3", params.s3), _as_int("S4", params.s4)
+        sizes["S3"], sizes["S4"] = s3, s4
+        if s1 + MSG_INITIATION_SIZE == s3 + MSG_COOKIE_REPLY_SIZE:
+            raise errors.make("invalid_params", "S1 и S3 дают одинаковый размер пакета — запрещено")
+        if s2 + MSG_RESPONSE_SIZE == s3 + MSG_COOKIE_REPLY_SIZE:
+            raise errors.make("invalid_params", "S2 и S3 дают одинаковый размер пакета — запрещено")
+    if len(set(sizes.values())) != len(sizes):
+        raise errors.make("invalid_params", "Значения S1..S4 должны быть уникальными")
+
+    headers = [_parse_header(nm, getattr(params, nm.lower()), is_awg2) for nm in ("H1", "H2", "H3", "H4")]
+    if len({h[0] for h in headers}) != len(headers):
+        raise errors.make("invalid_params", "Заголовки H1..H4 должны быть попарно различны")
+
+
+def merge_editable(current: AwgParams, patch: dict[str, str]) -> AwgParams:
+    """Наложить только редактируемые ключи на копию текущего (subnet/i-junk/protocol_version сохраняются)."""
+    updates = {k: str(v) for k, v in patch.items() if k in EDITABLE_FIELDS}
+    return replace(current, **updates)
+
+
+def rewrite_interface_params(conf_text: str, params: AwgParams, is_awg2: bool) -> str:
+    """Переписать obfuscation-строки в секции [Interface] живого awg0.conf; [Peer]-секции нетронуты.
+
+    Работает построчно только внутри [Interface]; строки Jc/Jmin/Jmax/S1..S4/H1..H4 (и закомментированные
+    # I1..) заменяются на актуальные значения из params. Отсутствующие в конфиге ключи добавляются в конец
+    секции [Interface].
+    """
+    replacements: dict[str, str] = {
+        "Jc": params.jc, "Jmin": params.jmin, "Jmax": params.jmax,
+        "S1": params.s1, "S2": params.s2,
+        "H1": params.h1, "H2": params.h2, "H3": params.h3, "H4": params.h4,
+    }  # fmt: skip
+    if is_awg2:
+        replacements["S3"] = params.s3
+        replacements["S4"] = params.s4
+
+    lines = conf_text.splitlines()
+    out: list[str] = []
+    in_interface = False
+    seen: set[str] = set()
+    section_re = re.compile(r"^\s*\[(?P<name>[^\]]+)\]\s*$")
+    kv_re = re.compile(r"^(?P<indent>\s*)(?P<key>[A-Za-z0-9]+)(?P<sp>\s*=\s*).*$")
+
+    def flush_missing(dst: list[str]) -> None:
+        for key, val in replacements.items():
+            if key not in seen:
+                dst.append(f"{key} = {val}")
+                seen.add(key)
+
+    for raw in lines:
+        m = section_re.match(raw)
+        if m is not None:
+            if in_interface:
+                flush_missing(out)  # добавить недостающие ключи перед закрытием [Interface]
+            in_interface = m.group("name").strip().lower() == "interface"
+            out.append(raw)
+            continue
+        if in_interface:
+            km = kv_re.match(raw)
+            if km is not None and km.group("key") in replacements:
+                key = km.group("key")
+                out.append(f"{km.group('indent')}{key}{km.group('sp')}{replacements[key]}")
+                seen.add(key)
+                continue
+        out.append(raw)
+
+    if in_interface:
+        flush_missing(out)
+
+    trailing = "\n" if conf_text.endswith("\n") else ""
+    return "\n".join(out) + trailing

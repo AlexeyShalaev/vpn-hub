@@ -10,7 +10,7 @@ import re
 
 from vpnhub.infra.provisioning import constants as c
 from vpnhub.infra.provisioning import errors, ipalloc, keys, script_runner, templates, vpn_uri
-from vpnhub.infra.provisioning.awg_params import AwgParams
+from vpnhub.infra.provisioning.awg_params import AwgParams, rewrite_interface_params
 from vpnhub.infra.provisioning.awg_params import generate as gen_params
 from vpnhub.infra.provisioning.provisioners import base
 from vpnhub.infra.provisioning.provisioners.base import ClientMaterial, ConfigArtifact, ServerMaterial
@@ -88,6 +88,17 @@ class AwgProvisioner:
         await ssh.upload_to_container(self.spec.container, new_conf, self.spec.server_config_path, append=False)
         await self._syncconf(ssh)
         await base.remove_client_row(ssh, self.spec, client_id)
+
+    async def set_params(self, ssh: SshClient, new_params: AwgParams) -> None:
+        """Переписать obfuscation-строки в живом [Interface] awg0.conf и применить (syncconf).
+
+        Пиры ([Peer]) сохраняются — простой ~секунды. После вызова self._params — новые.
+        """
+        conf = await ssh.read_container_text(self.spec.container, self.spec.server_config_path)
+        new_conf = rewrite_interface_params(conf, new_params, self.spec.is_awg2)
+        await ssh.upload_to_container(self.spec.container, new_conf, self.spec.server_config_path, append=False)
+        await self._syncconf(ssh)
+        self._params = new_params
 
     async def _syncconf(self, ssh: SshClient) -> None:
         b, iface, path = self.spec.bin, self.spec.interface, self.spec.server_config_path

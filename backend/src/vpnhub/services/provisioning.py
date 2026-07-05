@@ -280,6 +280,15 @@ class ProvisioningService:
         async with SshClient(creds) as ssh:
             await ssh.run(f"sudo docker {op} {spec.container}")
 
+    async def set_protocol_params(self, server: m.Server, sp: m.ServerProtocol, new_params: AwgParams) -> None:
+        """Применить новые obfuscation-параметры к живому awg0.conf по SSH (syncconf сохраняет пиров)."""
+        creds = self.creds(server)
+        async with SshClient(creds) as ssh:
+            prov = self.loaded_provisioner(sp)
+            if not isinstance(prov, AwgProvisioner):
+                raise errors.make("internal", "set_protocol_params вызван для не-AWG протокола")
+            await prov.set_params(ssh, new_params)
+
     async def check_server(self, server: m.Server) -> tuple[bool, int | None, dict[str, str]]:
         """Реальная проверка: (online, latency_ms, {container: port}) через docker ps по SSH."""
         creds = self.creds(server)

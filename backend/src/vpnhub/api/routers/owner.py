@@ -160,6 +160,20 @@ async def vpn_op(
     return await svc.vpn_op(ident.id, sid, vtype, op, protos)
 
 
+@router.patch("/servers/{sid}/protocols/{proto}/params")
+async def set_protocol_params(
+    sid: str,
+    proto: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    # body: { "preset"?: "default"|"aggressive"|"mobile", "values"?: {jc,jmin,...} } — смена obfuscation AWG
+    preset = body.get("preset") if isinstance(body, dict) else None
+    values = body.get("values") if isinstance(body, dict) else None
+    return await svc.set_protocol_params(ident.id, sid, proto, preset, values)
+
+
 @router.post("/servers/{sid}/protocols/{proto}/{op}")
 async def protocol_op(
     sid: str,

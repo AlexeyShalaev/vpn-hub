@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import json
 import time
 
 import structlog
@@ -23,9 +24,11 @@ from vpnhub.infra import metrics
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.probe import ProbeResult, probe_tcp
+from vpnhub.infra.provisioning import awg_params, remediation
 from vpnhub.infra.provisioning import constants as pc
-from vpnhub.infra.provisioning import remediation
+from vpnhub.infra.provisioning.awg_params import AwgParams
 from vpnhub.infra.provisioning.errors import ProvisioningError
+from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.ssh import SshError
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
@@ -411,6 +414,68 @@ class ServerService:
             if sp is not None:
                 sp.running = op == "start"
             await ProvisioningService._refresh_vendor_flags(tx, sid, spec.vendor)
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            return server_to_dict(s, self._secret(s))
+
+    async def set_protocol_params(
+        self,
+        owner_id: str,
+        sid: str,
+        proto_id: str,
+        preset: str | None = None,
+        values: dict[str, str] | None = None,
+    ) -> dict:
+        """Сменить obfuscation-параметры AmneziaWG: переписать живой awg0.conf по SSH + записать params_json.
+
+        Порядок важен: сначала SSH-применение, затем запись в БД — при SSH-ошибке params_json не меняется
+        (иначе рассинхрон сторон и все клиенты отвалятся). Пиры сохраняются (syncconf).
+        """
+        if proto_id not in pc.PROTOCOLS:
+            raise BadRequest("Неизвестный протокол")
+        spec = pc.spec_by_id(proto_id)
+        if spec.kind != "wireguard":
+            raise BadRequest("Параметры обфускации доступны только для AmneziaWG")
+
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.query() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            if s.status != "online":
+                raise BadRequest("Сервер должен быть онлайн")
+            sp = next((p for p in s.protocols if p.proto == proto_id), None)
+            if not sp or not sp.installed or not sp.running:
+                raise BadRequest("Протокол не установлен или остановлен")
+
+            current = AwgParams.from_dict(json.loads(sp.params_json)) if sp.params_json else None
+            if current is None:
+                raise BadRequest("Нет текущих параметров обфускации")
+
+            if preset == "default":
+                fresh = AwgProvisioner.new_params(spec.is_awg2)
+                # сохранить subnet/i-junk текущего сервера, обновить только obfuscation-поля
+                target = awg_params.merge_editable(current, fresh.as_dict())
+            elif preset in ("aggressive", "mobile"):
+                target = awg_params.merge_editable(current, awg_params.PRESETS[preset])
+            elif values:
+                target = awg_params.merge_editable(current, values)
+            else:
+                raise BadRequest("Укажите preset или values")
+
+        try:
+            awg_params.validate(target, spec.is_awg2)
+        except ProvisioningError as e:
+            raise BadRequest(e.message) from e
+
+        try:
+            await prov.set_protocol_params(s, sp, target)
+        except (SshError, ProvisioningError) as e:
+            raise BadRequest(f"Не удалось применить параметры на сервере: {e}") from e
+
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            sp2 = next((p for p in s.protocols if p.proto == proto_id), None)
+            if sp2 is not None:
+                sp2.params_json = json.dumps(target.as_dict())
             await tx.session.flush()
             await tx.session.refresh(s)
             return server_to_dict(s, self._secret(s))

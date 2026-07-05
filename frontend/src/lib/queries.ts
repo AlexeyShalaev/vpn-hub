@@ -72,6 +72,13 @@ export const vpnFix = (id: string, type: string) => http.post<Server>(`/servers/
 export const protocolOp = (id: string, proto: string, op: string) =>
   http.post<Server>(`/servers/${id}/protocols/${proto}/${op}`);
 export const removeProtocol = (id: string, proto: string) => protocolOp(id, proto, "remove");
+// смена obfuscation-параметров AmneziaWG: preset ∈ {default, aggressive, mobile} ЛИБО values (ручной ввод).
+// переписывает живой awg0.conf + syncconf (пиры сохраняются) и обновляет params_json.
+export const setProtocolParams = (
+  id: string,
+  proto: string,
+  body: { preset?: string; values?: Record<string, string> },
+) => http.patch<Server>(`/servers/${id}/protocols/${proto}/params`, body);
 export const listProviders = () => http.get<Provider[]>("/providers");
 
 // server access overview (владелец: пулы/группы/пользователи+конфиги этого сервера)
