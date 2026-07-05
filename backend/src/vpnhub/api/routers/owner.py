@@ -13,6 +13,7 @@ from vpnhub.services.groups import GroupService
 from vpnhub.services.pools import PoolService
 from vpnhub.services.server_access import ServerAccessService
 from vpnhub.services.servers import ServerService
+from vpnhub.services.traffic import TrafficService
 
 router = APIRouter(prefix="/api/v1", tags=["owner"])
 
@@ -83,6 +84,16 @@ async def sync_server(
     sid: str, ident: Identity = Depends(require_user), svc: ServerService = Depends(service(ServerService))
 ) -> dict:
     return await svc.sync(ident.id, sid)
+
+
+@router.get("/servers/{sid}/traffic")
+async def server_traffic(
+    sid: str,
+    period: str = "24h",
+    ident: Identity = Depends(require_user),
+    svc: TrafficService = Depends(service(TrafficService)),
+) -> dict:
+    return await svc.overview(ident.id, sid, period)
 
 
 @router.get("/servers/{sid}/access")

@@ -26,6 +26,7 @@ from vpnhub.services.pools import PoolService
 from vpnhub.services.server_access import ServerAccessService
 from vpnhub.services.servers import ServerService
 from vpnhub.services.sync import SyncService
+from vpnhub.services.traffic import TrafficService
 
 
 class AppProvider(Provider):
@@ -75,6 +76,7 @@ class AppProvider(Provider):
     admin = provide(AdminService)
     backups = provide(BackupService)
     audit = provide(AuditService)
+    traffic = provide(TrafficService)
 
 
 def build_container() -> AsyncContainer:

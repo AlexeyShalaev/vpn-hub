@@ -27,6 +27,7 @@ from vpnhub.services.backups import BackupService
 from vpnhub.services.bootstrap import ensure_bootstrap_admin, normalize_user_phones
 from vpnhub.services.servers import ServerService
 from vpnhub.services.sync import SyncService
+from vpnhub.services.traffic import TrafficService
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -82,6 +83,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     audit = await container.get(AuditService)
     scheduler.add_job(audit.purge_old, "interval", hours=24, id="audit-retention", max_instances=1, coalesce=True)
+
+    traffic = await container.get(TrafficService)
+    scheduler.add_job(traffic.purge_old, "interval", hours=24, id="traffic-retention", max_instances=1, coalesce=True)
 
     monitor = await container.get(ServerService)
     if settings.monitor_enabled:

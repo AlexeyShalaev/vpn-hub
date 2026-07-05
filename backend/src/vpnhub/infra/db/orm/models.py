@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_foundation_kit import BaseTable, DatetimeColumnsMixin
 
@@ -194,6 +194,34 @@ class DeviceConfig(BaseTable):
     client_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="configs")
+
+
+class TrafficSample(BaseTable):
+    """Дельта-сэмпл трафика/подключений одного клиента по протоколу за один sync-тик.
+
+    Пишется в sync-тике (best-effort) для установленных wireguard-протоколов из `wg/awg show dump`.
+    `rx_bytes`/`tx_bytes` — кумулятивные счётчики (как отдаёт wg), `rx_delta`/`tx_delta` — прирост от
+    прошлого сэмпла (для графика; при рестарте счётчиков curr<prev дельта = curr). Онлайн-статус
+    вычисляется из свежести `last_handshake` (now - last_handshake < online-окно).
+    external-клиенты (без нашего DeviceConfig) пишутся с `device_config_id=None`.
+
+    Ретеншн — фоновой purge-джобой (`traffic_retention_days`). Будущее: даунсэмплинг агрегатов.
+    """
+
+    __tablename__ = "traffic_samples"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    server_id: Mapped[str] = mapped_column(String(32), index=True)
+    proto: Mapped[str] = mapped_column(String(24))  # id протокола (awg | awg_legacy | ...)
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # pubkey/uuid; None — агрегат
+    device_config_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # None → external-клиент
+    at: Mapped[float] = mapped_column(index=True)  # epoch seconds (как AuditEvent.at)
+    rx_bytes: Mapped[int] = mapped_column(Integer, default=0)  # кумулятивно (как отдаёт wg)
+    tx_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    rx_delta: Mapped[int] = mapped_column(Integer, default=0)  # прирост от прошлого сэмпла
+    tx_delta: Mapped[int] = mapped_column(Integer, default=0)
+    last_handshake: Mapped[float | None] = mapped_column(nullable=True)  # epoch; None — рукопожатий не было
+
+    __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
 
 
 class Setting(BaseTable):

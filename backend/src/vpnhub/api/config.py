@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     # аудит-лог: сколько дней хранить события (фоновая чистка audit-retention)
     audit_retention_days: int = 90
 
+    # дашборд трафика (owner): сколько дней хранить сэмплы трафика (фоновой purge traffic-retention)
+    traffic_retention_days: int = 30
+    # клиент считается онлайн, если последний handshake свежее этого окна (сек)
+    traffic_online_window_seconds: int = 180
+
     # Подтверждение телефона по SMS/OTP не используется: вход по номеру и паролю,
     # а новые самостоятельные регистрации подтверждает администратор вручную.
 

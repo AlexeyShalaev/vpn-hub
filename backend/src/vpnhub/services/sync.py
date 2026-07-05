@@ -46,6 +46,7 @@ from vpnhub.services.sync_logic import (
     parse_pending,
     plan_drain,
 )
+from vpnhub.services.traffic import PeerStat, TrafficCollector, TrafficService
 
 log = structlog.get_logger()
 
@@ -91,6 +92,7 @@ class SyncService:
         adopted: dict[str, tuple[dict, str | None]] = {}
         observations: dict[str, ProtocolObservation] = {}
         drained_by_proto: dict[str, set[str]] = {}  # погашенный долг на снятие (для записи в фазе 3)
+        traffic_by_proto: dict[str, list[PeerStat]] = {}  # собранная статистика трафика (best-effort)
         try:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
                 containers = await list_known_containers(ssh)
@@ -113,6 +115,12 @@ class SyncService:
                             readable = True
                         except Exception as e:  # чтение клиентов не удалось — не рискуем revoke
                             log.warning("sync: read clients failed", server=server_id, proto=pid, error=str(e))
+                        try:  # сбор трафика строго best-effort: НЕ влияет на решения sync/revoke
+                            stats = await TrafficCollector.collect(ssh, spec)
+                            if stats:
+                                traffic_by_proto[pid] = stats
+                        except Exception as e:
+                            log.warning("sync: traffic collect failed", server=server_id, proto=pid, error=str(e))
                     obs = ProtocolObservation(pid, present, running, readable, client_ids)
                     observations[pid] = obs
                     # гасим долг на снятие для протокола в рамках уже открытой SSH-сессии
@@ -127,7 +135,17 @@ class SyncService:
             return {"server": server_id, "reachable": False, "error": str(e)}
 
         # ── фаза 3: сверка и запись в БД ──
-        return await self._apply(server_id, installing, observations, adopted, drained_by_proto)
+        result = await self._apply(server_id, installing, observations, adopted, drained_by_proto)
+
+        # ── фаза 4: запись сэмплов трафика ОТДЕЛЬНОЙ транзакцией (изолируем от sync-инвариантов) ──
+        if traffic_by_proto:
+            traffic = TrafficService(self.uow, self.settings)
+            for pid, stats in traffic_by_proto.items():
+                try:
+                    await traffic.record(server_id, pid, stats)
+                except Exception as e:  # запись статистики не должна ронять результат sync
+                    log.warning("sync: traffic record failed", server=server_id, proto=pid, error=str(e))
+        return result
 
     async def _drain_pending(
         self, ssh: SshClient, server_id: str, pid: str, pending: set[str], obs: ProtocolObservation, provo: Any
