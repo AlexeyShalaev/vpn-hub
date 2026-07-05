@@ -403,6 +403,9 @@ a {
 .dot.outline {
   background: var(--outline);
 }
+.dot.hysteria2 {
+  background: var(--hysteria2);
+}
 .dot.online {
   background: var(--ok);
 }
