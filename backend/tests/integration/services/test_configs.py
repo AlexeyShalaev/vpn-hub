@@ -171,6 +171,8 @@ async def test__generate__peek__lists_protocols_without_provisioning(uow, settin
     assert res["formats"] == []
     assert res["text"] == "" and res["uri"] == ""
     assert set(res["protos"]) >= {"AmneziaWG", "Xray"}
+    # bundle — установленные склеиваемые протоколы (awg/xray), одной кнопкой «все сразу» в UI
+    assert set(res["bundle"]) == {"AmneziaWG", "Xray"}
     assert len(res["clients"]) > 0
     # никакого провижининга: DeviceConfig для устройства не создан
     async with uow.query() as tx:
@@ -178,3 +180,72 @@ async def test__generate__peek__lists_protocols_without_provisioning(uow, settin
             (await tx.session.execute(select(m.DeviceConfig).where(m.DeviceConfig.device_id == dev.id))).scalars().all()
         )
     assert rows == []
+
+
+async def test__generate__xray_xhttp_selected__own_config_without_bundle(uow, settings, session_maker):
+    """Явно выбран xray_xhttp (в бандл не входит) → отдаём его собственный vless://, БЕЗ формата-бандла,
+    даже если рядом установлен склеиваемый awg."""
+    key = settings.secret_key
+    awg_material = encrypt_secret(key, json.dumps(ServerMaterial(server_public_key="SPUB", psk="PSK").as_dict()))
+    awg_params = json.dumps(gen_awg_params(is_awg2=True).as_dict())
+    xhttp_material = encrypt_secret(
+        key,
+        json.dumps(
+            ServerMaterial(
+                xray_public_key="XPBK", short_id="0123456789abcdef", site="www.bing.com", xhttp_path="/abc"
+            ).as_dict()
+        ),
+    )
+    async with seed(session_maker) as s:
+        owner = await make_user(s)
+        server = await make_server(s, owner_id=owner.id, status="online")
+        await make_server_protocol(
+            s,
+            server_id=server.id,
+            proto="awg",
+            vendor="amnezia",
+            container="amnezia-awg2",
+            state="installed",
+            installed=True,
+            running=True,
+            material_encrypted=awg_material,
+            params_json=awg_params,
+        )
+        await make_server_protocol(
+            s,
+            server_id=server.id,
+            proto="xray_xhttp",
+            vendor="amnezia",
+            container="amnezia-xray-xhttp",
+            state="installed",
+            installed=True,
+            running=True,
+            material_encrypted=xhttp_material,
+        )
+        dev = await make_device(s, user_id=owner.id)
+        # готовые конфиги устройства: awg (склеиваемый) и Xray XHTTP (нет)
+        await make_device_config(
+            s,
+            device_id=dev.id,
+            server_id=server.id,
+            vpn_type="amnezia",
+            proto="AmneziaWG",
+            client_id="WGPUB",
+            client_ip="10.8.1.2",
+        )
+        await make_device_config(
+            s,
+            device_id=dev.id,
+            server_id=server.id,
+            vpn_type="amnezia",
+            proto="Xray XHTTP",
+            client_id="xhttp-uuid-1",
+        )
+    svc = ConfigService(uow, settings)
+
+    # Act — выдаём именно xray_xhttp
+    res = await svc._generate_provisioned("amnezia", owner.id, server.id, dev.id, "Xray XHTTP", "ios", peek=False)
+
+    # Assert — формата-бандла (id="amnezia") нет; отдана собственная vless-ссылка с uuid xhttp-клиента
+    assert "amnezia" not in [f["id"] for f in res["formats"]]
+    assert res["uri"].startswith("vless://") and "xhttp-uuid-1" in res["uri"]

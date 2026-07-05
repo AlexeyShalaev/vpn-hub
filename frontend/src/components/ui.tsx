@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { PLATFORM_GLYPH_D } from "../lib/platformGlyphs";
 import { generateRecoveryKey } from "../lib/recoveryKey";
 import type { VpnType } from "../lib/types";
 import { VPN_LABEL } from "../lib/types";
@@ -46,35 +47,10 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M11 19.2h2" />
     </>
   ),
-  android: (
-    <>
-      <path d="M5.5 12a6.5 6.5 0 0 1 13 0v5.4a1.1 1.1 0 0 1-1.1 1.1H6.6a1.1 1.1 0 0 1-1.1-1.1z" />
-      <path d="M8.5 6 7 3.8" />
-      <path d="M15.5 6 17 3.8" />
-      <path d="M9.6 9.3h.01" />
-      <path d="M14.4 9.3h.01" />
-    </>
-  ),
   mac: (
     <>
       <rect x="5" y="4" width="14" height="10" rx="1.6" />
       <path d="M2.5 18h19l-1.8-2.6a1 1 0 0 0-.82-.44H5.12a1 1 0 0 0-.82.44z" />
-    </>
-  ),
-  windows: (
-    <>
-      <rect x="4" y="5" width="7" height="7" rx="0.8" />
-      <rect x="13" y="5" width="7" height="7" rx="0.8" />
-      <rect x="4" y="14" width="7" height="7" rx="0.8" />
-      <rect x="13" y="14" width="7" height="7" rx="0.8" />
-    </>
-  ),
-  linux: (
-    <>
-      <path d="M12 3a2.6 2.6 0 0 1 2.6 2.6v2.7c1.6 1.2 3.4 3.6 3.4 6.4a6 6 0 0 1-12 0c0-2.8 1.8-5.2 3.4-6.4V5.6A2.6 2.6 0 0 1 12 3z" />
-      <path d="M10.6 6.7h.01" />
-      <path d="M13.4 6.7h.01" />
-      <path d="M11 8.9l1 .9 1-.9" />
     </>
   ),
   router: (
@@ -199,6 +175,15 @@ const PATHS: Record<string, ReactNode> = {
 };
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
+  // Официальные бренд-глифы платформ рисуются заливкой (currentColor), остальные — штрихом.
+  const glyph = PLATFORM_GLYPH_D[name];
+  if (glyph) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+        <path d={glyph} />
+      </svg>
+    );
+  }
   return (
     <svg
       width={size}

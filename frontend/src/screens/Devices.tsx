@@ -85,14 +85,22 @@ function DeviceCard({
                 <div
                   key={`${c.serverId}-${c.type}-${c.proto ?? ""}`}
                   className="rowflex"
-                  style={{ justifyContent: "space-between", gap: 8, opacity: revoked ? 0.55 : 1 }}
+                  style={{ justifyContent: "space-between", gap: 8, flexWrap: "nowrap", opacity: revoked ? 0.55 : 1 }}
                 >
-                  <span className="chip" style={{ minWidth: 0 }}>
-                    <span className={`dot ${c.type}`} />
-                    {configLabel(c, serverNames[c.serverId] ?? "—")}
-                    {revoked ? " · отозван" : ""}
+                  <span className="chip" style={{ minWidth: 0, overflow: "hidden" }}>
+                    <span className={`dot ${c.type}`} style={{ flex: "none" }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                      {configLabel(c, serverNames[c.serverId] ?? "—")}
+                      {revoked ? " · отозван" : ""}
+                    </span>
                   </span>
-                  <Btn variant="ghost" sm aria-label="Отозвать конфиг" onClick={() => onRevokeConfig(c)}>
+                  <Btn
+                    variant="ghost"
+                    sm
+                    aria-label="Отозвать конфиг"
+                    style={{ flex: "none" }}
+                    onClick={() => onRevokeConfig(c)}
+                  >
                     <Icon name="trash" size={14} />
                   </Btn>
                 </div>

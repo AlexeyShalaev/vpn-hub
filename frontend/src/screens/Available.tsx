@@ -171,6 +171,31 @@ function GetConfigModal({
     onSuccess: () => toast("Конфиг сохранён для устройства"),
   });
 
+  // Варианты выбора протокола. Bundlable amnezia-протоколы (awg/awg_legacy/xray) физически
+  // выдаются одним vpn:// — поэтому 2+ таких показываем ОДНОЙ кнопкой «все сразу». Остальные
+  // (xray_xhttp и др. вендоры) — отдельными. Неустановленных здесь нет — бэкенд их не отдаёт.
+  const protoOptions = useMemo(() => {
+    const protos = cfg?.protos ?? [];
+    const bundle = cfg?.bundle ?? [];
+    const grouped = bundle.length >= 2;
+    const singles = grouped ? protos.filter((p) => !bundle.includes(p)) : protos;
+    const opts: { key: string; label: string; sub?: string; proto: string }[] = [];
+    if (grouped) {
+      opts.push({
+        key: "__bundle__",
+        label: "Все протоколы Amnezia",
+        sub: `${bundle.join(" · ")} — в одном конфиге`,
+        proto: bundle[0],
+      });
+    }
+    for (const p of singles) opts.push({ key: p, label: p, proto: p });
+    return { opts, bundle };
+  }, [cfg?.protos, cfg?.bundle]);
+
+  // Показываем/требуем выбор, если вариантов >1 ИЛИ есть склейка (чтобы явно подписать «все сразу»).
+  const needsProto = protoOptions.opts.length > 1 || protoOptions.bundle.length >= 2;
+  const selectedKey = proto ? (protoOptions.bundle.includes(proto) ? "__bundle__" : proto) : undefined;
+
   const title = VPN_LABEL[target.vpn];
   const noDevices = !devicesLoading && (!devices || devices.length === 0);
 
@@ -379,7 +404,7 @@ function GetConfigModal({
             ))}
           </div>
 
-          {cfg && cfg.protos.length > 1 && (
+          {cfg && needsProto && (
             <>
               <label
                 style={{
@@ -392,18 +417,39 @@ function GetConfigModal({
               >
                 Протокол
               </label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
-                {cfg.protos.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`chip ${p === proto ? "selected" : ""}`}
-                    onClick={() => setProto(p)}
-                    style={{ cursor: "pointer", padding: "8px 14px" }}
-                  >
-                    {p}
-                  </button>
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                {protoOptions.opts.map((o) => {
+                  const active = o.key === selectedKey;
+                  return (
+                    <button
+                      key={o.key}
+                      type="button"
+                      onClick={() => setProto(o.proto)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "11px 13px",
+                        borderRadius: 11,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        border: active ? "1.5px solid var(--ink)" : "1px solid var(--border-strong)",
+                        background: active ? "var(--surface-2)" : "var(--surface)",
+                        color: "var(--text)",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13.5 }}>{o.label}</div>
+                        {o.sub && <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>{o.sub}</div>}
+                      </div>
+                      {active && (
+                        <span style={{ color: "var(--ink)", flex: "none" }}>
+                          <Icon name="check" size={16} />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
@@ -488,14 +534,14 @@ function GetConfigModal({
           <Btn
             variant="primary"
             block
-            disabled={!deviceId || cfgFetching || !cfg || ((cfg.protos?.length ?? 0) > 1 && !proto)}
+            disabled={!deviceId || cfgFetching || !cfg || (needsProto && !proto)}
             onClick={() => setStep("config")}
           >
             {cfgFetching ? (
               <Spinner />
             ) : !deviceId ? (
               "Выберите устройство"
-            ) : (cfg?.protos?.length ?? 0) > 1 && !proto ? (
+            ) : needsProto && !proto ? (
               "Выберите протокол"
             ) : (
               "Показать конфиг"
