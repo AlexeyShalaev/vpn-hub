@@ -237,6 +237,7 @@ export interface SystemInfo {
   masterKeyInsecure: boolean;
   masterKeyFromEnv: boolean;
   updateSupported: boolean;
+  updateMode: "command" | "webhook" | "k8s" | "manual";
   db: { engine: string; host: string; name: string; status: string; latency: string | null };
   lastBackup: string;
   backupFrequency: string; // off|daily|weekly|monthly
@@ -256,11 +257,24 @@ export interface UpdateCheck {
 
 export interface UpgradeResult {
   ok: boolean;
+  accepted?: boolean; // применение запущено в фоне — дальше поллим UpgradeStatus
+  mode?: string;
+  target?: string;
+  from?: string;
   manual?: boolean;
   message?: string;
   instructions?: string[];
   code?: number;
   log?: string;
+}
+
+export interface UpgradeStatus {
+  state: "idle" | "running" | "triggered" | "failed";
+  mode?: string;
+  target?: string;
+  from?: string;
+  log?: string;
+  version: string; // текущая версия бэкенда: стала равной target → обновление удалось
 }
 
 export const VPN_LABEL: Record<VpnType, string> = {
@@ -274,6 +288,13 @@ export const VPN_DESC: Record<VpnType, string> = {
   openvpn: "Классика, максимальная совместимость с устройствами.",
   outline: "Один ключ, проще всего для новичков.",
   hysteria2: "Быстрый QUIC-протокол с обфускацией — хорош на нестабильных и мобильных сетях.",
+};
+// Иконка ПО-вендора (см. PATHS в components/ui). Красится акцентом var(--<type>).
+export const VPN_ICON: Record<VpnType, string> = {
+  amnezia: "vpn_amnezia",
+  openvpn: "vpn_openvpn",
+  outline: "vpn_outline",
+  hysteria2: "vpn_hysteria2",
 };
 export const PROTO_LABEL: Record<string, string> = {
   awg: "AmneziaWG",

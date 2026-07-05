@@ -331,29 +331,55 @@ export function AccessScreen() {
                           {mono(s.name)}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 15 }}>{s.name}</div>
-                          <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-                            {s.provider} · {s.location}
-                          </div>
-                        </div>
-                        {byPool && (
-                          <span
+                          <div
                             style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              padding: "5px 10px",
-                              borderRadius: 999,
-                              background: "var(--accent-soft)",
-                              color: "var(--text-2)",
+                              fontWeight: 700,
+                              fontSize: 15,
                               whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
                             }}
                           >
-                            через пул «{byPoolNames![0]}»
-                          </span>
-                        )}
-                        {installed.length === 0 && !byPool && (
-                          <span style={{ fontSize: 12, color: "var(--text-3)" }}>нет VPN</span>
-                        )}
+                            {s.name}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "var(--text-3)",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {s.provider} · {s.location}
+                          </div>
+                          {/* метки — под названием, чтобы на узком экране не наезжать на имя/свитчер */}
+                          {(byPool || installed.length === 0) && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                              {byPool && (
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    padding: "4px 9px",
+                                    borderRadius: 999,
+                                    background: "var(--accent-soft)",
+                                    color: "var(--text-2)",
+                                    maxWidth: "100%",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  через пул «{byPoolNames![0]}»
+                                </span>
+                              )}
+                              {installed.length === 0 && !byPool && (
+                                <span style={{ fontSize: 12, color: "var(--text-3)" }}>нет VPN</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         <Switch
                           on={grantedAny}
                           onClick={() =>

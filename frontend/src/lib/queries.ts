@@ -16,6 +16,7 @@ import type {
   SystemInfo,
   UpdateCheck,
   UpgradeResult,
+  UpgradeStatus,
   VpnAdvanced,
   VpnExternal,
 } from "./types";
@@ -127,6 +128,8 @@ export const adminDeleteUser = (id: string) => http.del(`/admin/users/${id}`);
 export const adminSystem = () => http.get<SystemInfo>("/admin/system");
 export const adminCheckUpdates = () => http.post<UpdateCheck>("/admin/system/check-updates");
 export const adminUpgrade = () => http.post<UpgradeResult>("/admin/system/upgrade");
+// поллится во время применения обновления: смена version = успех, state=failed = ошибка
+export const adminUpgradeStatus = () => http.get<UpgradeStatus>("/admin/system/upgrade/status");
 export const adminCreateBackup = () => http.post<{ ok: boolean; id: string }>("/admin/system/backups");
 export const adminDeleteBackup = (id: string) => http.del(`/admin/system/backups/${encodeURIComponent(id)}`);
 export const adminDownloadBackupUrl = (id: string) =>
