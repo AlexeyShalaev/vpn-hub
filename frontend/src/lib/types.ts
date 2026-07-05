@@ -289,6 +289,13 @@ export const VPN_DESC: Record<VpnType, string> = {
   outline: "Один ключ, проще всего для новичков.",
   hysteria2: "Быстрый QUIC-протокол с обфускацией — хорош на нестабильных и мобильных сетях.",
 };
+// Иконка ПО-вендора (см. PATHS в components/ui). Красится акцентом var(--<type>).
+export const VPN_ICON: Record<VpnType, string> = {
+  amnezia: "vpn_amnezia",
+  openvpn: "vpn_openvpn",
+  outline: "vpn_outline",
+  hysteria2: "vpn_hysteria2",
+};
 export const PROTO_LABEL: Record<string, string> = {
   awg: "AmneziaWG",
   awg_legacy: "AmneziaWG Legacy",

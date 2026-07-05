@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Btn, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
 import type { Protocol, Server, Vpn, VpnType } from "../lib/types";
-import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_LABEL } from "../lib/types";
+import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } from "../lib/types";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
 import { ServerAccessSections } from "./ServerAccess";
@@ -301,9 +301,10 @@ export function ServerDetailScreen() {
                       justifyContent: "center",
                       flex: "none",
                       background: "var(--surface-2)",
+                      color: `var(--${type})`,
                     }}
                   >
-                    <span className={`dot ${type}`} style={{ width: 10, height: 10 }} />
+                    <Icon name={VPN_ICON[type]} size={20} />
                   </div>
                   <div
                     style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
