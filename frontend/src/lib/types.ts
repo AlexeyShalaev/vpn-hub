@@ -263,6 +263,23 @@ export interface SystemInfo {
   releases: { v: string; date: string; notes: string[] }[];
 }
 
+// admin-дашборд здоровья инстанса (не путать с owner-трафиком)
+export interface MetricPoint {
+  at: number; // epoch seconds
+  value: number;
+}
+export interface MetricSeries {
+  name: string;
+  labels: string; // компактная строка лейблов, напр. "status=online"
+  points: MetricPoint[];
+}
+export interface MetricsOverview {
+  period: "1h" | "24h" | "7d";
+  series: MetricSeries[];
+  servers: { online: number; offline: number; unknown: number };
+  httpTotal: number;
+}
+
 export interface UpdateCheck {
   available: boolean;
   current?: string;

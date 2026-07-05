@@ -12,12 +12,14 @@ import time
 
 import structlog
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 
 from vpnhub.api.config import Settings
 from vpnhub.common.catalog import DEFAULT_PORTS
 from vpnhub.common.net import is_valid_host
 from vpnhub.common.serializers import server_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
+from vpnhub.infra import metrics
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.probe import ProbeResult, probe_tcp
@@ -230,8 +232,38 @@ class ServerService:
             self.bus.publish(TOPIC_SERVER)
 
         online = sum(1 for _, r in results if r.ok)
+        await self._update_metrics()  # прикладные гейджи для admin-дашборда (best-effort)
         log.info("server_monitor_tick", total=len(results), online=online, offline=len(results) - online)
         return len(results)
+
+    async def _update_metrics(self) -> None:
+        """Обновить прикладные гейджи (серверы по статусу/latency, ошибки provisioning).
+
+        Best-effort: сбой метрик не должен ронять мониторинг-тик.
+        """
+        try:
+            async with self.uow.query() as tx:
+                servers = await tx.servers.all()
+                protocols = list(
+                    (await tx.session.execute(select(m.ServerProtocol).where(m.ServerProtocol.state == "error")))
+                    .scalars()
+                    .all()
+                )
+            counts: dict[str, int] = {"online": 0, "offline": 0, "unknown": 0}
+            latencies: list[int] = []
+            for s in servers:
+                counts[s.status] = counts.get(s.status, 0) + 1
+                if s.status == "online" and s.latency_ms is not None:
+                    latencies.append(s.latency_ms)
+            avg = sum(latencies) / len(latencies) if latencies else None
+            by_code: dict[str, int] = {}
+            for p in protocols:
+                code = p.error_code or "unknown"
+                by_code[code] = by_code.get(code, 0) + 1
+            metrics.set_server_gauges(counts, avg)
+            metrics.set_provisioning_errors(by_code)
+        except Exception:
+            log.warning("server_metrics_update_failed", exc_info=True)
 
     async def vpn_op(
         self, owner_id: str, sid: str, vtype: str, op: str, protos: builtins.list[str] | None = None

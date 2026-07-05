@@ -9,6 +9,7 @@ import type {
   Group,
   InvitePeek,
   Me,
+  MetricsOverview,
   Pool,
   Provider,
   Server,
@@ -138,6 +139,9 @@ export const adminUpdateUser = (id: string, b: Record<string, unknown>) =>
   http.patch<AdminUser>(`/admin/users/${id}`, b);
 export const adminDeleteUser = (id: string) => http.del(`/admin/users/${id}`);
 export const adminSystem = () => http.get<SystemInfo>("/admin/system");
+// admin-дашборд здоровья инстанса (health самой панели, не VPN-трафик клиентов)
+export const adminMetrics = (period: string) =>
+  http.get<MetricsOverview>(`/admin/metrics?period=${encodeURIComponent(period)}`);
 export const adminCheckUpdates = () => http.post<UpdateCheck>("/admin/system/check-updates");
 export const adminUpgrade = () => http.post<UpgradeResult>("/admin/system/upgrade");
 // поллится во время применения обновления: смена version = успех, state=failed = ошибка

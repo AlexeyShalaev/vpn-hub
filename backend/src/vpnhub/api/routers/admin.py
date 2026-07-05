@@ -12,6 +12,7 @@ from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.services.admin import AdminService
 from vpnhub.services.auth import Identity
 from vpnhub.services.backups import BackupService
+from vpnhub.services.metrics import MetricsService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -48,6 +49,16 @@ async def delete_user(
 @router.get("/system")
 async def system(_: Identity = Depends(require_admin), svc: AdminService = Depends(service(AdminService))) -> dict:
     return await svc.system()
+
+
+@router.get("/metrics")
+async def metrics(
+    period: str = "24h",
+    _: Identity = Depends(require_admin),
+    svc: MetricsService = Depends(service(MetricsService)),
+) -> dict:
+    """Временные ряды здоровья инстанса панели (не путать с owner-трафиком)."""
+    return await svc.overview(period)
 
 
 @router.post("/system/check-updates")

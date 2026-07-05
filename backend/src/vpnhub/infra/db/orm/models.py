@@ -224,6 +224,27 @@ class TrafficSample(BaseTable):
     __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
 
 
+class MetricSample(BaseTable):
+    """Точка временного ряда прикладной метрики инстанса панели (для admin-дашборда).
+
+    Фоновая джоба `metrics-tick` раз в интервал снимает текущие значения счётчиков/гейджей
+    из in-process реестра prometheus-client (`infra/metrics.py`) и из БД (серверы по статусу,
+    ошибки provisioning) и дописывает сюда строки. Это переживает рестарт контейнера (реестр
+    prometheus-client живёт только в памяти процесса). `labels` — компактная строка ключей
+    лейблов (напр. `status=online`), чтобы не плодить кардинальность. Ретеншн — `purge_old`
+    по `metrics_retention_days`. НЕ путать с owner-трафиком (`traffic_samples`).
+    """
+
+    __tablename__ = "metric_samples"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    name: Mapped[str] = mapped_column(String(64), index=True)  # имя метрики (vpnhub_*)
+    labels: Mapped[str] = mapped_column(String(160), default="")  # сериализованные лейблы (k=v,...)
+    at: Mapped[float] = mapped_column(index=True)  # epoch seconds
+    value: Mapped[float] = mapped_column()
+
+    __table_args__ = (Index("metric_samples_scope_idx", "name", "at"),)
+
+
 class Setting(BaseTable):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)

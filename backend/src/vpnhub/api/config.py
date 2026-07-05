@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     # клиент считается онлайн, если последний handshake свежее этого окна (сек)
     traffic_online_window_seconds: int = 180
 
+    # admin-дашборд здоровья инстанса: скрейп in-process метрик в metric_samples
+    metrics_interval: int = 60  # период снятия сэмплов метрик, сек
+    metrics_retention_days: int = 30  # сколько дней хранить сэмплы (фоновой purge metrics-retention)
+
     # Подтверждение телефона по SMS/OTP не используется: вход по номеру и паролю,
     # а новые самостоятельные регистрации подтверждает администратор вручную.
 

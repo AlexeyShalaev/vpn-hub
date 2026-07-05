@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, FilePicker, Icon, KeyInput, Modal, ScreenHeader, Spinner } from "../components/ui";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
-import type { SystemInfo } from "../lib/types";
+import type { MetricSeries, SystemInfo } from "../lib/types";
 import { copyText, useStore } from "../store";
 
 const UPGRADE_CMD = "docker compose pull && docker compose up -d";
@@ -48,6 +49,115 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+    </div>
+  );
+}
+
+const METRICS_POLL_MS = 30_000;
+const PERIODS: { value: "1h" | "24h" | "7d"; label: string }[] = [
+  { value: "1h", label: "1 час" },
+  { value: "24h", label: "24 часа" },
+  { value: "7d", label: "7 дней" },
+];
+const SERVER_COLORS: Record<string, string> = {
+  online: "#22c55e",
+  offline: "#ef4444",
+  unknown: "#94a3b8",
+};
+const SERVER_LABELS: Record<string, string> = {
+  online: "Онлайн",
+  offline: "Офлайн",
+  unknown: "Не проверено",
+};
+
+function serverLines(series: MetricSeries[]): ChartLine[] {
+  const lines: ChartLine[] = [];
+  for (const status of ["online", "offline", "unknown"]) {
+    const s = series.find((x) => x.name === "vpnhub_servers" && x.labels === `status=${status}`);
+    if (s && s.points.length) {
+      lines.push({ points: s.points, color: SERVER_COLORS[status], label: SERVER_LABELS[status] });
+    }
+  }
+  return lines;
+}
+
+// Мониторинг здоровья самого инстанса панели (не путать с дашбордом VPN-трафика владельца).
+function MonitoringSection() {
+  const [period, setPeriod] = useState<"1h" | "24h" | "7d">("24h");
+  const mq = useQuery({
+    queryKey: ["adminMetrics", period],
+    queryFn: () => q.adminMetrics(period),
+    refetchInterval: METRICS_POLL_MS,
+  });
+  const data = mq.data;
+  const lines = data ? serverLines(data.series) : [];
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <SectionLabel>Мониторинг</SectionLabel>
+        <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+          {PERIODS.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              onClick={() => setPeriod(p.value)}
+              style={{
+                font: "600 12px/1 var(--font)",
+                padding: "6px 10px",
+                borderRadius: 8,
+                cursor: "pointer",
+                border: "1px solid var(--border)",
+                background: period === p.value ? "var(--accent)" : "var(--surface-2)",
+                color: period === p.value ? "#fff" : "var(--text-2)",
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: "0 0 14px" }}>
+        Здоровье этого инстанса панели: серверы по статусу и накопленная нагрузка на API. Это не VPN-трафик клиентов —
+        его смотрит владелец на своих серверах.
+      </p>
+
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 8 }}>Серверы по статусу</div>
+      {mq.isLoading ? <Spinner /> : <LineChart lines={lines} />}
+
+      {data && (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+          {(["online", "offline", "unknown"] as const).map((k) => (
+            <div
+              key={k}
+              style={{
+                flex: "1 1 100px",
+                padding: "10px 14px",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                background: "var(--surface-2)",
+              }}
+            >
+              <div style={{ fontSize: 12, color: "var(--text-3)" }}>{SERVER_LABELS[k]}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: SERVER_COLORS[k] }}>
+                {Math.round(data.servers[k])}
+              </div>
+            </div>
+          ))}
+          <div
+            style={{
+              flex: "1 1 100px",
+              padding: "10px 14px",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              background: "var(--surface-2)",
+            }}
+          >
+            <div style={{ fontSize: 12, color: "var(--text-3)" }}>HTTP-запросов всего</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{Math.round(data.httpTotal).toLocaleString("ru-RU")}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -519,6 +629,9 @@ export function SystemScreen() {
           ))}
         </div>
       </div>
+
+      {/* (5) Мониторинг здоровья инстанса */}
+      <MonitoringSection />
 
       {/* модалка релиза */}
       {release && release0 && (
