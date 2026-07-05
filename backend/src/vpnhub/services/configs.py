@@ -254,9 +254,10 @@ class ConfigService:
         text = artifact.conf_text or artifact.vless_url
         uri = artifact.vpn_url or artifact.vless_url
         formats = _provisioned_formats(vpn_type, artifact, server_name, spec.id)
-        # Amnezia: формат «AmneziaVPN» (.vpn) = ОДИН vpn:// со всеми протоколами сервера
-        # (импортируется как один сервер с переключателем). Чипы протокола остаются для сырых экспортов.
-        if vpn_type == pc.VENDOR_AMNEZIA:
+        # Amnezia: формат «AmneziaVPN» (.vpn) = ОДИН vpn:// со всеми склеиваемыми протоколами сервера
+        # (awg2/awg_legacy/xray). Подмешиваем его ТОЛЬКО когда выбран сам склеиваемый протокол:
+        # при явном выборе xray_xhttp (в бандл не входит) отдаём его собственный конфиг, а не бандл.
+        if vpn_type == pc.VENDOR_AMNEZIA and spec.id in _BUNDLABLE_AMNEZIA:
             bundle = await self._build_amnezia_bundle(user_id, server_id, device_id)
             formats = self._with_bundle_format(formats, bundle, server_name)
             if bundle:
