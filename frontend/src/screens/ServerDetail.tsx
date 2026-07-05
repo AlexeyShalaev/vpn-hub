@@ -4,6 +4,7 @@ import { Btn, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../compone
 import * as q from "../lib/queries";
 import type { Protocol, Server, Vpn, VpnType } from "../lib/types";
 import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } from "../lib/types";
+import { vpnLogo } from "../lib/vpnLogos";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
 import { ServerAccessSections } from "./ServerAccess";
@@ -15,6 +16,7 @@ export function ServerDetailScreen() {
   const serverId = useNav((s) => s.params.serverId) || "";
   const go = useNav((s) => s.go);
   const toast = useStore((s) => s.toast);
+  const theme = useStore((s) => s.theme);
   const qc = useQueryClient();
 
   const [reveal, setReveal] = useState(false);
@@ -304,7 +306,17 @@ export function ServerDetailScreen() {
                       color: `var(--${type})`,
                     }}
                   >
-                    <Icon name={VPN_ICON[type]} size={20} />
+                    {vpnLogo(type, theme) ? (
+                      <img
+                        src={vpnLogo(type, theme)}
+                        alt={VPN_LABEL[type]}
+                        width={26}
+                        height={26}
+                        style={{ objectFit: "contain", display: "block" }}
+                      />
+                    ) : (
+                      <Icon name={VPN_ICON[type]} size={20} />
+                    )}
                   </div>
                   <div
                     style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
