@@ -12,6 +12,128 @@ import { VpnAdvancedModal } from "./VpnAdvanced";
 
 const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
 
+// установлен ли на сервере запущенный tcp-Reality Xray (условие мультихопа для entry/exit)
+const hasRunningXray = (s: Server): boolean =>
+  (s.protocols ?? []).some((p) => p.proto === "xray" && p.installed && p.running);
+
+// Секция «Цепочка (мультихоп)»: трафик клиентов этого (entry) сервера выходит в интернет через
+// другой (exit) сервер. Реализация — Xray outbound chaining: entry становится vless-клиентом exit.
+function ChainSection({ server }: { server: Server }) {
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const [exitId, setExitId] = useState("");
+
+  const chainsQ = useQuery({
+    queryKey: ["chains", server.id],
+    queryFn: () => q.listChains(server.id),
+    enabled: hasRunningXray(server),
+  });
+  const serversQ = useQuery({ queryKey: ["servers"], queryFn: () => q.listServers() });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["chains", server.id] });
+
+  const createMut = useMutation({
+    mutationFn: () => q.createChain(server.id, exitId),
+    onSuccess: () => {
+      setExitId("");
+      invalidate();
+      toast("Цепочка создана — трафик пойдёт через выходной сервер");
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось создать цепочку"),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (chainId: string) => q.deleteChain(server.id, chainId),
+    onSuccess: () => {
+      invalidate();
+      toast("Цепочка удалена");
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить цепочку"),
+  });
+
+  // мультихоп работает только для tcp-Reality Xray — прячем секцию, если на entry его нет
+  if (!hasRunningXray(server)) return null;
+
+  const chains = chainsQ.data ?? [];
+  // кандидаты в exit: чужие серверы владельца, онлайн, с запущенным Xray
+  const candidates = (serversQ.data ?? []).filter(
+    (s) => s.id !== server.id && s.status === "online" && hasRunningXray(s),
+  );
+
+  return (
+    <div className="card stack">
+      <div
+        className="muted-3"
+        style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
+      >
+        Цепочка (мультихоп)
+      </div>
+      <p className="muted" style={{ fontSize: 13 }}>
+        Клиенты подключаются к этому серверу как ко входу, а трафик выходит в интернет через выбранный выходной сервер
+        (Xray). Полезно, когда нужен вход с локальным IP, а выход — в другой стране.
+      </p>
+
+      {chains.length > 0 ? (
+        <div className="stack" style={{ gap: 8 }}>
+          {chains.map((ch) => (
+            <div
+              key={ch.id}
+              className="rowflex"
+              style={{
+                justifyContent: "space-between",
+                gap: 8,
+                flexWrap: "nowrap",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "10px 12px",
+              }}
+            >
+              <span className="rowflex" style={{ gap: 8, minWidth: 0 }}>
+                <Icon name="refresh" size={15} />
+                <span style={{ fontSize: 13.5 }}>
+                  выход через <strong>{ch.exitServerName || ch.exitServerId}</strong>
+                </span>
+                <span className={`badge ${ch.state === "linked" ? "ok" : "warn"}`}>{ch.state}</span>
+              </span>
+              <Btn
+                variant="ghost"
+                sm
+                disabled={deleteMut.isPending}
+                title="Удалить цепочку"
+                onClick={() => deleteMut.mutate(ch.id)}
+              >
+                <Icon name="trash" size={14} />
+              </Btn>
+            </div>
+          ))}
+        </div>
+      ) : candidates.length > 0 ? (
+        <div className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
+          <select
+            className="input"
+            value={exitId}
+            onChange={(e) => setExitId(e.target.value)}
+            style={{ flex: 1 }}
+          >
+            <option value="">Выберите выходной сервер…</option>
+            {candidates.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} · {s.location || s.ip}
+              </option>
+            ))}
+          </select>
+          <Btn variant="primary" disabled={!exitId || createMut.isPending} onClick={() => createMut.mutate()}>
+            {createMut.isPending ? <Spinner /> : "Создать"}
+          </Btn>
+        </div>
+      ) : (
+        <p className="muted-3" style={{ fontSize: 12.5 }}>
+          Нет подходящих выходных серверов: нужен другой ваш сервер онлайн с установленным и запущенным Xray.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ServerDetailScreen() {
   const serverId = useNav((s) => s.params.serverId) || "";
   const go = useNav((s) => s.go);
@@ -601,6 +723,8 @@ export function ServerDetailScreen() {
           })}
         </div>
       </div>
+
+      <ChainSection server={server} />
 
       <ServerAccessSections serverId={serverId} />
 

@@ -101,6 +101,42 @@ class XrayProvisioner:
         )
         return self._material
 
+    async def set_outbound_chain(
+        self,
+        ssh: SshClient,
+        *,
+        exit_host: str,
+        exit_port: str,
+        exit_public_key: str,
+        exit_short_id: str,
+        exit_sni: str,
+        exit_uuid: str,
+    ) -> None:
+        """Мультихоп: заменить outbound entry-контейнера на vless-коннект к exit-серверу + рестарт.
+
+        Трафик клиентов этого entry-сервера станет выходить в интернет через exit (entry = обычный
+        vless-клиент exit). Reality hot-reload у Xray нет — рестарт роняет активные сессии.
+        """
+        doc = await self._read_server_json(ssh)
+        doc["outbounds"] = [
+            vpn_uri.build_chain_outbound(
+                host=exit_host,
+                port=exit_port,
+                uuid=exit_uuid,
+                public_key=exit_public_key,
+                short_id=exit_short_id,
+                sni=exit_sni,
+                flow="" if self.spec.xray_network == "xhttp" else c.XRAY_DEFAULT_FLOW,
+            )
+        ]
+        await self._write_and_restart(ssh, doc)
+
+    async def clear_outbound_chain(self, ssh: SshClient) -> None:
+        """Снять мультихоп: вернуть outbound entry-контейнера к прямому `freedom` + рестарт."""
+        doc = await self._read_server_json(ssh)
+        doc["outbounds"] = [dict(vpn_uri.FREEDOM_OUTBOUND)]
+        await self._write_and_restart(ssh, doc)
+
     async def list_clients(self, ssh: SshClient) -> list[dict]:
         rows = await base.read_clients_table(ssh, self.spec)
         boot = self._material.bootstrap_uuid if self._material else ""

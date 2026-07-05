@@ -118,6 +118,28 @@ class ServerProtocol(BaseTable, DatetimeColumnsMixin):
     server: Mapped[Server] = relationship(back_populates="protocols")
 
 
+class ChainLink(BaseTable, DatetimeColumnsMixin):
+    """Мультихоп-цепочка: entry-сервер выпускает трафик через exit-сервер (Xray outbound chaining).
+
+    Клиент подключается к entry (например, российский IP), а его xray-контейнер на entry получает
+    outbound не «freedom», а vless-коннект на exit — то есть entry сам становится обычным
+    vless-клиентом exit. `exit_client_id` — uuid, заведённый на exit через штатный add_client
+    (его снимаем при удалении связки). Один entry-протокол = один outbound, поэтому связка уникальна
+    по (entry_server_id, proto).
+    """
+
+    __tablename__ = "chain_links"
+    __table_args__ = (UniqueConstraint("entry_server_id", "proto", name="chain_links_uq"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    owner_user_id: Mapped[str] = mapped_column(String(32), index=True)
+    entry_server_id: Mapped[str] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"), index=True)
+    exit_server_id: Mapped[str] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"), index=True)
+    proto: Mapped[str] = mapped_column(String(24), default="xray")  # xray (VLESS+Reality tcp)
+    exit_client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # uuid на exit (add_client)
+    state: Mapped[str] = mapped_column(String(16), default="absent")  # absent|linked|error
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Pool(BaseTable, DatetimeColumnsMixin):
     __tablename__ = "pools"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)

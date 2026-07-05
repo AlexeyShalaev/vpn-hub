@@ -4,6 +4,7 @@ import type {
   AdminUser,
   AuditEvent,
   AvailableServer,
+  ChainLink,
   ConfigResult,
   Device,
   Group,
@@ -98,6 +99,12 @@ export const setReality = (
   proto: string,
   body: { rotate_short_id?: boolean; short_id?: string; sni?: string },
 ) => http.patch<Server>(`/servers/${id}/protocols/${proto}/reality`, body);
+// мультихоп: цепочки, где этот сервер — вход (entry); трафик выходит через exit-сервер (Xray outbound)
+export const listChains = (sid: string) => http.get<ChainLink[]>(`/servers/${sid}/chains`);
+export const createChain = (sid: string, exitServerId: string) =>
+  http.post<ChainLink>(`/servers/${sid}/chains`, { exitServerId });
+export const deleteChain = (sid: string, chainId: string) =>
+  http.del<{ ok: boolean }>(`/servers/${sid}/chains/${chainId}`);
 export const listProviders = () => http.get<Provider[]>("/providers");
 
 // server access overview (владелец: пулы/группы/пользователи+конфиги этого сервера)

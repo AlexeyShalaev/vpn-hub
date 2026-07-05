@@ -227,6 +227,54 @@ def build_xray_container(
     return {"container": container, "xray": {"last_config": _compact(last_config)}}
 
 
+CHAIN_OUTBOUND_TAG = "chain-exit"
+FREEDOM_OUTBOUND: dict = {"protocol": "freedom"}
+
+
+def build_chain_outbound(
+    *,
+    host: str,
+    port: str,
+    uuid: str,
+    public_key: str,
+    short_id: str,
+    sni: str,
+    flow: str = c.XRAY_DEFAULT_FLOW,
+    fingerprint: str = c.XRAY_DEFAULT_FINGERPRINT,
+) -> dict:
+    """Outbound entry-сервера для мультихопа: vless+Reality-коннект на exit-сервер.
+
+    Ставится в inbounds/outbounds server.json entry-контейнера ВМЕСТО `freedom`, так что трафик
+    клиентов entry выходит в интернет через exit (entry = обычный vless-клиент exit). Структура —
+    как клиентский xray-outbound (build_xray_container), но живёт на сервере, а не у клиента.
+    tag="chain-exit" — стабильная метка, по ней снимаем цепочку (clear → freedom).
+    """
+    return {
+        "tag": CHAIN_OUTBOUND_TAG,
+        "protocol": "vless",
+        "settings": {
+            "vnext": [
+                {
+                    "address": host,
+                    "port": int(port),
+                    "users": [{"id": uuid, "encryption": "none", "flow": flow}],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": "tcp",
+            "security": c.XRAY_DEFAULT_SECURITY,
+            "realitySettings": {
+                "publicKey": public_key,
+                "shortId": short_id,
+                "serverName": sni,
+                "fingerprint": fingerprint,
+                "spiderX": "",
+            },
+        },
+    }
+
+
 def build_bundle_vpn_url(*, containers: list[dict], host: str, description: str, default_container: str) -> str:
     """Один vpn:// на весь сервер: несколько контейнеров-протоколов в одном объекте (переключатель клиента)."""
     return encode_vpn_url(

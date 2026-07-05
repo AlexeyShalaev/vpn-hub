@@ -23,6 +23,7 @@ from vpnhub.services.devices import DeviceService
 from vpnhub.services.groups import GroupService
 from vpnhub.services.me import MeService
 from vpnhub.services.metrics import MetricsService
+from vpnhub.services.multihop import ChainService
 from vpnhub.services.pools import PoolService
 from vpnhub.services.server_access import ServerAccessService
 from vpnhub.services.servers import ServerService
@@ -79,6 +80,7 @@ class AppProvider(Provider):
     audit = provide(AuditService)
     traffic = provide(TrafficService)
     metrics = provide(MetricsService)
+    chains = provide(ChainService)
 
 
 def build_container() -> AsyncContainer:

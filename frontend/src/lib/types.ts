@@ -63,6 +63,16 @@ export interface Server {
   protocols: Protocol[];
 }
 
+export interface ChainLink {
+  id: string;
+  entryServerId: string;
+  exitServerId: string;
+  exitServerName: string;
+  proto: string; // xray
+  state: "absent" | "linked" | "error";
+  error: string | null;
+}
+
 export interface Pool {
   id: string;
   name: string;

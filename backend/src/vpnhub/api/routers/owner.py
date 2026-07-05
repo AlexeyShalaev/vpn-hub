@@ -10,6 +10,7 @@ from vpnhub.api.deps import require_user, service
 from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.services.auth import Identity
 from vpnhub.services.groups import GroupService
+from vpnhub.services.multihop import ChainService
 from vpnhub.services.pools import PoolService
 from vpnhub.services.server_access import ServerAccessService
 from vpnhub.services.servers import ServerService
@@ -200,6 +201,40 @@ async def set_reality(
     short_id = body.get("short_id") if isinstance(body, dict) else None
     sni = body.get("sni") if isinstance(body, dict) else None
     return await svc.set_reality(ident.id, sid, proto, rotate_short_id=rotate, short_id=short_id, sni=sni)
+
+
+# ---------- multihop / chains (entry -> exit) ----------
+
+
+@router.get("/servers/{sid}/chains")
+async def list_chains(
+    sid: str,
+    ident: Identity = Depends(require_user),
+    svc: ChainService = Depends(service(ChainService)),
+) -> list[dict]:
+    # цепочки, где этот сервер — вход (entry); показывается в секции «Цепочка» страницы сервера
+    return await svc.list_for_entry(ident.id, sid)
+
+
+@router.post("/servers/{sid}/chains")
+async def create_chain(
+    sid: str,
+    body: dict[str, Any] = Body(...),
+    ident: Identity = Depends(require_user),
+    svc: ChainService = Depends(service(ChainService)),
+) -> dict:
+    # body: { "exitServerId": str } — направить выход этого (entry) сервера через exit-сервер
+    return await svc.create(ident.id, sid, body.get("exitServerId", ""))
+
+
+@router.delete("/servers/{sid}/chains/{chain_id}")
+async def delete_chain(
+    sid: str,
+    chain_id: str,
+    ident: Identity = Depends(require_user),
+    svc: ChainService = Depends(service(ChainService)),
+) -> dict:
+    return await svc.delete(ident.id, sid, chain_id)
 
 
 @router.post("/servers/{sid}/protocols/{proto}/{op}")

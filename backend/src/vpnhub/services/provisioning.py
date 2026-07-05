@@ -298,6 +298,43 @@ class ProvisioningService:
                 raise errors.make("internal", "set_reality вызван для не-Xray протокола")
             return await prov.set_reality(ssh, short_id=short_id, sni=sni)
 
+    async def set_chain(
+        self,
+        entry_server: m.Server,
+        entry_sp: m.ServerProtocol,
+        *,
+        exit_host: str,
+        exit_port: str,
+        exit_material: ServerMaterial,
+        exit_uuid: str,
+    ) -> None:
+        """Мультихоп: направить outbound entry-контейнера на exit-сервер (vless+Reality) по SSH.
+
+        `exit_uuid` — клиентский uuid, заведённый на exit через add_client: entry предъявляет его
+        как обычный vless-клиент exit. Материал exit (pubkey/shortId/SNI) — из ServerProtocol exit.
+        """
+        prov = self.loaded_provisioner(entry_sp)
+        if not isinstance(prov, XrayProvisioner):
+            raise errors.make("internal", "set_chain вызван для не-Xray протокола")
+        async with SshClient(self.creds(entry_server)) as ssh:
+            await prov.set_outbound_chain(
+                ssh,
+                exit_host=exit_host,
+                exit_port=exit_port,
+                exit_public_key=exit_material.xray_public_key,
+                exit_short_id=exit_material.short_id,
+                exit_sni=exit_material.site or pc.XRAY_DEFAULT_SITE,
+                exit_uuid=exit_uuid,
+            )
+
+    async def clear_chain(self, entry_server: m.Server, entry_sp: m.ServerProtocol) -> None:
+        """Снять мультихоп: вернуть outbound entry-контейнера к прямому freedom по SSH."""
+        prov = self.loaded_provisioner(entry_sp)
+        if not isinstance(prov, XrayProvisioner):
+            raise errors.make("internal", "clear_chain вызван для не-Xray протокола")
+        async with SshClient(self.creds(entry_server)) as ssh:
+            await prov.clear_outbound_chain(ssh)
+
     async def check_server(self, server: m.Server) -> tuple[bool, int | None, dict[str, str]]:
         """Реальная проверка: (online, latency_ms, {container: port}) через docker ps по SSH."""
         creds = self.creds(server)
