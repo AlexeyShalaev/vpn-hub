@@ -14,6 +14,7 @@ from vpnhub.infra.db.engine import build_session_manager
 from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.infra.uow import Uow, build_uow
 from vpnhub.services.admin import AdminService
+from vpnhub.services.audit import AuditService
 from vpnhub.services.auth import AuthService
 from vpnhub.services.backups import BackupService
 from vpnhub.services.configs import ConfigService
@@ -58,6 +59,7 @@ class AppProvider(Provider):
     admin = provide(AdminService)
     backups = provide(BackupService)
     sync = provide(SyncService)
+    audit = provide(AuditService)
 
 
 def build_container() -> AsyncContainer:

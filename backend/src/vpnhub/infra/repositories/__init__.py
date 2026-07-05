@@ -180,6 +180,79 @@ class DeviceRepo(_Repo):
         return list(res.scalars().all())
 
 
+class AuditRepo(_Repo):
+    model = m.AuditEvent
+
+    def add_event(
+        self,
+        *,
+        at: float,
+        actor_kind: str,
+        actor_id: str | None,
+        actor_name: str,
+        type_: str,
+        target_kind: str | None = None,
+        target_id: str | None = None,
+        owner_user_id: str | None = None,
+        meta_json: str | None = None,
+    ) -> m.AuditEvent:
+        ev = m.AuditEvent(
+            at=at,
+            actor_kind=actor_kind,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            type=type_,
+            target_kind=target_kind,
+            target_id=target_id,
+            owner_user_id=owner_user_id,
+            meta_json=meta_json,
+        )
+        self.session.add(ev)
+        return ev
+
+    async def list(
+        self,
+        *,
+        type_: str | None = None,
+        actor_id: str | None = None,
+        target_id: str | None = None,
+        owner_user_id: str | None = None,
+        owner_or_actor: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        limit: int = 100,
+    ) -> list[m.AuditEvent]:
+        """События по фильтрам, отсортированные по `at desc`.
+
+        `owner_or_actor`: ролевая видимость owner — события своих ресурсов (owner_user_id) ИЛИ
+        свои собственные действия (actor_id), напр. login-события, где owner_user_id не проставлен.
+        """
+        stmt = select(m.AuditEvent)
+        if type_:
+            stmt = stmt.where(m.AuditEvent.type == type_)
+        if actor_id:
+            stmt = stmt.where(m.AuditEvent.actor_id == actor_id)
+        if target_id:
+            stmt = stmt.where(m.AuditEvent.target_id == target_id)
+        if owner_user_id:
+            stmt = stmt.where(m.AuditEvent.owner_user_id == owner_user_id)
+        if owner_or_actor:
+            stmt = stmt.where(
+                (m.AuditEvent.owner_user_id == owner_or_actor) | (m.AuditEvent.actor_id == owner_or_actor)
+            )
+        if since is not None:
+            stmt = stmt.where(m.AuditEvent.at >= since)
+        if until is not None:
+            stmt = stmt.where(m.AuditEvent.at <= until)
+        stmt = stmt.order_by(m.AuditEvent.at.desc()).limit(limit)
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def purge_old(self, cutoff: float) -> int:
+        res = await self.session.execute(sa_delete(m.AuditEvent).where(m.AuditEvent.at < cutoff))
+        return int(res.rowcount or 0)  # type: ignore[attr-defined]
+
+
 class SettingRepo(_Repo):
     model = m.Setting
 

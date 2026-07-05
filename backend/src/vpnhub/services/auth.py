@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from vpnhub.infra.security import (
     verify_password,
 )
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services import audit_types
 
 _SEEN_THROTTLE = 60  # не чаще раза в минуту обновляем «последняя активность» сессии
 
@@ -101,7 +103,9 @@ class AuthService:
             if not user or not password_ok:
                 raise Unauthorized("Неверный телефон или пароль")
             if await tx.admins.is_admin(user.id):
-                return await self._make_session(tx, "admin", user.id, ip, ua)
+                token = await self._make_session(tx, "admin", user.id, ip, ua)
+                self._audit_login(tx, "admin", user, ip)
+                return token
             if user.status == "blocked":
                 raise Unauthorized("Аккаунт заблокирован. Обратитесь к администратору.")
             # подхватить приглашения, появившиеся уже после регистрации
@@ -109,7 +113,22 @@ class AuthService:
                 user.status = "active"
             if user.status == "pending":
                 raise Unauthorized("Аккаунт ожидает подтверждения администратора.")
-            return await self._make_session(tx, "user", user.id, ip, ua)
+            token = await self._make_session(tx, "user", user.id, ip, ua)
+            self._audit_login(tx, "user", user, ip)
+            return token
+
+    @staticmethod
+    def _audit_login(tx: UowTransaction, kind: str, user: m.User, ip: str | None) -> None:
+        """Записать событие входа в той же транзакции (актор = сам пользователь)."""
+        # actor_id == user.id → owner увидит собственные login-события даже без owner_user_id
+        tx.audit.add_event(
+            at=time.time(),
+            actor_kind=kind,
+            actor_id=user.id,
+            actor_name=user.name,
+            type_=audit_types.AUTH_LOGIN,
+            meta_json=json.dumps({"ip": ip}, ensure_ascii=False) if ip else None,
+        )
 
     async def _bind_invites(self, tx: UowTransaction, user: m.User) -> bool:
         """Привязать приглашённых участников (по телефону) к пользователю и активировать их."""

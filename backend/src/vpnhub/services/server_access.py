@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from sqlalchemy import select
 
@@ -18,6 +19,7 @@ from vpnhub.infra.provisioning.provisioners.base import read_clients_table
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.security import decrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services import audit_types
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
 # из material отдаём только публичное (приватные ключи/psk наружу не уходят)
@@ -256,6 +258,7 @@ class ServerAccessService:
             if not cfg or cfg.server_id != sid:
                 raise NotFound("Конфиг не найден")
             vpn_type, proto, client_id, cfg_id = cfg.vpn_type, cfg.proto, cfg.client_id, cfg.id
+            device_id, client_name = cfg.device_id, cfg.client_name
 
         # снять пир на сервере (best-effort через provisioning), затем удалить запись
         if vpn_type in PROVISIONED_VENDORS and client_id:
@@ -265,4 +268,19 @@ class ServerAccessService:
             obj = await tx.session.get(m.DeviceConfig, cfg_id)
             if obj is not None:
                 await tx.session.delete(obj)
+            owner = await tx.users.get(owner_id)
+            tx.audit.add_event(
+                at=time.time(),
+                actor_kind="admin" if owner and await tx.admins.is_admin(owner_id) else "user",
+                actor_id=owner_id,
+                actor_name=owner.name if owner else "",
+                type_=audit_types.ACCESS_REVOKE,
+                target_kind="server",
+                target_id=sid,
+                owner_user_id=owner_id,
+                meta_json=json.dumps(
+                    {"vpn": vpn_type, "proto": proto, "deviceId": device_id, "clientName": client_name},
+                    ensure_ascii=False,
+                ),
+            )
         return {"ok": True}

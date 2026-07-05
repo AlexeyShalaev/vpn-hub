@@ -2,6 +2,7 @@
 import { API_BASE, http } from "./api";
 import type {
   AdminUser,
+  AuditEvent,
   AvailableServer,
   ConfigResult,
   Device,
@@ -119,6 +120,17 @@ export const installConfig = (b: { serverId: string; vpn: string; deviceId: stri
 // отозвать свой конфиг: снимает клиента на сервере (SSH) и удаляет запись (симметрично generate)
 export const removeConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string | null }) =>
   http.post<{ ok: boolean }>("/configs/remove", b);
+
+// events (аудит-лог): admin — все события, owner — только свои ресурсы/действия
+export const listEvents = (params?: { type?: string; since?: number; until?: number; limit?: number }) => {
+  const sp = new URLSearchParams();
+  if (params?.type) sp.set("type", params.type);
+  if (params?.since != null) sp.set("since", String(params.since));
+  if (params?.until != null) sp.set("until", String(params.until));
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  const qs = sp.toString();
+  return http.get<AuditEvent[]>(`/events${qs ? `?${qs}` : ""}`);
+};
 
 // admin
 export const adminUsers = () => http.get<AdminUser[]>("/admin/users");

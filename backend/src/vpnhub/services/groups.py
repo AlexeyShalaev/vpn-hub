@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import time
+
 from vpnhub.api.config import Settings
 from vpnhub.common.serializers import group_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.security import gen_token, normalize_phone
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services import audit_types
 from vpnhub.services.provisioning import ProvisioningService
 
 
@@ -151,6 +155,17 @@ class GroupService:
                         )
                     )
             await tx.session.flush()
+            tx.audit.add_event(
+                at=time.time(),
+                actor_kind="user",
+                actor_id=user_id,
+                actor_name=user_name,
+                type_=audit_types.GROUP_JOIN,
+                target_kind="group",
+                target_id=g.id,
+                owner_user_id=g.owner_user_id,
+                meta_json=json.dumps({"group": g.name}, ensure_ascii=False),
+            )
             return {"id": g.id, "name": g.name, "ok": True}
 
     async def toggle_member_role(self, owner_id: str, gid: str, mid: str) -> dict:

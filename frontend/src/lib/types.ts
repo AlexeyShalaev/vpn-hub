@@ -133,6 +133,21 @@ export interface Provider {
   tags: string[];
 }
 
+export interface AuditEvent {
+  id: string;
+  at: string; // отформатированная дата (дд.мм.гггг чч:мм)
+  rel: string | null; // относительное время («5 мин назад»)
+  actorKind: "admin" | "user" | "system";
+  actorId: string | null;
+  actorName: string;
+  type: string; // стабильный код (auth.login, group.join, config.download, access.revoke, …)
+  label: string; // русская подпись типа события
+  targetKind: string | null;
+  targetId: string | null;
+  ownerUserId: string | null;
+  meta: Record<string, unknown>;
+}
+
 export interface AdminUser {
   id: string;
   phone: string;

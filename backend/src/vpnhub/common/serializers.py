@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import remediation
+from vpnhub.services import audit_types
 
 
 def rel_time(epoch: float | None) -> str | None:
@@ -141,6 +143,29 @@ def device_to_dict(d: m.Device) -> dict:
         "configs": [
             {"serverId": c.server_id, "type": c.vpn_type, "proto": c.proto, "status": c.status} for c in d.configs
         ],
+    }
+
+
+def event_to_dict(e: m.AuditEvent) -> dict:
+    meta = {}
+    if e.meta_json:
+        try:
+            meta = json.loads(e.meta_json)
+        except (ValueError, TypeError):
+            meta = {}
+    return {
+        "id": e.id,
+        "at": time.strftime("%d.%m.%Y %H:%M", time.localtime(e.at)) if e.at else "",
+        "rel": rel_time(e.at),
+        "actorKind": e.actor_kind,
+        "actorId": e.actor_id,
+        "actorName": e.actor_name or "—",
+        "type": e.type,
+        "label": audit_types.label(e.type),
+        "targetKind": e.target_kind,
+        "targetId": e.target_id,
+        "ownerUserId": e.owner_user_id,
+        "meta": meta,
     }
 
 

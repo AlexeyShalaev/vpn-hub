@@ -103,6 +103,12 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M8 20h8M12 16v4" />
     </>
   ),
+  events: (
+    <>
+      <path d="M4 5h16M4 12h16M4 19h10" />
+      <circle cx="19" cy="19" r="2" />
+    </>
+  ),
   profile: (
     <>
       <circle cx="12" cy="8" r="3.4" />

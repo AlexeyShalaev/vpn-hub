@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from typing import Any
 
 from vpnhub.api.config import Settings
@@ -20,6 +22,7 @@ from vpnhub.infra.provisioning.provisioners import ClientMaterial
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services import audit_types
 from vpnhub.services.access import effective_access
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
@@ -203,6 +206,7 @@ class ConfigService:
                 raise BadRequest("Протокол ещё не установлен на этом сервере")
             sp = next(p for p in s.protocols if p.proto == spec.id)
             server_ip, server_name, port = s.ip, s.name, sp.port
+            server_owner_id = s.owner_user_id
             creds = prov.creds(s)
             prov_obj = prov.loaded_provisioner(sp)
             user = await tx.users.get(user_id)
@@ -262,6 +266,7 @@ class ConfigService:
             formats = self._with_bundle_format(formats, bundle, server_name)
             if bundle:
                 uri = bundle
+        await self._audit_download(user_id, server_id, server_owner_id, vpn_type, spec, device_id)
         return {
             "type": vpn_type,
             "proto": spec.label,
@@ -447,6 +452,30 @@ class ConfigService:
             client_public_key=c.client_public_key or "",
             client_ip=c.client_ip or "",
         )
+
+    async def _audit_download(
+        self,
+        user_id: str,
+        server_id: str,
+        server_owner_id: str,
+        vpn_type: str,
+        spec: pc.ProtoSpec,
+        device_id: str | None,
+    ) -> None:
+        """Событие выдачи конфига (актор = участник, владелец затронутого ресурса = владелец сервера)."""
+        async with self.uow.transaction() as tx:
+            user = await tx.users.get(user_id)
+            tx.audit.add_event(
+                at=time.time(),
+                actor_kind="user",
+                actor_id=user_id,
+                actor_name=user.name if user else "",
+                type_=audit_types.CONFIG_DOWNLOAD,
+                target_kind="server",
+                target_id=server_id,
+                owner_user_id=server_owner_id,
+                meta_json=json.dumps({"vpn": vpn_type, "proto": spec.label, "deviceId": device_id}, ensure_ascii=False),
+            )
 
     async def _persist_client(
         self, device_id: str, server_id: str, spec: pc.ProtoSpec, client: ClientMaterial, client_name: str

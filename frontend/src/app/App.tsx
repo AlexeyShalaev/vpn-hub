@@ -11,6 +11,7 @@ import { AccessScreen } from "../screens/Access";
 import { AvailableScreen } from "../screens/Available";
 import { CatalogScreen } from "../screens/Catalog";
 import { DevicesScreen } from "../screens/Devices";
+import { EventsScreen } from "../screens/Events";
 import { GroupDetailScreen } from "../screens/GroupDetail";
 import { GroupsScreen } from "../screens/Groups";
 import { ProfileScreen } from "../screens/Profile";
@@ -437,6 +438,7 @@ const NAV_META: Record<string, { label: string; icon: string }> = {
   access: { label: "Доступы", icon: "access" },
   available: { label: "Доступно", icon: "available" },
   devices: { label: "Устройства", icon: "devices" },
+  events: { label: "События", icon: "events" },
   users: { label: "Пользователи", icon: "users" },
   system: { label: "Система", icon: "system" },
   profile: { label: "Профиль", icon: "profile" },
@@ -446,7 +448,7 @@ function Shell({ me }: { me: Me }) {
   const { screen, go } = useNav();
   const viewRole = useStore((s) => s.viewRole);
 
-  const ownerItems = ["servers", "groups", "access"];
+  const ownerItems = ["servers", "groups", "access", "events"];
   const memberItems = ["available", "devices"];
   const main = viewRole === "owner" ? ownerItems : memberItems;
   const adminItems = me.isAdmin ? ["users", "system"] : [];
@@ -478,6 +480,8 @@ function Shell({ me }: { me: Me }) {
         return <AvailableScreen />;
       case "devices":
         return <DevicesScreen />;
+      case "events":
+        return <EventsScreen />;
       case "users":
         return <UsersScreen />;
       case "system":

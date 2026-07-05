@@ -200,3 +200,24 @@ class Setting(BaseTable):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+class AuditEvent(BaseTable, DatetimeColumnsMixin):
+    """Событие аудит-лога: кто (актор), что (type), над чем (target), у кого (owner).
+
+    Актор и его имя денормализованы (снимок), чтобы событие читалось после удаления/переименования
+    пользователя. `owner_user_id` — владелец затронутого ресурса, проставляется на записи ради
+    ролевой фильтрации owner без джойнов. `meta_json` — доп. детали (ip/ua/имя устройства/статусы).
+    """
+
+    __tablename__ = "audit_events"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    at: Mapped[float] = mapped_column(index=True)  # epoch seconds (как Server.last_check_at)
+    actor_kind: Mapped[str] = mapped_column(String(8))  # admin|user|system
+    actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    actor_name: Mapped[str] = mapped_column(String(120), default="")  # снимок имени актора
+    type: Mapped[str] = mapped_column(String(48), index=True)  # стабильный код события (реестр audit_types)
+    target_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    owner_user_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)

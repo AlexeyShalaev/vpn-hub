@@ -22,6 +22,7 @@ from vpnhub.infra.di import build_container
 from vpnhub.infra.keyring import resolve_keys
 from vpnhub.infra.security import gen_master_key
 from vpnhub.infra.uow import Uow
+from vpnhub.services.audit import AuditService
 from vpnhub.services.backups import BackupService
 from vpnhub.services.bootstrap import ensure_bootstrap_admin, normalize_user_phones
 from vpnhub.services.servers import ServerService
@@ -78,6 +79,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler = AsyncIOScheduler()
     backups = await container.get(BackupService)
     scheduler.add_job(backups.run_tick, "interval", hours=1, id="backup-tick")
+
+    audit = await container.get(AuditService)
+    scheduler.add_job(audit.purge_old, "interval", hours=24, id="audit-retention", max_instances=1, coalesce=True)
 
     monitor = await container.get(ServerService)
     if settings.monitor_enabled:
