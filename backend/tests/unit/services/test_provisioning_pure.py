@@ -302,6 +302,24 @@ def test__build_vless_url__xhttp__adds_transport_and_omits_flow() -> None:
     assert "flow=" not in url  # Vision не применяется на XHTTP
 
 
+def test__build_vless_url__alias_with_brackets__no_encoded_gendelims_in_fragment() -> None:
+    """Имя с «[Provider]» не должно приезжать как «%5BProvider%5D»: скобки → круглые."""
+    from urllib.parse import unquote
+
+    url = vpn_uri.build_vless_url(
+        uuid="u",
+        host="h",
+        port="443",
+        public_key="p",
+        short_id="s",
+        sni="x",
+        alias="Paris [FirstByte] XHTTP",
+    )
+    frag = url.split("#", 1)[1]
+    assert "%5B" not in frag and "%5D" not in frag  # gen-delims не остаются экранированными
+    assert unquote(frag) == "Paris (FirstByte) XHTTP"  # клиент увидит круглые скобки
+
+
 def test__build_bundle_vpn_url__multi_container__roundtrips_with_default_container() -> None:
     """Один vpn:// со списком containers[]: раскодируется в тот же host/default/контейнеры и xray-last_config."""
     # Arrange / Act
