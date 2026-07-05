@@ -41,7 +41,17 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
+      # Pages разрешает один активный деплой на окружение и «доводит» его асинхронно,
+      # поэтому push сразу за предыдущим (merge фичи → релизный коммит) ловит
+      # «Deployment failed, try again later» уже ПОСЛЕ того, как первый job завершился
+      # (отменять concurrency нечего). Это транзиентная гонка — делаем вторую попытку.
+      - id: deploy1
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Settle before retry
+        if: steps.deploy1.outcome == 'failure'
+        run: sleep 45
+      - name: Retry Pages deployment
+        if: steps.deploy1.outcome == 'failure'
         uses: actions/deploy-pages@v5
