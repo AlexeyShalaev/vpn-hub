@@ -3,15 +3,26 @@ name: Docs
 on:
   push:
     branches: [master]
+    # Собираем сайт только когда меняется его источник — иначе каждый push в master
+    # (в т.ч. релизный коммит сразу за merge фичи) плодит лишний деплой Pages и гонки.
+    paths:
+      - "docs/**"
+      - "zensical.toml"
+      - "backend/CHANGELOG.md" # копируется в docs/changelog.md на сборке
+      - ".github/workflows/docs.yml"
+  workflow_dispatch: # ручной перезапуск, если деплой Pages моргнул
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# Один активный деплой Pages; при новом push в master отменяем ещё не завершившийся
+# предыдущий — иначе релизный коммит следом за merge гонится с ним на окружении
+# github-pages, и опоздавший падает с «Deployment failed, try again later».
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
