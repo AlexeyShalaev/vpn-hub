@@ -171,6 +171,8 @@ async def test__generate__peek__lists_protocols_without_provisioning(uow, settin
     assert res["formats"] == []
     assert res["text"] == "" and res["uri"] == ""
     assert set(res["protos"]) >= {"AmneziaWG", "Xray"}
+    # bundle — установленные склеиваемые протоколы (awg/xray), одной кнопкой «все сразу» в UI
+    assert set(res["bundle"]) == {"AmneziaWG", "Xray"}
     assert len(res["clients"]) > 0
     # никакого провижининга: DeviceConfig для устройства не создан
     async with uow.query() as tx:

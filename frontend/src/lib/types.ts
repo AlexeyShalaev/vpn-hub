@@ -160,6 +160,7 @@ export interface ConfigResult {
   hint: string;
   clients: { name: string; store: string; url: string; note?: string; wgOnly?: boolean }[];
   protos: string[];
+  bundle?: string[]; // amnezia-протоколы, выдаваемые одним vpn:// (awg/awg_legacy/xray)
   serverId: string;
   formats: ConfigFormat[];
 }

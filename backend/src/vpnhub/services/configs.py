@@ -210,6 +210,14 @@ class ConfigService:
             existing = self._find_config(device, server_id, spec)
             client = self._client_from_config(existing) if existing else None
 
+        # установленные amnezia-протоколы, что склеиваются в ОДИН vpn:// (awg/awg_legacy/xray).
+        # UI выдаёт их одной кнопкой «все сразу»; xray_xhttp и прочие вендоры сюда не входят.
+        bundle_labels = (
+            [lbl for lbl in installed_labels if (x := pc.spec_by_label(lbl)) and x.id in _BUNDLABLE_AMNEZIA]
+            if vpn_type == pc.VENDOR_AMNEZIA
+            else []
+        )
+
         # peek: только метаданные для выбора в модалке (протоколы + приложения) — БЕЗ провижининга
         # (не создаём клиента и не собираем бандл, иначе выбор устройства/протокола сам бы выдал конфиг).
         if peek:
@@ -225,6 +233,7 @@ class ConfigService:
                 "hint": "",
                 "clients": clients,
                 "protos": installed_labels,
+                "bundle": bundle_labels,
                 "serverId": server_id,
                 "formats": [],
             }
@@ -261,6 +270,7 @@ class ConfigService:
             "hint": artifact.hint,
             "clients": clients,
             "protos": installed_labels,
+            "bundle": bundle_labels,
             "serverId": server_id,
             "formats": formats,
         }
