@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.4.0...v0.5.0) (2026-07-05)
+
+
+### Features
+
+* self-update from UI (all deploy modes) + protocol UI redesign + fixes ([f3ea7e8](https://github.com/AlexeyShalaev/vpn-hub/commit/f3ea7e8f7cd903265995173f0c0075f2e48a36d9))
+* **updates:** apply updates from the panel across all deploy modes ([4ffdfdb](https://github.com/AlexeyShalaev/vpn-hub/commit/4ffdfdb06ef240b7ff45e2158f326efee694a343))
+
 ## [0.4.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.3.0...v0.4.0) (2026-07-04)
 
 
