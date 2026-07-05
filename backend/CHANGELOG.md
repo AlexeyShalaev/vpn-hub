@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.4.0...v0.5.0) (2026-07-05)
+
+
+### Features
+
+* **updates:** apply updates from the panel across all deploy modes ([4ffdfdb](https://github.com/AlexeyShalaev/vpn-hub/commit/4ffdfdb06ef240b7ff45e2158f326efee694a343))
+* **devices:** distinct icon per device platform ([57395fe](https://github.com/AlexeyShalaev/vpn-hub/commit/57395fe82a6d29420bc2395bdcb0ec98a3359f54))
+* **ui:** official vendor logos for VPN software cards ([d4ebf84](https://github.com/AlexeyShalaev/vpn-hub/commit/d4ebf84c08d29c3e7bec64f562dc3bcc30490d0d))
+
+
+### Bug Fixes
+
+* **access:** stop the pool badge overlapping the server name on mobile ([e2d2f8f](https://github.com/AlexeyShalaev/vpn-hub/commit/e2d2f8f2c7dca10baca56ddd1865c966aba0275d))
+* **ui:** redesign server protocol management into a clean vertical card ([b61fdca](https://github.com/AlexeyShalaev/vpn-hub/commit/b61fdca8a9a1342097c98c6c76a6b5b19636f7e7))
+* **ui:** show the Hysteria2 accent dot in protocol cards ([c5d7b52](https://github.com/AlexeyShalaev/vpn-hub/commit/c5d7b52cd93a4ecd1f2c94b6b658646bd1de28e8))
+
 ## [0.4.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.3.0...v0.4.0) (2026-07-04)
 
 
