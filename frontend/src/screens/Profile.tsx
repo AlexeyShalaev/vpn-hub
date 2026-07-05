@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Avatar, Btn, Field, Icon, Modal, ScreenHeader, Spinner, Switch } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { LANG_LABEL, LANGS, useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Session } from "../lib/types";
 import { useNav } from "../nav";
@@ -11,6 +12,9 @@ export function ProfileScreen() {
   const me = useStore((s) => s.me);
   const theme = useStore((s) => s.theme);
   const toggleTheme = useStore((s) => s.toggleTheme);
+  const lang = useStore((s) => s.lang);
+  const setLang = useStore((s) => s.setLang);
+  const t = useT();
   const viewRole = useStore((s) => s.viewRole);
   const setViewRole = useStore((s) => s.setViewRole);
   const setMe = useStore((s) => s.setMe);
@@ -199,23 +203,43 @@ export function ProfileScreen() {
         <div className="card-row" style={{ padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
           <Icon name={theme === "dark" ? "moon" : "sun"} size={18} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 14.5 }}>Тёмная тема</div>
+            <div style={{ fontWeight: 600, fontSize: 14.5 }}>{t("profile.darkTheme")}</div>
             <div className="muted-3" style={{ fontSize: 12.5 }}>
-              Сейчас: {theme === "dark" ? "Тёмная" : "Светлая"}
+              {t("profile.themeNow", { value: theme === "dark" ? t("profile.themeDark") : t("profile.themeLight") })}
             </div>
           </div>
           <Switch on={theme === "dark"} onClick={toggleTheme} />
         </div>
         <div className="card-row" style={{ padding: "14px 0" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 14.5 }}>Язык</div>
+            <div style={{ fontWeight: 600, fontSize: 14.5 }}>{t("profile.language")}</div>
             <div className="muted-3" style={{ fontSize: 12.5 }}>
-              Интерфейс приложения
+              {t("profile.languageHint")}
             </div>
           </div>
-          <span className="muted" style={{ fontSize: 13.5, fontWeight: 600 }}>
-            Русский
-          </span>
+          <div className="row" style={{ gap: 6 }}>
+            {LANGS.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => setLang(l)}
+                className={lang === l ? "" : "muted"}
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "5px 11px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  background: "transparent",
+                  color: lang === l ? "var(--text)" : undefined,
+                  opacity: lang === l ? 1 : 0.6,
+                }}
+              >
+                {LANG_LABEL[l]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

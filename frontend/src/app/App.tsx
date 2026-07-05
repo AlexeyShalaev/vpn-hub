@@ -4,6 +4,7 @@ import { PhoneField } from "../components/PhoneField";
 import { Btn, Field, FilePicker, Icon, KeyInput } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { subscribeEvents } from "../lib/events";
+import { type TKey, useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
 import type { Me } from "../lib/types";
@@ -433,21 +434,22 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
   );
 }
 
-const NAV_META: Record<string, { label: string; icon: string }> = {
-  servers: { label: "Серверы", icon: "servers" },
-  groups: { label: "Группы", icon: "groups" },
-  access: { label: "Доступы", icon: "access" },
-  available: { label: "Доступно", icon: "available" },
-  devices: { label: "Устройства", icon: "devices" },
-  events: { label: "События", icon: "events" },
-  users: { label: "Пользователи", icon: "users" },
-  system: { label: "Система", icon: "system" },
-  profile: { label: "Профиль", icon: "profile" },
+const NAV_META: Record<string, { labelKey: TKey; icon: string }> = {
+  servers: { labelKey: "nav.servers", icon: "servers" },
+  groups: { labelKey: "nav.groups", icon: "groups" },
+  access: { labelKey: "nav.access", icon: "access" },
+  available: { labelKey: "nav.available", icon: "available" },
+  devices: { labelKey: "nav.devices", icon: "devices" },
+  events: { labelKey: "nav.events", icon: "events" },
+  users: { labelKey: "nav.users", icon: "users" },
+  system: { labelKey: "nav.system", icon: "system" },
+  profile: { labelKey: "nav.profile", icon: "profile" },
 };
 
 function Shell({ me }: { me: Me }) {
   const { screen, go } = useNav();
   const viewRole = useStore((s) => s.viewRole);
+  const t = useT();
   const qc = useQueryClient();
 
   // SSE realtime: один коннект на авторизованное приложение. cleanup закрывает EventSource,
@@ -502,7 +504,7 @@ function Shell({ me }: { me: Me }) {
   const NavItem = ({ id }: { id: string }) => (
     <button className={`nav-btn ${activeTop === id ? "active" : ""}`} onClick={() => go(id as never)}>
       <Icon name={NAV_META[id].icon} />
-      {NAV_META[id].label}
+      {t(NAV_META[id].labelKey)}
     </button>
   );
 
@@ -521,7 +523,7 @@ function Shell({ me }: { me: Me }) {
         {adminItems.length > 0 && (
           <>
             <div className="nav-divider" />
-            <div className="nav-label">Администрирование</div>
+            <div className="nav-label">{t("nav.admin")}</div>
             <div className="stack" style={{ gap: 4 }}>
               {adminItems.map((id) => (
                 <NavItem key={id} id={id} />
@@ -550,7 +552,7 @@ function Shell({ me }: { me: Me }) {
             onClick={() => go(id as never)}
           >
             <Icon name={NAV_META[id].icon} size={21} />
-            {NAV_META[id].label}
+            {t(NAV_META[id].labelKey)}
           </button>
         ))}
       </nav>

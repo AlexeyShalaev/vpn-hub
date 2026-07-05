@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { detectLang, type Lang } from "./lib/i18n";
 import type { Me } from "./lib/types";
 
 interface State {
@@ -6,6 +7,8 @@ interface State {
   setMe: (me: Me | null) => void;
   theme: "light" | "dark";
   toggleTheme: () => void;
+  lang: Lang;
+  setLang: (lang: Lang) => void;
   viewRole: "owner" | "member";
   setViewRole: (r: "owner" | "member") => void;
   toastMsg: string | null;
@@ -14,6 +17,9 @@ interface State {
 
 const savedTheme = (localStorage.getItem("vpnhub.theme") as "light" | "dark") || "light";
 document.documentElement.setAttribute("data-theme", savedTheme);
+
+const initialLang = detectLang();
+document.documentElement.setAttribute("lang", initialLang);
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -27,6 +33,13 @@ export const useStore = create<State>((set) => ({
       localStorage.setItem("vpnhub.theme", theme);
       document.documentElement.setAttribute("data-theme", theme);
       return { theme };
+    }),
+  lang: initialLang,
+  setLang: (lang) =>
+    set(() => {
+      localStorage.setItem("vpnhub.lang", lang);
+      document.documentElement.setAttribute("lang", lang);
+      return { lang };
     }),
   viewRole: "member",
   setViewRole: (viewRole) => set({ viewRole }),
