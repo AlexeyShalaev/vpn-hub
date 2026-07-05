@@ -72,6 +72,19 @@ async def delete_server(
     return {"ok": True}
 
 
+@router.post("/servers/{sid}/migrate")
+async def migrate_server(
+    sid: str,
+    body: dict[str, Any] = Body(...),
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    # body: { ip (обяз.), sshPort?, sshUser?, auth?, secret? } — новые SSH-реквизиты VPS.
+    # Переустанавливает все установленные протоколы на новом хосте (фон) и помечает
+    # выданные конфиги revoked (требуют перевыдачи). См. tasks/07-server-migration.md.
+    return await svc.migrate(ident.id, sid, body)
+
+
 @router.post("/servers/{sid}/check")
 async def check_server(
     sid: str, ident: Identity = Depends(require_user), svc: ServerService = Depends(service(ServerService))

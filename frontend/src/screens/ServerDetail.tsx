@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Btn, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
+import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
 import type { Protocol, Server, Vpn, VpnType } from "../lib/types";
 import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } from "../lib/types";
@@ -21,6 +21,14 @@ export function ServerDetailScreen() {
 
   const [reveal, setReveal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // мастер «Мигрировать на новый VPS»: новые SSH-реквизиты; secret пустой → оставить текущий
+  const [migrateForm, setMigrateForm] = useState<{
+    ip: string;
+    sshUser: string;
+    sshPort: string;
+    auth: string;
+    secret: string;
+  } | null>(null);
   const [advancedVpn, setAdvancedVpn] = useState<VpnType | null>(null);
   // подтверждение сноса всего вендора (все его протоколы + доступы разом)
   const [confirmRemoveVpn, setConfirmRemoveVpn] = useState<VpnType | null>(null);
@@ -131,6 +139,24 @@ export function ServerDetailScreen() {
     onError: (e) => toast(e instanceof Error ? e.message : "Не удалось запустить исправление"),
   });
 
+  // миграция на новый VPS: реквизиты меняются сразу, протоколы переустанавливаются в фоне
+  // (прогресс виден через state=installing, как обычная установка); конфиги — к перевыдаче
+  const migrateMut = useMutation({
+    mutationFn: (b: { ip: string; sshPort?: string; sshUser?: string; auth?: string; secret?: string }) =>
+      q.migrateServer(serverId, b),
+    onSuccess: (r) => {
+      setMigrateForm(null);
+      invalidate();
+      const protoCount = Object.values(r.reinstall).reduce((n, ids) => n + ids.length, 0);
+      toast(
+        protoCount
+          ? `Миграция запущена: переустановка ${protoCount} протокол(ов), конфигов к перевыдаче: ${r.configsRevoked}`
+          : "Реквизиты обновлены — установленных протоколов для переноса нет",
+      );
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось запустить миграцию"),
+  });
+
   const deleteMut = useMutation({
     mutationFn: () => q.deleteServer(serverId),
     onSuccess: () => {
@@ -216,11 +242,28 @@ export function ServerDetailScreen() {
 
       {/* SSH */}
       <div className="card stack">
-        <div
-          className="muted-3"
-          style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
-        >
-          Подключение SSH
+        <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+          <div
+            className="muted-3"
+            style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
+          >
+            Подключение SSH
+          </div>
+          <Btn
+            sm
+            onClick={() =>
+              setMigrateForm({
+                ip: "",
+                sshUser: server.sshUser,
+                sshPort: server.sshPort,
+                auth: server.auth,
+                secret: "",
+              })
+            }
+          >
+            <Icon name="refresh" size={15} />
+            Мигрировать на новый VPS
+          </Btn>
         </div>
         <div className="grid">
           <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
@@ -579,6 +622,95 @@ export function ServerDetailScreen() {
           }
         >
           <p className="muted">Сервер пропадёт из пулов и групповых доступов. Действие необратимо.</p>
+        </Modal>
+      )}
+
+      {/* Миграция на новый VPS: новые SSH-реквизиты + переустановка протоколов в фоне */}
+      {migrateForm && (
+        <Modal
+          title="Мигрировать на новый VPS"
+          onClose={() => setMigrateForm(null)}
+          footer={
+            <>
+              <Btn variant="ghost" onClick={() => setMigrateForm(null)}>
+                Отмена
+              </Btn>
+              <Btn
+                variant="primary"
+                disabled={migrateMut.isPending || !migrateForm.ip.trim()}
+                onClick={() =>
+                  migrateMut.mutate({
+                    ip: migrateForm.ip.trim(),
+                    sshPort: migrateForm.sshPort.trim() || undefined,
+                    sshUser: migrateForm.sshUser.trim() || undefined,
+                    auth: migrateForm.auth || undefined,
+                    secret: migrateForm.secret || undefined,
+                  })
+                }
+              >
+                {migrateMut.isPending ? <Spinner /> : "Мигрировать"}
+              </Btn>
+            </>
+          }
+        >
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="muted" style={{ fontSize: 13 }}>
+              Старый сервер считается недоступным: панель переключится на новые реквизиты и переустановит все
+              установленные протоколы на новом хосте (в фоне). Серверные ключи будут сгенерированы заново, поэтому все
+              выданные конфиги будут помечены отозванными — участникам нужно перевыпустить их (в конфигах в любом случае
+              зашит старый IP).
+            </p>
+            <Field label="IP нового сервера">
+              <input
+                className="input mono"
+                value={migrateForm.ip}
+                onChange={(e) => setMigrateForm({ ...migrateForm, ip: e.target.value })}
+                placeholder="203.0.113.10"
+              />
+            </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+              <Field label="Пользователь">
+                <input
+                  className="input mono"
+                  value={migrateForm.sshUser}
+                  onChange={(e) => setMigrateForm({ ...migrateForm, sshUser: e.target.value })}
+                  placeholder="root"
+                />
+              </Field>
+              <Field label="Порт">
+                <input
+                  className="input mono"
+                  value={migrateForm.sshPort}
+                  onChange={(e) => setMigrateForm({ ...migrateForm, sshPort: e.target.value })}
+                  placeholder="22"
+                />
+              </Field>
+            </div>
+            <Field label="Способ авторизации">
+              <div style={{ display: "flex", gap: 8 }}>
+                {(["key", "password"] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    className={`chip${migrateForm.auth === a ? " selected" : ""}`}
+                    style={{ flex: 1, height: 40, justifyContent: "center", cursor: "pointer", fontSize: 13.5 }}
+                    onClick={() => setMigrateForm({ ...migrateForm, auth: a })}
+                  >
+                    {a === "key" ? "SSH-ключ" : "Пароль"}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label={migrateForm.auth === "password" ? "Пароль" : "Приватный SSH-ключ"}>
+              <input
+                className="input mono"
+                type={migrateForm.auth === "password" ? "password" : "text"}
+                value={migrateForm.secret}
+                onChange={(e) => setMigrateForm({ ...migrateForm, secret: e.target.value })}
+                placeholder="пусто — использовать текущий секрет"
+              />
+            </Field>
+          </div>
         </Modal>
       )}
 

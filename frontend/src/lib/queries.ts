@@ -61,6 +61,16 @@ export const createServer = (b: Record<string, unknown>) => http.post<Server>("/
 export const updateServer = (id: string, b: Record<string, unknown>) => http.patch<Server>(`/servers/${id}`, b);
 export const deleteServer = (id: string) => http.del(`/servers/${id}`);
 export const checkServer = (id: string) => http.post<Server>(`/servers/${id}/check`);
+// миграция на новый VPS: новые SSH-реквизиты + фоновая переустановка установленных протоколов;
+// выданные конфиги помечаются revoked (перевыдача — материал сервера генерится заново)
+export const migrateServer = (
+  id: string,
+  b: { ip: string; sshPort?: string; sshUser?: string; auth?: string; secret?: string },
+) =>
+  http.post<{ server: Server; reinstall: Record<string, string[]>; configsRevoked: number }>(
+    `/servers/${id}/migrate`,
+    b,
+  );
 export const syncServer = (id: string) => http.post<Server>(`/servers/${id}/sync`);
 // install: protos — выбранные протоколы вендора (id); пусто → все. Для start/stop/remove тело игнорируется.
 export const vpnOp = (id: string, type: string, op: string, protos?: string[]) =>

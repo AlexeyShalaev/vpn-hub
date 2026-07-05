@@ -14,6 +14,7 @@ import time
 import structlog
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 
 from vpnhub.api.config import Settings
 from vpnhub.common.catalog import DEFAULT_PORTS
@@ -142,6 +143,73 @@ class ServerService:
             await tx.session.flush()
             await tx.session.refresh(s)
             return server_to_dict(s, self._secret(s))
+
+    async def migrate(self, owner_id: str, sid: str, data: dict) -> dict:
+        """Миграция сервера на новый VPS (старый недоступен/заблокирован).
+
+        Сценарий: у сервера меняются SSH-реквизиты (новый IP/порт/юзер/секрет), затем все
+        установленные provisioned-протоколы переустанавливаются на новом хосте существующими
+        install-путями (фоново, прогресс — через state=installing, как обычная установка).
+
+        ЧЕСТНОСТЬ (матрица — tasks/07-server-migration.md): material_encrypted хранит только
+        ПУБЛИЧНЫЙ материал (pubkey/psk/CA cert/apiUrl/cert-pin) — приватная identity сервера
+        (awg-приватник, Reality privateKey, CA-ключ, состояние shadowbox) генерится внутри
+        контейнера при install и НЕ персистится, поэтому ни один вендор сегодня не умеет
+        переустановку «с тем же материалом»: переустановка даёт новую identity. Плюс endpoint
+        клиентских конфигов содержит IP старого сервера — при смене IP их пришлось бы
+        перескачивать в любом случае. Поэтому все выданные конфиги честно помечаются
+        revoked → участник переиздаёт конфиг в один клик (существующий flow: revoked
+        переиздаётся заново, уже с новым адресом). Ledger отзыва (pending_revoke_json)
+        обнуляется — долг относился к контейнерам старого хоста, которых больше нет.
+        """
+        ip = str(data.get("ip") or "").strip()
+        if not ip:
+            raise BadRequest("Укажите IP нового сервера")
+        if not is_valid_host(ip):
+            raise BadRequest("Некорректный IP или хост сервера")
+
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            s.ip = ip
+            if data.get("sshUser"):
+                s.ssh_user = str(data["sshUser"])
+            if data.get("sshPort"):
+                s.ssh_port = str(data["sshPort"])
+            if data.get("auth"):
+                s.ssh_auth = str(data["auth"])
+            if data.get("secret"):  # пусто → оставить текущий секрет (тот же ключ подходит к новому VPS)
+                s.ssh_secret_encrypted = encrypt_secret(self.settings.secret_key, data["secret"])
+            s.status, s.latency_ms = "unknown", None
+
+            # что переустанавливаем на новом хосте: все установленные provisioned-протоколы
+            reinstall: dict[str, builtins.list[str]] = {}
+            for p in s.protocols:
+                if p.vendor in PROVISIONED_VENDORS and p.installed:
+                    reinstall.setdefault(p.vendor, []).append(p.proto)
+                p.pending_revoke_json = None  # долг отзыва — про контейнеры старого хоста
+
+            # выданные конфиги: клиентов на новом хосте нет → помечаем revoked (требуют перевыдачи)
+            marked = await tx.session.execute(
+                sa_update(m.DeviceConfig)
+                .where(m.DeviceConfig.server_id == sid, m.DeviceConfig.status == "active")
+                .values(status="revoked")
+            )
+            for vendor, proto_ids in reinstall.items():
+                await prov.mark_installing(tx, sid, vendor, proto_ids)
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            result = server_to_dict(s, self._secret(s))
+
+        for vendor, proto_ids in reinstall.items():
+            prov.schedule_install(sid, vendor, proto_ids)  # долгая переустановка — в фоне
+        log.info("server_migration_started", server_id=sid, reinstall=reinstall)
+        return {
+            "server": result,
+            "reinstall": reinstall,  # вендор → протоколы, переустанавливаемые на новом хосте
+            # конфигов помечено к перевыдаче (rowcount типизирован только у CursorResult)
+            "configsRevoked": int(marked.rowcount or 0),  # type: ignore[attr-defined]
+        }
 
     async def delete(self, owner_id: str, sid: str) -> None:
         prov = ProvisioningService(self.uow, self.settings)
