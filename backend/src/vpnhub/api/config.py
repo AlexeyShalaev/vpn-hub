@@ -152,7 +152,12 @@ class Settings(BaseSettings):
     edition: str = "Community"
 
     @field_validator(
-        "trusted_proxy", "docs_enabled", "run_migrations", "monitor_enabled", "sync_enabled", "update_k8s",
+        "trusted_proxy",
+        "docs_enabled",
+        "run_migrations",
+        "monitor_enabled",
+        "sync_enabled",
+        "update_k8s",
         mode="before",
     )
     @classmethod
