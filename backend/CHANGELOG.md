@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.5.0...v0.6.0) (2026-07-05)
+
+
+### Features
+
+* **configs:** issue bundlable Amnezia protocols as one choice ([6d6016b](https://github.com/AlexeyShalaev/vpn-hub/commit/6d6016bb82b071683d2982bab4259685ffed104d))
+
+
+### Bug Fixes
+
+* **configs:** don't lead with the bundle when Xray XHTTP is chosen ([fcf05e5](https://github.com/AlexeyShalaev/vpn-hub/commit/fcf05e5b8359e8ad3a5981f45e4b3488c315df46))
+* **devices:** keep each issued config on one line ([a284961](https://github.com/AlexeyShalaev/vpn-hub/commit/a284961ab2f001e5a540e91335141f4ece63a23c))
+* **ui:** official Android, Linux and Windows platform icons ([29259ef](https://github.com/AlexeyShalaev/vpn-hub/commit/29259efa5bf0f4f20fcf122ec703eceaff7777c9))
+
 ## [0.5.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.4.0...v0.5.0) (2026-07-05)
 
 
