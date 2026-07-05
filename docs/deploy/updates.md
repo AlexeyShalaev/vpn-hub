@@ -246,12 +246,26 @@ vpnhub-7d9c8b6f4-abcde        1/1     Running   0          20s
 === "Kubernetes (native, RBAC)"
 
     База `deploy/k8s/base` уже содержит `ServiceAccount vpnhub` + `Role` с правом `patch` **только**
-    на собственный Deployment (`rbac.yaml`). Кнопка патчит образ Deployment через API кластера,
-    rollout выполняет kubelet — отдельный апдейтер не нужен, `kubectl` в образе не требуется.
+    на собственный Deployment (`rbac.yaml`), а Deployment ссылается на этот SA. Кнопка патчит образ
+    через API кластера, rollout выполняет kubelet — отдельный апдейтер не нужен, `kubectl` в образе
+    не требуется.
 
     ```bash
-    kubectl apply -k deploy/k8s/overlays/bundled-db   # RBAC применится вместе с базой
+    kubectl apply -k deploy/k8s/overlays/bundled-db   # RBAC и serviceAccountName приедут с базой
     ```
+
+    !!! warning "Обновляйте через `apply -k`, а не только `set image`"
+        RBAC и `serviceAccountName` появляются на кластере **только** при `kubectl apply -k`.
+        Если вы ставили/обновляли панель через `kubectl set image` (или ваши манифесты новее
+        приложения), под работает под SA `default` без прав — кнопка перед применением сделает
+        пре-чек (SelfSubjectAccessReview) и, увидев отсутствие прав, честно покажет «примените RBAC»
+        вместо ошибки 403. Дожать на уже стоящей инсталляции:
+
+        ```bash
+        kubectl apply -f deploy/k8s/base/rbac.yaml
+        kubectl -n vpnhub patch deployment vpnhub --type merge \
+          -p '{"spec":{"template":{"spec":{"serviceAccountName":"vpnhub"}}}}'
+        ```
 
     Выключить: `VPNHUB_UPDATE_K8S=false`. Патч образа разойдётся с `images: newTag` в overlay —
     для GitOps после обновления синхронизируйте `newTag` (как и при `kubectl set image`).

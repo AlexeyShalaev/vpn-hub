@@ -15,9 +15,10 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _reset_status() -> None:
-    """Каждый тест стартует с чистым слотом применения (статус — модульное состояние)."""
+    """Каждый тест стартует с чистым слотом применения и кэшем пре-чека (модульное состояние)."""
     su._status.clear()
     su._status.update({"state": "idle"})
+    su._k8s_ready_cache.clear()
 
 
 def _settings(**over: object) -> Settings:
@@ -89,6 +90,89 @@ def test__k8s_request__honours_custom_names(monkeypatch: pytest.MonkeyPatch) -> 
     assert "/deployments/panel?" in req.full_url
     body = json.loads(req.data)
     assert body["spec"]["template"]["spec"]["containers"][0]["name"] == "app"
+
+
+# --- пре-чек прав (SelfSubjectAccessReview) ---------------------------------
+
+
+def test__ssar_request__checks_patch_on_own_deployment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.96.0.1")
+    monkeypatch.setenv("KUBERNETES_SERVICE_PORT", "443")
+    req = su._ssar_request(_settings(), namespace="vpnhub", token="tok")
+    assert req.method == "POST"
+    assert req.full_url == "https://10.96.0.1:443/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
+    assert req.headers["Authorization"] == "Bearer tok"
+    ra = json.loads(req.data)["spec"]["resourceAttributes"]
+    assert ra == {
+        "namespace": "vpnhub",
+        "verb": "patch",
+        "group": "apps",
+        "resource": "deployments",
+        "name": "vpnhub",
+    }
+
+
+def test__k8s_ssar__no_token__fail_open(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    # токен недоступен → пре-чек не прячет кнопку (fail-open), решает само применение
+    monkeypatch.setattr(su, "K8S_TOKEN_FILE", tmp_path / "missing-token")
+    ok, reason = su._k8s_ssar(_settings())
+    assert ok is True and reason == ""
+
+
+class _FakeResp:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def __enter__(self) -> _FakeResp:
+        return self
+
+    def __exit__(self, *_a: object) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return self._body
+
+
+def _stub_ssar(monkeypatch: pytest.MonkeyPatch, tmp_path, body: bytes) -> None:
+    token = tmp_path / "token"
+    token.write_text("t")
+    monkeypatch.setattr(su, "K8S_TOKEN_FILE", token)
+    monkeypatch.setattr(su, "K8S_CA_FILE", tmp_path / "no-ca")  # нет CA → ctx=None, без TLS
+    monkeypatch.setattr(su.urllib.request, "urlopen", lambda *_a, **_k: _FakeResp(body))
+
+
+def test__k8s_ssar__denied__returns_rbac_hint(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    _stub_ssar(monkeypatch, tmp_path, b'{"status": {"allowed": false}}')
+    ok, reason = su._k8s_ssar(_settings())
+    assert ok is False and "RBAC" in reason
+
+
+def test__k8s_ssar__allowed__ready(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    _stub_ssar(monkeypatch, tmp_path, b'{"status": {"allowed": true}}')
+    ok, reason = su._k8s_ssar(_settings())
+    assert ok is True and reason == ""
+
+
+def test__k8s_ssar__null_status__fail_open(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    # аномальный ответ {"status": null} не должен ронять /system — fail-open, а не 500
+    _stub_ssar(monkeypatch, tmp_path, b'{"status": null}')
+    ok, reason = su._k8s_ssar(_settings())
+    assert ok is True and reason == ""
+
+
+async def test__k8s_ready__denied_is_cached_within_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"n": 0}
+
+    def fake_ssar(_s: object) -> tuple[bool, str]:
+        calls["n"] += 1
+        return False, "нет прав"
+
+    monkeypatch.setattr(su, "_k8s_ssar", fake_ssar)
+    ok1, r1 = await su.k8s_ready(_settings())
+    ok2, r2 = await su.k8s_ready(_settings())
+    assert ok1 is False and ok2 is False
+    assert r1 == r2 == "нет прав"
+    assert calls["n"] == 1  # второй вызов обслужен из кэша
 
 
 # --- _apply_command ---------------------------------------------------------

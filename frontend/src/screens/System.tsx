@@ -587,7 +587,8 @@ export function SystemScreen() {
           <p style={{ fontSize: 12, color: "var(--text-3)", margin: 0 }}>
             {sys.updateSupported
               ? (MODE_HINT[sys.updateMode] ?? "Кнопка «Обновить сейчас» применит обновление автоматически. ")
-              : "Обновление из панели не настроено — примените команду вручную на хосте (как включить кнопку — docs/deploy/updates). "}
+              : (sys.updateHint ||
+                "Обновление из панели не настроено — примените команду вручную на хосте (как включить кнопку — docs/deploy/updates). ")}
             Данные в PostgreSQL сохраняются, миграции применятся автоматически при старте.
           </p>
         </Modal>
