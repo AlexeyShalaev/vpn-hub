@@ -281,41 +281,62 @@ export function ServerDetailScreen() {
             return (
               <div
                 key={type}
-                className="card-row"
-                style={{ border: "1px solid var(--border)", borderRadius: 13, padding: 13 }}
+                className="stack"
+                style={{
+                  border: `1px solid ${errored ? "var(--danger)" : "var(--border)"}`,
+                  borderRadius: 13,
+                  padding: 13,
+                  gap: 12,
+                }}
               >
-                <div
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 10,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flex: "none",
-                    background: "var(--surface-2)",
-                  }}
-                >
-                  <span className={`dot ${type}`} style={{ width: 10, height: 10 }} />
+                {/* Шапка: иконка + имя вендора + агрегатный статус (клик — расширенные настройки) */}
+                <div className="rowflex" style={{ gap: 12, flexWrap: "nowrap", alignItems: "flex-start" }}>
+                  <div
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flex: "none",
+                      background: "var(--surface-2)",
+                    }}
+                  >
+                    <span className={`dot ${type}`} style={{ width: 10, height: 10 }} />
+                  </div>
+                  <div
+                    style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
+                    onClick={v.installed ? () => setAdvancedVpn(type) : undefined}
+                  >
+                    <div className="rowflex" style={{ gap: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>{VPN_LABEL[type]}</span>
+                      <span className={`badge ${runClass}`}>{runLabel}</span>
+                      {v.installed && (
+                        <span className="muted-3" style={{ display: "inline-flex" }} title="Расширенные настройки">
+                          <Icon name="chevron" size={14} />
+                        </span>
+                      )}
+                    </div>
+                    <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
+                      {VPN_DESC[type]}
+                    </div>
+                  </div>
                 </div>
-                <div
-                  style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
-                  onClick={v.installed ? () => setAdvancedVpn(type) : undefined}
-                >
-                  <div className="rowflex">
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>{VPN_LABEL[type]}</span>
-                    <span className={`badge ${runClass}`}>{runLabel}</span>
-                    {v.installed && (
-                      <span className="muted-3" style={{ display: "inline-flex" }} title="Подробнее">
-                        <Icon name="chevron" size={14} />
-                      </span>
-                    )}
-                  </div>
-                  <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
-                    {VPN_DESC[type]}
-                  </div>
-                  {/* пер-протокольный список: состояние + свитчер стоп/пуск + корзина у установленных */}
-                  <div className="stack" style={{ gap: 4, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+
+                {/* Протоколы: ровный список со статус-точкой и пер-протокольными действиями */}
+                {(v.installed || installing) && (
+                  <div
+                    className="stack"
+                    style={{ gap: 2, borderTop: "1px solid var(--border)", paddingTop: 10 }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div
+                      className="muted-3"
+                      style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}
+                    >
+                      Протоколы
+                    </div>
                     {catalog.map((pr) => {
                       const p = protos.find((x) => x.proto === pr.id);
                       const st = p?.state ?? "absent";
@@ -324,17 +345,54 @@ export function ServerDetailScreen() {
                       const ext = p?.externalClients ?? 0;
                       // у установленного показываем работает/остановлен, иначе — состояние установки
                       const stateText = inst ? (running ? "работает" : "остановлен") : (PROTO_STATE_LABEL[st] ?? st);
+                      const dotColor =
+                        st === "installing"
+                          ? "var(--warn)"
+                          : inst && running
+                            ? "var(--ok)"
+                            : inst
+                              ? "var(--warn)"
+                              : "var(--border-strong)";
                       return (
-                        <div key={pr.id} className="rowflex" style={{ justifyContent: "space-between", gap: 8 }}>
-                          <span style={{ fontSize: 12.5, minWidth: 0 }}>
-                            <span className={`badge ${inst && running ? "ok" : "neutral"}`}>{pr.label}</span>
-                            <span className="muted-3" style={{ marginLeft: 6, fontSize: 11.5 }}>
+                        <div
+                          key={pr.id}
+                          className="rowflex"
+                          style={{
+                            justifyContent: "space-between",
+                            gap: 8,
+                            flexWrap: "nowrap",
+                            minHeight: 34,
+                            opacity: inst || st === "installing" ? 1 : 0.55,
+                          }}
+                        >
+                          <span className="rowflex" style={{ gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
+                            <span
+                              style={{
+                                width: 7,
+                                height: 7,
+                                borderRadius: 999,
+                                flex: "none",
+                                background: dotColor,
+                              }}
+                            />
+                            <span
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 600,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {pr.label}
+                            </span>
+                            <span className="muted-3" style={{ fontSize: 11.5, whiteSpace: "nowrap", flex: "none" }}>
                               {stateText}
                               {ext > 0 ? ` · +${ext} внешн.` : ""}
                             </span>
                           </span>
                           {inst && (
-                            <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
+                            <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6, flex: "none" }}>
                               <Btn
                                 sm
                                 disabled={!online || protoOpMut.isPending}
@@ -347,6 +405,7 @@ export function ServerDetailScreen() {
                               <Btn
                                 variant="ghost"
                                 sm
+                                title={`Удалить протокол ${pr.label}`}
                                 disabled={removeProtoMut.isPending}
                                 onClick={() => setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })}
                               >
@@ -358,88 +417,98 @@ export function ServerDetailScreen() {
                       );
                     })}
                   </div>
-                  {errored && (
-                    <div style={{ marginTop: 6 }} onClick={(e) => e.stopPropagation()}>
-                      {rem ? (
-                        <div className="stack" style={{ gap: 3 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)" }}>{rem.title}</div>
-                          <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
-                            {rem.explanation}
-                          </div>
-                          {rem.manualSteps.length > 0 && (
-                            <ol
-                              className="muted-3"
-                              style={{ fontSize: 11.5, margin: "2px 0 0", paddingLeft: 16, lineHeight: 1.5 }}
-                            >
-                              {rem.manualSteps.map((step, i) => (
-                                <li key={i} style={{ wordBreak: "break-word" }}>
-                                  {step}
-                                </li>
-                              ))}
-                            </ol>
-                          )}
-                        </div>
-                      ) : (
-                        errored.error && (
-                          <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
-                            Ошибка: {errored.error}
-                          </div>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
 
-                {busy ? (
-                  <Spinner />
-                ) : installing ? (
-                  <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
-                    <Spinner />
-                    <span className="muted-3" style={{ fontSize: 12.5 }}>
-                      Устанавливается…
-                    </span>
-                  </div>
-                ) : (
-                  <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6 }}>
-                    {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
-                    {rem?.canAutoFix && (
-                      <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
-                        {rem.fixLabel ?? "Исправить"}
-                      </Btn>
-                    )}
-                    {v.installed && (
-                      <Btn
-                        sm
-                        disabled={!online}
-                        onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
-                      >
-                        {v.running ? "Стоп" : "Запустить"}
-                      </Btn>
-                    )}
-                    {notInstalled.length > 0 && (
-                      <Btn
-                        variant={v.installed || rem?.canAutoFix ? "ghost" : "primary"}
-                        sm
-                        onClick={() => {
-                          setCheckedProtos(new Set(notInstalled.map((p) => p.id)));
-                          setAddProtoVendor(type);
-                        }}
-                      >
-                        {v.installed ? "+ Протоколы" : "Установить"}
-                      </Btn>
-                    )}
-                    {v.installed && (
-                      <Btn
-                        variant="ghost"
-                        sm
-                        title={`Удалить ${VPN_LABEL[type]} целиком`}
-                        onClick={() => setConfirmRemoveVpn(type)}
-                      >
-                        <Icon name="trash" size={15} />
-                      </Btn>
+                {/* Диагностика ошибки установки/сбоя протокола */}
+                {errored && (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    {rem ? (
+                      <div className="stack" style={{ gap: 3 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)" }}>{rem.title}</div>
+                        <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                          {rem.explanation}
+                        </div>
+                        {rem.manualSteps.length > 0 && (
+                          <ol
+                            className="muted-3"
+                            style={{ fontSize: 11.5, margin: "2px 0 0", paddingLeft: 16, lineHeight: 1.5 }}
+                          >
+                            {rem.manualSteps.map((step, i) => (
+                              <li key={i} style={{ wordBreak: "break-word" }}>
+                                {step}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    ) : (
+                      errored.error && (
+                        <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                          Ошибка: {errored.error}
+                        </div>
+                      )
                     )}
                   </div>
                 )}
+
+                {/* Действия по вендору: докачать / остановить всё / удалить ПО целиком */}
+                <div
+                  className="rowflex"
+                  style={{ gap: 8, borderTop: "1px solid var(--border)", paddingTop: 11 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {installing ? (
+                    <span className="rowflex" style={{ gap: 8 }}>
+                      <Spinner />
+                      <span className="muted-3" style={{ fontSize: 12.5 }}>
+                        Устанавливается…
+                      </span>
+                    </span>
+                  ) : busy ? (
+                    <Spinner />
+                  ) : (
+                    <>
+                      {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
+                      {rem?.canAutoFix && (
+                        <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
+                          {rem.fixLabel ?? "Исправить"}
+                        </Btn>
+                      )}
+                      {notInstalled.length > 0 && (
+                        <Btn
+                          variant={v.installed || rem?.canAutoFix ? "ghost" : "primary"}
+                          sm
+                          onClick={() => {
+                            setCheckedProtos(new Set(notInstalled.map((p) => p.id)));
+                            setAddProtoVendor(type);
+                          }}
+                        >
+                          {v.installed ? "+ Протоколы" : "Установить"}
+                        </Btn>
+                      )}
+                      {v.installed && (
+                        <Btn
+                          sm
+                          disabled={!online}
+                          onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
+                        >
+                          {v.running ? "Остановить всё" : "Запустить всё"}
+                        </Btn>
+                      )}
+                      {v.installed && (
+                        <Btn
+                          variant="ghost"
+                          sm
+                          title={`Удалить ${VPN_LABEL[type]} целиком`}
+                          style={{ marginLeft: "auto" }}
+                          onClick={() => setConfirmRemoveVpn(type)}
+                        >
+                          <Icon name="trash" size={15} />
+                        </Btn>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -504,7 +573,18 @@ export function ServerDetailScreen() {
               .map((pr) => {
                 const on = checkedProtos.has(pr.id);
                 return (
-                  <label key={pr.id} className="rowflex" style={{ gap: 10, cursor: "pointer", padding: "6px 2px" }}>
+                  <label
+                    key={pr.id}
+                    className="rowflex"
+                    style={{
+                      gap: 11,
+                      cursor: "pointer",
+                      padding: "11px 13px",
+                      border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
+                      borderRadius: 10,
+                      background: on ? "var(--accent-soft)" : "var(--surface)",
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={on}
@@ -517,7 +597,7 @@ export function ServerDetailScreen() {
                         })
                       }
                     />
-                    <span style={{ fontWeight: 600 }}>{pr.label}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{pr.label}</span>
                   </label>
                 );
               })}
