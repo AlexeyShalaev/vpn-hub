@@ -111,6 +111,16 @@ export function ServerDetailScreen() {
     onError: (e) => toast(e instanceof Error ? e.message : "Ошибка операции"),
   });
 
+  // обновление серверного компонента протокола (xray/hysteria2) до эталонной версии релиза панели
+  const updateProtoMut = useMutation({
+    mutationFn: ({ proto }: { proto: string; label: string }) => q.updateProtocol(serverId, proto),
+    onSuccess: (_s, vars) => {
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast(`${vars.label}: обновление запущено — займёт пару минут`);
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось запустить обновление"),
+  });
+
   const fixMut = useMutation({
     mutationFn: ({ type }: { type: VpnType }) => q.vpnFix(serverId, type),
     onSuccess: (_s, vars) => {
@@ -404,9 +414,29 @@ export function ServerDetailScreen() {
                               {stateText}
                               {ext > 0 ? ` · +${ext} внешн.` : ""}
                             </span>
+                            {p?.updateAvailable && (
+                              <span
+                                className="badge warn"
+                                title={`Доступно обновление: ${p.imageVersion ?? "?"} → ${p.latestVersion ?? "?"}`}
+                                style={{ flex: "none" }}
+                              >
+                                обновление
+                              </span>
+                            )}
                           </span>
                           {inst && (
                             <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6, flex: "none" }}>
+                              {p?.updateAvailable && (
+                                <Btn
+                                  variant="primary"
+                                  sm
+                                  disabled={!online || updateProtoMut.isPending}
+                                  title={`Обновить до ${p.latestVersion ?? ""}`}
+                                  onClick={() => updateProtoMut.mutate({ proto: pr.id, label: pr.label })}
+                                >
+                                  Обновить
+                                </Btn>
+                              )}
                               <Btn
                                 sm
                                 disabled={!online || protoOpMut.isPending}

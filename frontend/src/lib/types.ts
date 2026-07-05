@@ -41,6 +41,9 @@ export interface Protocol {
   errorCode?: string | null;
   remediation?: Remediation | null;
   externalClients: number;
+  imageVersion?: string | null; // версия бинарника в контейнере (xray/hysteria2), читает sync
+  latestVersion?: string | null; // эталон релиза панели (null — детект не поддержан)
+  updateAvailable?: boolean; // эталон строго новее того, что на сервере
 }
 
 export interface Server {

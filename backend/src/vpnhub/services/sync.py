@@ -26,6 +26,7 @@ from vpnhub.api.config import Settings
 from vpnhub.common.retry import with_retries
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.events import TOPIC_SERVER, TOPIC_SYNC, EventBus, get_event_bus
+from vpnhub.infra.provisioning import component_versions
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
@@ -93,6 +94,7 @@ class SyncService:
         observations: dict[str, ProtocolObservation] = {}
         drained_by_proto: dict[str, set[str]] = {}  # погашенный долг на снятие (для записи в фазе 3)
         traffic_by_proto: dict[str, list[PeerStat]] = {}  # собранная статистика трафика (best-effort)
+        version_by_proto: dict[str, str] = {}  # версия бинарника компонента в контейнере (best-effort)
         try:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
                 containers = await list_known_containers(ssh)
@@ -121,6 +123,12 @@ class SyncService:
                                 traffic_by_proto[pid] = stats
                         except Exception as e:
                             log.warning("sync: traffic collect failed", server=server_id, proto=pid, error=str(e))
+                        try:  # версия компонента: best-effort, поддержано только для xray/hysteria2
+                            ver = await component_versions.read_running_version(ssh, spec)
+                            if ver:
+                                version_by_proto[pid] = ver
+                        except Exception as e:
+                            log.warning("sync: version read failed", server=server_id, proto=pid, error=str(e))
                     obs = ProtocolObservation(pid, present, running, readable, client_ids)
                     observations[pid] = obs
                     # гасим долг на снятие для протокола в рамках уже открытой SSH-сессии
@@ -135,7 +143,7 @@ class SyncService:
             return {"server": server_id, "reachable": False, "error": str(e)}
 
         # ── фаза 3: сверка и запись в БД ──
-        result = await self._apply(server_id, installing, observations, adopted, drained_by_proto)
+        result = await self._apply(server_id, installing, observations, adopted, drained_by_proto, version_by_proto)
 
         # ── фаза 4: запись сэмплов трафика ОТДЕЛЬНОЙ транзакцией (изолируем от sync-инвариантов) ──
         if traffic_by_proto:
@@ -200,6 +208,7 @@ class SyncService:
         observations: dict[str, ProtocolObservation],
         adopted: dict,
         drained_by_proto: dict[str, set[str]],
+        version_by_proto: dict[str, str],
     ) -> dict:
         revoked = active = external = 0
         async with self.uow.transaction() as tx:
@@ -250,6 +259,8 @@ class SyncService:
                     ext = external_client_ids(obs, our_ids_by_proto.get(pid, set()))
                     sp.external_clients = len(ext)
                     external += len(ext)
+                    if pid in version_by_proto:  # прочитанную версию компонента сохраняем как есть
+                        sp.image_version = version_by_proto[pid]
                 elif sp is not None:
                     sp.installed = sp.running = False
                     sp.state = "absent"

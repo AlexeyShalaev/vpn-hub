@@ -72,6 +72,8 @@ export const vpnFix = (id: string, type: string) => http.post<Server>(`/servers/
 export const protocolOp = (id: string, proto: string, op: string) =>
   http.post<Server>(`/servers/${id}/protocols/${proto}/${op}`);
 export const removeProtocol = (id: string, proto: string) => protocolOp(id, proto, "remove");
+// обновление серверного компонента протокола (xray/hysteria2): rebuild контейнера --no-cache --pull
+export const updateProtocol = (id: string, proto: string) => protocolOp(id, proto, "update");
 // смена obfuscation-параметров AmneziaWG: preset ∈ {default, aggressive, mobile} ЛИБО values (ручной ввод).
 // переписывает живой awg0.conf + syncconf (пиры сохраняются) и обновляет params_json.
 export const setProtocolParams = (

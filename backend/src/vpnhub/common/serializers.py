@@ -6,7 +6,7 @@ import json
 import time
 
 from vpnhub.infra.db.orm import models as m
-from vpnhub.infra.provisioning import remediation
+from vpnhub.infra.provisioning import component_versions, remediation
 from vpnhub.services import audit_types
 
 
@@ -95,6 +95,9 @@ def protocol_to_dict(p: m.ServerProtocol) -> dict:
         "errorCode": p.error_code,
         "remediation": _remediation_dict(p),
         "externalClients": p.external_clients,
+        "imageVersion": p.image_version,
+        "latestVersion": component_versions.latest_version(p.proto),
+        "updateAvailable": component_versions.update_available(p.proto, p.image_version),
     }
 
 

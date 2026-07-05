@@ -24,7 +24,7 @@ from vpnhub.infra import metrics
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.probe import ProbeResult, probe_tcp
-from vpnhub.infra.provisioning import awg_params, reality, remediation
+from vpnhub.infra.provisioning import awg_params, component_versions, reality, remediation
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.awg_params import AwgParams
 from vpnhub.infra.provisioning.errors import ProvisioningError
@@ -390,9 +390,43 @@ class ServerService:
             raise BadRequest("Неизвестный протокол")
         if op == "remove":
             return await self.remove_protocol(owner_id, sid, proto_id)
+        if op == "update":
+            return await self.update_protocol(owner_id, sid, proto_id)
         if op not in ("start", "stop"):
             raise BadRequest("Неизвестная операция")
         return await self._lifecycle_protocol(owner_id, sid, proto_id, op)
+
+    async def update_protocol(self, owner_id: str, sid: str, proto_id: str) -> dict:
+        """Обновить серверный компонент протокола до эталонной версии релиза панели.
+
+        Идемпотентная пересборка контейнера: install гоняет `docker build --no-cache --pull`,
+        то есть тянет свежий образ/бинарник и пересоздаёт контейнер. Разрешаем только когда
+        детект реально видит доступное обновление (иначе — no-op, не трогаем рабочий контейнер).
+
+        ВАЖНО (см. tasks/04): пересоздание контейнера теряет заведённых внутри клиентов —
+        их переустановку после rebuild выполняет фоновый sync-дренаж/reconcile не полностью.
+        Полное сохранение клиентов при обновлении ведётся отдельно (registry/recreate) и
+        размечено как remaining; здесь — безопасный скелет пересборки под явным флагом обновления.
+        """
+        if proto_id not in pc.PROTOCOLS:
+            raise BadRequest("Неизвестный протокол")
+        spec = pc.spec_by_id(proto_id)
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            if s.status != "online":
+                raise BadRequest("Сервер должен быть онлайн")
+            sp = next((p for p in s.protocols if p.proto == proto_id), None)
+            if not sp or not sp.installed:
+                raise BadRequest("Протокол не установлен")
+            if not component_versions.update_available(proto_id, sp.image_version):
+                raise BadRequest("Обновление недоступно: компонент уже актуальной версии")
+            await prov.mark_installing(tx, sid, spec.vendor, (proto_id,))
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            result = server_to_dict(s, self._secret(s))
+        prov.schedule_install(sid, spec.vendor, (proto_id,))  # rebuild --no-cache --pull → фон
+        return result
 
     async def _lifecycle_protocol(self, owner_id: str, sid: str, proto_id: str, op: str) -> dict:
         """Временно остановить/снова запустить контейнер одного протокола (docker start/stop)."""

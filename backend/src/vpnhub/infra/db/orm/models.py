@@ -105,6 +105,10 @@ class ServerProtocol(BaseTable, DatetimeColumnsMixin):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(48), nullable=True)  # стабильный код (ProvisioningError.code)
     external_clients: Mapped[int] = mapped_column(Integer, default=0)  # клиенты, заведённые внешним клиентом
+    # версия бинарника компонента в запущенном контейнере (xray/hysteria2), читается sync по SSH.
+    # Сравнивается с эталоном релиза панели (component_versions) → флаг «доступно обновление».
+    # None = не читалась/детект не поддержан для протокола.
+    image_version: Mapped[str | None] = mapped_column(String(48), nullable=True)
     params_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # AwgParams (для awg/awg_legacy)
     material_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet(JSON ServerMaterial)
     # долг на снятие: JSON list[str] client_id, которые обязаны снять на этом (server, proto).
