@@ -127,7 +127,8 @@ export function ServersScreen() {
   const { data: servers, isLoading } = useQuery({
     queryKey: ["servers"],
     queryFn: q.listServers,
-    refetchInterval: 20000,
+    // статусы приходят пушем по SSE (см. lib/events); поллинг — страховка на обрыв SSE (реже)
+    refetchInterval: 60000,
   });
 
   const all = servers ?? [];

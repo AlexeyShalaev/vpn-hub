@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PhoneField } from "../components/PhoneField";
 import { Btn, Field, FilePicker, Icon, KeyInput } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { subscribeEvents } from "../lib/events";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
 import type { Me } from "../lib/types";
@@ -447,6 +448,11 @@ const NAV_META: Record<string, { label: string; icon: string }> = {
 function Shell({ me }: { me: Me }) {
   const { screen, go } = useNav();
   const viewRole = useStore((s) => s.viewRole);
+  const qc = useQueryClient();
+
+  // SSE realtime: один коннект на авторизованное приложение. cleanup закрывает EventSource,
+  // так что двойной вызов под React StrictMode (dev) не оставляет висящих коннектов.
+  useEffect(() => subscribeEvents(qc), [qc]);
 
   const ownerItems = ["servers", "groups", "access", "events"];
   const memberItems = ["available", "devices"];

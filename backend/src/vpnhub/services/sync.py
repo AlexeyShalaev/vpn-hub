@@ -25,6 +25,7 @@ from sqlalchemy import select
 from vpnhub.api.config import Settings
 from vpnhub.common.retry import with_retries
 from vpnhub.infra.db.orm import models as m
+from vpnhub.infra.events import TOPIC_SERVER, TOPIC_SYNC, EventBus, get_event_bus
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
@@ -54,9 +55,10 @@ INSTALLING_GRACE_SECONDS = 600
 
 
 class SyncService:
-    def __init__(self, uow: Uow, settings: Settings) -> None:
+    def __init__(self, uow: Uow, settings: Settings, bus: EventBus | None = None) -> None:
         self.uow = uow
         self.settings = settings
+        self.bus = bus or get_event_bus()  # realtime-сигналы (см. infra/events)
 
     async def sync_server(self, server_id: str) -> dict:
         prov = ProvisioningService(self.uow, self.settings)
@@ -283,4 +285,9 @@ class SyncService:
                 log.warning("sync tick: server failed", server=sid, error=str(e))
         if ids:
             log.info("sync tick", total=len(ids), done=done)
+        if done:
+            # сверка могла изменить installed/running/state и статусы конфигов — пуш сигнала.
+            # Сигнал коарс-грейн (без id): фронт инвалидирует ["servers"] и активный ["server", id].
+            self.bus.publish(TOPIC_SYNC)
+            self.bus.publish(TOPIC_SERVER)
         return done

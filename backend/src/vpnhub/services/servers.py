@@ -19,6 +19,7 @@ from vpnhub.common.net import is_valid_host
 from vpnhub.common.serializers import server_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
+from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.probe import ProbeResult, probe_tcp
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning import remediation
@@ -54,9 +55,10 @@ POST_CREATE_SYNC_TIMEOUT = 30.0
 
 
 class ServerService:
-    def __init__(self, uow: Uow, settings: Settings) -> None:
+    def __init__(self, uow: Uow, settings: Settings, bus: EventBus | None = None) -> None:
         self.uow = uow
         self.settings = settings
+        self.bus = bus or get_event_bus()  # realtime-сигналы (см. infra/events)
 
     def _secret(self, s: m.Server) -> str:
         return decrypt_secret(self.settings.secret_key, s.ssh_secret_encrypted) if s.ssh_secret_encrypted else ""
@@ -213,12 +215,19 @@ class ServerService:
 
         results = await asyncio.gather(*(run_one(sid, host, port) for sid, host, port in targets))
 
+        changed = False
         async with self.uow.transaction() as tx:
             for sid, result in results:
                 s = await tx.servers.get(sid)
                 if s is not None:  # мог быть удалён между снимком и записью
+                    prev = s.status
                     _apply_probe(s, result)
+                    if s.status != prev:
+                        changed = True
             await tx.session.flush()
+
+        if changed:  # пуш только при смене статуса — не спамим шину каждый тик
+            self.bus.publish(TOPIC_SERVER)
 
         online = sum(1 for _, r in results if r.ok)
         log.info("server_monitor_tick", total=len(results), online=online, offline=len(results) - online)

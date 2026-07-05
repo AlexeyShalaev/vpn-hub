@@ -38,12 +38,13 @@ export function ServerDetailScreen() {
     queryKey: ["server", serverId],
     queryFn: () => q.getServer(serverId),
     enabled: !!serverId,
-    // во время установки опрашиваем чаще, чтобы прогресс обновлялся почти вживую
+    // прогресс/статус приходят пушем по SSE (см. lib/events); поллинг оставлен СТРАХОВКОЙ
+    // на случай тихого обрыва SSE (буферизация прокси / потеря сети) — частоты снижены.
     refetchInterval: (query) => {
       const s = query.state.data as Server | undefined;
-      // свежесозданный сервер (ещё не проверен) — ждём авто-пинг/синк, опрашиваем чаще
-      if (s?.status === "unknown") return 2500;
-      return s?.protocols?.some((p) => p.state === "installing") ? 4000 : 15000;
+      // свежесозданный сервер (ещё не проверен) — ждём авто-пинг/синк, опрашиваем чуть чаще
+      if (s?.status === "unknown") return 10000;
+      return s?.protocols?.some((p) => p.state === "installing") ? 10000 : 60000;
     },
   });
 

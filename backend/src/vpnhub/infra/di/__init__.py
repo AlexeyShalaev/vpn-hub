@@ -11,6 +11,7 @@ from sqlalchemy_foundation_kit import AsyncSessionManager
 
 from vpnhub.api.config import Settings, get_settings
 from vpnhub.infra.db.engine import build_session_manager
+from vpnhub.infra.events import EventBus, get_event_bus
 from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.infra.uow import Uow, build_uow
 from vpnhub.services.admin import AdminService
@@ -35,6 +36,12 @@ class AppProvider(Provider):
         return get_settings()
 
     @provide
+    def event_bus(self) -> EventBus:
+        # Модульный синглтон: publisher-ы (сервисы, часть которых создаётся ad-hoc без DI)
+        # и subscriber (SSE-эндпоинт через DI) обязаны видеть ОДИН инстанс шины.
+        return get_event_bus()
+
+    @provide
     async def session_manager(self, settings: Settings) -> AsyncIterator[AsyncSessionManager]:
         sm = build_session_manager(settings)
         yield sm
@@ -47,9 +54,18 @@ class AppProvider(Provider):
             maker = maker()
         return build_uow(maker)
 
+    # Сервисы с realtime-шиной: Optional-параметр Dishka не резолвит, поэтому явные фабрики
+    # (ad-hoc-конструкции (uow, settings) берут тот же синглтон через дефолт bus=None).
+    @provide
+    def servers(self, uow: Uow, settings: Settings, bus: EventBus) -> ServerService:
+        return ServerService(uow, settings, bus)
+
+    @provide
+    def sync(self, uow: Uow, settings: Settings, bus: EventBus) -> SyncService:
+        return SyncService(uow, settings, bus)
+
     provider_store = provide(ProviderStore)
     auth = provide(AuthService)
-    servers = provide(ServerService)
     server_access = provide(ServerAccessService)
     pools = provide(PoolService)
     groups = provide(GroupService)
@@ -58,7 +74,6 @@ class AppProvider(Provider):
     me = provide(MeService)
     admin = provide(AdminService)
     backups = provide(BackupService)
-    sync = provide(SyncService)
     audit = provide(AuditService)
 
 

@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from vpnhub.api.config import Settings
 from vpnhub.infra.db.orm import models as m
+from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning import errors, templates
 from vpnhub.infra.provisioning.awg_params import AwgParams
@@ -57,9 +58,12 @@ def _spawn(coro: Any) -> None:
 
 
 class ProvisioningService:
-    def __init__(self, uow: Uow, settings: Settings) -> None:
+    def __init__(self, uow: Uow, settings: Settings, bus: EventBus | None = None) -> None:
         self.uow = uow
         self.settings = settings
+        # шина realtime-сигналов: ad-hoc-конструкции (uow, settings) берут модульный синглтон,
+        # DI прокидывает тот же инстанс — publisher и SSE-subscriber видят одну шину.
+        self.bus = bus or get_event_bus()
 
     # ------------------------------------------------------------ helpers ---
 
@@ -193,6 +197,7 @@ class ProvisioningService:
                 if params is not None:
                     sp.params_json = json.dumps(params.as_dict())
                 await self._refresh_vendor_flags(tx, server_id, spec.vendor)  # видно сразу, не дожидаясь всех
+            self.bus.publish(TOPIC_SERVER, server_id)  # пуш: прогресс установки виден без поллинга
             log.info("protocol installed", server=server_id, proto=proto_id)
         except Exception as e:  # фоновая задача: любая ошибка → error-состояние, не роняем loop
             # стабильный код для движка подсказок: ProvisioningError.code, ssh — для транспортных сбоев
@@ -201,6 +206,7 @@ class ProvisioningService:
                 sp = await self._get_or_create_sp(tx, server_id, proto_id)
                 sp.state, sp.installed, sp.running, sp.error, sp.error_code = "error", False, False, str(e), code
                 await self._refresh_vendor_flags(tx, server_id, spec.vendor)
+            self.bus.publish(TOPIC_SERVER, server_id)  # пуш: ошибка видна без ожидания поллинга
             log.warning("protocol install failed", server=server_id, proto=proto_id, error=str(e))
 
     # ------------------------------------------------ remove / lifecycle ---
