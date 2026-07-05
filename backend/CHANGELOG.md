@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.6.0...v0.7.0) (2026-07-05)
+
+
+### Features
+
+* **configs:** tag Xray XHTTP configs with "XHTTP" in the server name ([47476c4](https://github.com/AlexeyShalaev/vpn-hub/commit/47476c49a9be36b1b8ce35e4b7ee1f99e6526377))
+* k8s self-update RBAC pre-check + tag XHTTP configs ([59968ff](https://github.com/AlexeyShalaev/vpn-hub/commit/59968ff72024768498532a8af2c5288a623240c0))
+* **updates:** pre-check k8s patch permission before offering the button ([9f25d71](https://github.com/AlexeyShalaev/vpn-hub/commit/9f25d71f43c34e5063522f328de05d6241ea2b25))
+
 ## [0.6.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.5.0...v0.6.0) (2026-07-05)
 
 
