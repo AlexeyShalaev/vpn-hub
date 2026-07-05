@@ -26,6 +26,19 @@ function DeviceCard({
   onRevokeConfig: (c: DeviceConfig) => void;
 }) {
   const configs = d.configs ?? [];
+  // группируем выданные конфиги по серверу (порядок серверов — по первому появлению),
+  // чтобы внутри устройства показать «сервер → его протоколы», а не плоский список.
+  const groups: { serverId: string; serverName: string; items: DeviceConfig[] }[] = [];
+  const byServer = new Map<string, DeviceConfig[]>();
+  for (const c of configs) {
+    let bucket = byServer.get(c.serverId);
+    if (!bucket) {
+      bucket = [];
+      byServer.set(c.serverId, bucket);
+      groups.push({ serverId: c.serverId, serverName: serverNames[c.serverId] ?? "—", items: bucket });
+    }
+    bucket.push(c);
+  }
   return (
     <div
       style={{
@@ -74,38 +87,67 @@ function DeviceCard({
         </Btn>
       </div>
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 8 }}>Выданные конфиги</div>
+        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 10 }}>Выданные конфиги</div>
         {configs.length === 0 ? (
           <span style={{ fontSize: 13, color: "var(--text-3)" }}>пока нет — добавьте на вкладке «Доступно»</span>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {configs.map((c) => {
-              const revoked = c.status && c.status !== "active";
-              return (
-                <div
-                  key={`${c.serverId}-${c.type}-${c.proto ?? ""}`}
-                  className="rowflex"
-                  style={{ justifyContent: "space-between", gap: 8, flexWrap: "nowrap", opacity: revoked ? 0.55 : 1 }}
-                >
-                  <span className="chip" style={{ minWidth: 0, overflow: "hidden" }}>
-                    <span className={`dot ${c.type}`} style={{ flex: "none" }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                      {configLabel(c, serverNames[c.serverId] ?? "—")}
-                      {revoked ? " · отозван" : ""}
-                    </span>
-                  </span>
-                  <Btn
-                    variant="ghost"
-                    sm
-                    aria-label="Отозвать конфиг"
-                    style={{ flex: "none" }}
-                    onClick={() => onRevokeConfig(c)}
+          <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+            {groups.map((g) => (
+              <div key={g.serverId} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {/* дивайдер: имя сервера + линия — группировка протоколов по серверу */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "var(--text-2)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      maxWidth: "82%",
+                    }}
                   >
-                    <Icon name="trash" size={14} />
-                  </Btn>
+                    {g.serverName}
+                  </span>
+                  <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
                 </div>
-              );
-            })}
+                {g.items.map((c) => {
+                  const revoked = c.status && c.status !== "active";
+                  return (
+                    <div
+                      key={`${c.type}-${c.proto ?? ""}`}
+                      className="rowflex"
+                      style={{
+                        justifyContent: "space-between",
+                        gap: 8,
+                        flexWrap: "nowrap",
+                        paddingLeft: 2,
+                        opacity: revoked ? 0.55 : 1,
+                      }}
+                    >
+                      <span className="rowflex" style={{ gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
+                        <span className={`dot ${c.type}`} style={{ flex: "none" }} />
+                        <span
+                          style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >
+                          {c.proto || VPN_LABEL[c.type]}
+                          {revoked ? " · отозван" : ""}
+                        </span>
+                      </span>
+                      <Btn
+                        variant="ghost"
+                        sm
+                        aria-label="Отозвать конфиг"
+                        style={{ flex: "none" }}
+                        onClick={() => onRevokeConfig(c)}
+                      >
+                        <Icon name="trash" size={14} />
+                      </Btn>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         )}
       </div>

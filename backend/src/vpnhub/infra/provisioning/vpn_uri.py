@@ -242,6 +242,17 @@ def build_bundle_vpn_url(*, containers: list[dict], host: str, description: str,
 # -------------------------------------------------------------------- vless:// ---
 
 
+def _clean_alias(alias: str) -> str:
+    """Имя сервера для fragment (#) share-ссылки.
+
+    Клиент Amnezia (и другие на QUrl) показывает fragment в режиме PrettyDecoded: `%20`
+    декодируется в пробел, а gen-delims `[ ] @ #` остаются экранированными — из-за чего
+    «Paris [FirstByte]» видно как «Paris %5BFirstByte%5D». Меняем скобки на круглые
+    (sub-delim — декодируется), прочие проблемные gen-delims — на дефис.
+    """
+    return alias.translate(str.maketrans("[]@#", "()--"))
+
+
 def build_vless_url(
     *,
     uuid: str,
@@ -277,7 +288,7 @@ def build_vless_url(
     if network and network != "tcp":
         params += [("type", network), ("path", path), ("mode", mode)]
     query = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params if v)
-    return f"vless://{uuid}@{host}:{port}?{query}#{quote(alias)}"
+    return f"vless://{uuid}@{host}:{port}?{query}#{quote(_clean_alias(alias))}"
 
 
 # ------------------------------------------------------------- hysteria2:// ---
@@ -309,7 +320,7 @@ def build_hysteria2_url(
 
     query = "&".join(_q(k, v) for k, v in params if v)
     tail = f"/?{query}" if query else "/"
-    return f"hysteria2://{quote(password, safe='')}@{host}:{port}{tail}#{quote(alias)}"
+    return f"hysteria2://{quote(password, safe='')}@{host}:{port}{tail}#{quote(_clean_alias(alias))}"
 
 
 # ---------------------------------------------------------------------- ss:// ---
@@ -325,4 +336,4 @@ def build_ss_url(
     """
     userinfo = base64.urlsafe_b64encode(f"{method}:{password}".encode()).rstrip(b"=").decode()
     tail = "/?outline=1" if outline else ""
-    return f"ss://{userinfo}@{host}:{port}{tail}#{quote(alias)}"
+    return f"ss://{userinfo}@{host}:{port}{tail}#{quote(_clean_alias(alias))}"
