@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.7.0...v0.8.0) (2026-07-05)
+
+
+### Features
+
+* **devices:** group a device's issued configs by server ([6502f89](https://github.com/AlexeyShalaev/vpn-hub/commit/6502f89e2b995bfb441c64a8ee0b46c056531400))
+
+
+### Bug Fixes
+
+* **configs:** stop server names showing %5B/%5D in share links ([de5ab47](https://github.com/AlexeyShalaev/vpn-hub/commit/de5ab472d7441ed91ae6f975c31480e536a86e11))
+
 ## [0.7.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.6.0...v0.7.0) (2026-07-05)
 
 
