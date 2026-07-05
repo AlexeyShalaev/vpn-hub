@@ -53,7 +53,7 @@ function DeviceCard({
             flex: "none",
           }}
         >
-          <Icon name="devices" />
+          <Icon name={d.platform} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
@@ -251,9 +251,10 @@ export function DevicesScreen() {
                   key={p}
                   type="button"
                   className={`chip ${platform === p ? "selected" : ""}`}
-                  style={{ cursor: "pointer", padding: "8px 14px" }}
+                  style={{ cursor: "pointer", padding: "8px 14px", gap: 7 }}
                   onClick={() => setPlatform(p)}
                 >
+                  <Icon name={p} size={15} />
                   {PLATFORM_LABEL[p]}
                 </button>
               ))}

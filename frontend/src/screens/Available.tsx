@@ -371,8 +371,9 @@ function GetConfigModal({
                   setDeviceId(d.id);
                   setProto(undefined);
                 }}
-                style={{ cursor: "pointer", padding: "8px 14px" }}
+                style={{ cursor: "pointer", padding: "8px 14px", gap: 7 }}
               >
+                <Icon name={d.platform} size={15} />
                 {d.name} · {PLATFORM_LABEL[d.platform]}
               </button>
             ))}

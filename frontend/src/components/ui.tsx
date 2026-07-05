@@ -38,6 +38,55 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M11 18h2" />
     </>
   ),
+  // ---- иконки платформ устройств (имя = platform-ключ, см. Device.platform) ----
+  ios: (
+    <>
+      <rect x="7" y="2" width="10" height="20" rx="2.6" />
+      <path d="M10.5 4.7h3" />
+      <path d="M11 19.2h2" />
+    </>
+  ),
+  android: (
+    <>
+      <path d="M5.5 12a6.5 6.5 0 0 1 13 0v5.4a1.1 1.1 0 0 1-1.1 1.1H6.6a1.1 1.1 0 0 1-1.1-1.1z" />
+      <path d="M8.5 6 7 3.8" />
+      <path d="M15.5 6 17 3.8" />
+      <path d="M9.6 9.3h.01" />
+      <path d="M14.4 9.3h.01" />
+    </>
+  ),
+  mac: (
+    <>
+      <rect x="5" y="4" width="14" height="10" rx="1.6" />
+      <path d="M2.5 18h19l-1.8-2.6a1 1 0 0 0-.82-.44H5.12a1 1 0 0 0-.82.44z" />
+    </>
+  ),
+  windows: (
+    <>
+      <rect x="4" y="5" width="7" height="7" rx="0.8" />
+      <rect x="13" y="5" width="7" height="7" rx="0.8" />
+      <rect x="4" y="14" width="7" height="7" rx="0.8" />
+      <rect x="13" y="14" width="7" height="7" rx="0.8" />
+    </>
+  ),
+  linux: (
+    <>
+      <path d="M12 3a2.6 2.6 0 0 1 2.6 2.6v2.7c1.6 1.2 3.4 3.6 3.4 6.4a6 6 0 0 1-12 0c0-2.8 1.8-5.2 3.4-6.4V5.6A2.6 2.6 0 0 1 12 3z" />
+      <path d="M10.6 6.7h.01" />
+      <path d="M13.4 6.7h.01" />
+      <path d="M11 8.9l1 .9 1-.9" />
+    </>
+  ),
+  router: (
+    <>
+      <rect x="3" y="13" width="18" height="7" rx="2" />
+      <path d="M7 16.5h.01" />
+      <path d="M10.5 16.5h7" />
+      <path d="M12 13v-1.4" />
+      <path d="M9.2 9.4a4 4 0 0 1 5.6 0" />
+      <path d="M6.8 7a7.5 7.5 0 0 1 10.4 0" />
+    </>
+  ),
   users: (
     <>
       <circle cx="9" cy="8" r="3" />
