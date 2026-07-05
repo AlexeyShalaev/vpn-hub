@@ -132,7 +132,13 @@ class Settings(BaseSettings):
     # по умолчанию — официальные GitHub Releases (работает из коробки, без настройки);
     # переопределяется под форк/зеркало; `off`/пусто → офлайн-режим (last-known из кэша).
     update_feed_url: str = "https://api.github.com/repos/AlexeyShalaev/vpn-hub/releases"
-    update_command: str = ""  # команда применения апдейта (напр. скрипт); пусто → ручной путь
+    # самообновление из панели — три драйвера (см. infra/selfupdate.py и docs/deploy/updates.md):
+    update_command: str = ""  # команда применения апдейта ({version} → целевая версия); пусто → следующий драйвер
+    update_webhook_url: str = ""  # HTTP-триггер внешнего апдейтера (Watchtower из selfupdate.compose.yaml)
+    update_webhook_token: str = ""  # Bearer-токен апдейтера (VPNHUB_UPDATE_TOKEN в compose-оверлее)
+    update_k8s: bool = True  # в k8s: патч образа собственного Deployment (нужен RBAC из deploy/k8s/base)
+    update_k8s_deployment: str = "vpnhub"  # имя Deployment/контейнера — переопределяйте, если меняли манифесты
+    update_k8s_container: str = "vpnhub"
     built: str = ""  # дата сборки (проставляется при build образа: VPNHUB_BUILT); пусто → mtime кода
     # ТОЛЬКО `PORT` (не `VPNHUB_PORT`): в Kubernetes сервис по имени `vpnhub` инжектит legacy-переменную
     # VPNHUB_PORT=tcp://<clusterIP>:<port>, которая ломала бы разбор int (под крашлупил). VPNHUB_PORT и так
@@ -146,7 +152,8 @@ class Settings(BaseSettings):
     edition: str = "Community"
 
     @field_validator(
-        "trusted_proxy", "docs_enabled", "run_migrations", "monitor_enabled", "sync_enabled", mode="before"
+        "trusted_proxy", "docs_enabled", "run_migrations", "monitor_enabled", "sync_enabled", "update_k8s",
+        mode="before",
     )
     @classmethod
     def _blank_bool_is_false(cls, v: object) -> object:

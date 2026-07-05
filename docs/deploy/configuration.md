@@ -100,7 +100,18 @@
 |---|---|---|
 | `VPNHUB_UPDATE_CHANNEL` | `stable` | Метка канала обновлений. |
 | `VPNHUB_UPDATE_FEED_URL` | GitHub Releases продукта | Источник проверки обновлений. По умолчанию — официальные GitHub Releases (работает из коробки). Поддерживает формат GitHub API и простой JSON-фид `{"latest", "releases"}`. `off` (или пусто) → офлайн-режим (last-known из кэша). |
-| `VPNHUB_UPDATE_COMMAND` | `""` | Команда, выполняемая кнопкой «применить обновление». Пусто → показ ручной инструкции. |
+
+Кнопка «Обновить сейчас» в разделе «Система» применяет обновление доступным драйвером.
+Приоритет: `command` → `webhook` → `k8s` → ручной путь. Ни один не задан → кнопка честно
+предлагает обновить образ вручную (см. [Обновление](updates.md)).
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `VPNHUB_UPDATE_COMMAND` | `""` | **Драйвер command.** Shell-команда применения апдейта; `{version}` подставляется в целевую версию. Пусто → следующий драйвер. |
+| `VPNHUB_UPDATE_WEBHOOK_URL` | `""` | **Драйвер webhook.** HTTP-триггер внешнего апдейтера (Watchtower из `selfupdate.compose.yaml` — `http://watchtower:8080/v1/update`). |
+| `VPNHUB_UPDATE_WEBHOOK_TOKEN` | `""` | Bearer-токен апдейтера (в compose-оверлее задаётся через `VPNHUB_UPDATE_TOKEN`). |
+| `VPNHUB_UPDATE_K8S` | `true` | **Драйвер k8s.** В кластере патчит образ собственного Deployment через API (нужен RBAC из `deploy/k8s/base/rbac.yaml`). Активен только внутри пода; `false` → выключить. |
+| `VPNHUB_UPDATE_K8S_DEPLOYMENT` | `vpnhub` | Имя Deployment и контейнера для патча (меняйте, если переименовали манифесты). |
 
 !!! danger "`VPNHUB_UPDATE_COMMAND` выполняет shell"
     Значение исполняется как shell-команда. Задавайте только доверенное значение и не позволяйте

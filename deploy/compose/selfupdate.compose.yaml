@@ -1,0 +1,39 @@
+# Опциональный оверлей: самообновление из панели для Docker Compose.
+#
+# Поднимает Watchtower в режиме HTTP-API (без периодического поллинга — обновляет
+# только по запросу). Кнопка «Обновить сейчас» в разделе «Система» дёргает его вебхук,
+# Watchtower тянет новый образ и пересоздаёт ТОЛЬКО контейнер приложения (по label).
+#
+# Включение (закрепите в .env, чтобы пережило обновления):
+#   COMPOSE_FILE=compose.yaml:selfupdate.compose.yaml   (с Caddy — допишите :caddy.compose.yaml)
+#   VPNHUB_UPDATE_TOKEN=<openssl rand -hex 32>
+# Разово руками:  docker compose -f compose.yaml -f selfupdate.compose.yaml up -d
+#
+# ВНИМАНИЕ: Watchtower требует доступ к docker.sock — это фактически root на хосте.
+# Ставьте оверлей осознанно. Тег образа должен допускать обновление (VPNHUB_TAG=latest
+# или минорный :0.4) — при пине точной версии Watchtower не найдёт, что обновлять.
+services:
+  app:
+    # Watchtower обновляет только помеченные контейнеры (WATCHTOWER_LABEL_ENABLE=true),
+    # поэтому базу и сам Watchtower он не трогает.
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    environment:
+      # адрес и токен HTTP-API Watchtower — драйвер webhook в infra/selfupdate.py
+      VPNHUB_UPDATE_WEBHOOK_URL: http://watchtower:8080/v1/update
+      VPNHUB_UPDATE_WEBHOOK_TOKEN: ${VPNHUB_UPDATE_TOKEN:?задайте VPNHUB_UPDATE_TOKEN в .env (openssl rand -hex 32)}
+
+  watchtower:
+    image: ghcr.io/nickfedor/watchtower:latest # поддерживаемый форк (containrrr архивирован)
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true" # следить ТОЛЬКО за помеченными сервисами (app)
+      WATCHTOWER_HTTP_API_UPDATE: "true" # обновлять по запросу, без периодического поллинга
+      WATCHTOWER_HTTP_API_TOKEN: ${VPNHUB_UPDATE_TOKEN:?задайте VPNHUB_UPDATE_TOKEN в .env}
+      WATCHTOWER_CLEANUP: "true" # удалять старые образы после обновления
+      WATCHTOWER_ROLLING_RESTART: "true" # без даунтайма зависимых, если добавятся
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # API слушает внутри compose-сети; наружу порт не публикуем — доступен только приложению.
+    expose:
+      - "8080"

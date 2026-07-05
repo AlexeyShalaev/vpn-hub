@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Btn, FilePicker, Icon, KeyInput, Modal, ScreenHeader, Spinner } from "../components/ui";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
@@ -7,6 +7,17 @@ import type { SystemInfo } from "../lib/types";
 import { copyText, useStore } from "../store";
 
 const UPGRADE_CMD = "docker compose pull && docker compose up -d";
+
+// как именно применится обновление — зависит от драйвера на бэкенде (updateMode)
+const MODE_HINT: Record<string, string> = {
+  command: "Кнопка «Обновить сейчас» выполнит настроенную на сервере команду обновления. ",
+  webhook:
+    "Кнопка «Обновить сейчас» запустит апдейтер: он скачает новый образ и пересоздаст контейнер панели (короткий перерыв в работе). ",
+  k8s: "Кнопка «Обновить сейчас» перезапустит панель с новым образом через Kubernetes (короткий перерыв в работе). ",
+};
+
+const UPDATE_POLL_MS = 3000;
+const UPDATE_TIMEOUT_MS = 5 * 60_000;
 
 const FREQ_OPTIONS = [
   { value: "off", label: "Выкл" },
@@ -68,21 +79,54 @@ export function SystemScreen() {
     onError: toastErr,
   });
 
+  // применение принято в фоне → поллим статус до смены версии (панель перезапускается)
+  const [updating, setUpdating] = useState<{ target: string; from: string; startedAt: number; done?: boolean } | null>(
+    null,
+  );
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
   const upgradeMut = useMutation({
     mutationFn: q.adminUpgrade,
     onSuccess: (r) => {
-      if (r.manual) {
-        toast(r.message || "Обновите образ вручную командой ниже");
-      } else if (r.ok) {
+      if (r.accepted && r.target) {
         setRelease(false);
-        toast("Обновление применено");
-        qc.invalidateQueries({ queryKey: ["adminSystem"] });
+        setUpdating({ target: r.target, from: r.from ?? "", startedAt: Date.now() });
+      } else if (r.manual) {
+        toast(r.message || "Обновите образ вручную командой ниже");
       } else {
-        toast(`Обновление завершилось с ошибкой${r.code != null ? ` (код ${r.code})` : ""}`);
+        toast(r.message || "Не удалось запустить обновление");
       }
     },
     onError: toastErr,
   });
+
+  useEffect(() => {
+    if (!updating || updating.done) return;
+    const id = setInterval(async () => {
+      if (Date.now() - updating.startedAt > UPDATE_TIMEOUT_MS) {
+        setUpdating(null);
+        setUpdateError(
+          "Панель не вернулась с новой версией за 5 минут. Проверьте состояние на хосте. " +
+            "Если тег образа зафиксирован (VPNHUB_TAG или newTag в overlay), обновление по кнопке невозможно — переключите тег вручную.",
+        );
+        return;
+      }
+      try {
+        const st = await q.adminUpgradeStatus();
+        if (st.state === "failed") {
+          setUpdating(null);
+          setUpdateError(st.log || "Обновление завершилось с ошибкой");
+        } else if (st.version !== updating.from) {
+          // бэкенд уже новый → перезагружаем страницу, чтобы подтянуть новый фронтенд
+          setUpdating({ ...updating, done: true });
+          setTimeout(() => window.location.reload(), 1500);
+        }
+      } catch {
+        // панель перезапускается — временные ошибки сети ожидаемы, продолжаем поллинг
+      }
+    }, UPDATE_POLL_MS);
+    return () => clearInterval(id);
+  }, [updating]);
 
   const createMut = useMutation({
     mutationFn: q.adminCreateBackup,
@@ -542,8 +586,8 @@ export function SystemScreen() {
           </div>
           <p style={{ fontSize: 12, color: "var(--text-3)", margin: 0 }}>
             {sys.updateSupported
-              ? "Кнопка «Обновить сейчас» выполнит настроенную на сервере команду обновления. "
-              : "Обновление из панели не настроено — примените команду вручную на хосте. "}
+              ? (MODE_HINT[sys.updateMode] ?? "Кнопка «Обновить сейчас» применит обновление автоматически. ")
+              : "Обновление из панели не настроено — примените команду вручную на хосте (как включить кнопку — docs/deploy/updates). "}
             Данные в PostgreSQL сохраняются, миграции применятся автоматически при старте.
           </p>
         </Modal>
@@ -669,8 +713,41 @@ export function SystemScreen() {
         </Modal>
       )}
 
-      {/* прогресс обновления */}
-      {upgradeMut.isPending && (
+      {/* ошибка применения обновления (лог драйвера) */}
+      {updateError && (
+        <Modal
+          title="Обновление не применилось"
+          onClose={() => setUpdateError(null)}
+          footer={
+            <Btn block onClick={() => setUpdateError(null)}>
+              Закрыть
+            </Btn>
+          }
+        >
+          <pre
+            className="mono"
+            style={{
+              margin: 0,
+              padding: "10px 12px",
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "var(--text-2)",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+              maxHeight: 260,
+              overflowY: "auto",
+            }}
+          >
+            {updateError}
+          </pre>
+        </Modal>
+      )}
+
+      {/* прогресс обновления: запуск → ожидание новой версии → перезагрузка страницы */}
+      {(upgradeMut.isPending || updating) && (
         <div
           style={{
             position: "fixed",
@@ -696,13 +773,27 @@ export function SystemScreen() {
               maxWidth: "90vw",
             }}
           >
-            <span className="spin" style={{ display: "inline-flex", color: "var(--text-2)" }}>
-              <Icon name="refresh" size={40} />
-            </span>
+            {updating?.done ? (
+              <span style={{ display: "inline-flex", color: "var(--ok)" }}>
+                <Icon name="check" size={40} />
+              </span>
+            ) : (
+              <span className="spin" style={{ display: "inline-flex", color: "var(--text-2)" }}>
+                <Icon name="refresh" size={40} />
+              </span>
+            )}
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>Выполняем обновление…</div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>
+                {updating?.done
+                  ? `Обновлено до ${updating.target}`
+                  : updating
+                    ? `Устанавливаем ${updating.target}…`
+                    : "Запускаем обновление…"}
+              </div>
               <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 5 }}>
-                Выполняется настроенная команда обновления
+                {updating?.done
+                  ? "Перезагружаем страницу…"
+                  : "Панель перезапустится — страница обновится автоматически, не закрывайте её"}
               </div>
             </div>
           </div>

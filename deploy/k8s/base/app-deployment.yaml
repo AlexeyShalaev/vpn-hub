@@ -20,6 +20,8 @@ spec:
       labels:
         app.kubernetes.io/name: vpnhub
     spec:
+      # SA с правом patch на собственный Deployment — для самообновления из панели (см. rbac.yaml).
+      serviceAccountName: vpnhub
       # k8s инжектит для каждого Service переменные вида VPNHUB_PORT=tcp://<ip>:<port>; приложению
       # они не нужны и ломали разбор настроек (имя сервиса `vpnhub` → VPNHUB_PORT). Отключаем.
       enableServiceLinks: false

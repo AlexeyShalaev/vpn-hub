@@ -1,0 +1,44 @@
+# RBAC для самообновления из панели (кнопка «Обновить сейчас» в разделе «Система»).
+# Даёт поду право пропатчить образ ТОЛЬКО собственного Deployment `vpnhub` — не больше.
+# Rollout выполняет kubelet (strategy: Recreate). Не нужен, если самообновление не используется:
+# тогда права минимальны и кнопка честно предложит ручной путь (VPNHUB_UPDATE_K8S=false).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vpnhub
+  namespace: vpnhub
+  labels:
+    app.kubernetes.io/name: vpnhub
+# токен монтируется только этому SA (нужен для обращения к API); у самого пода прав нет,
+# кроме выданных Role ниже.
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vpnhub-selfupdate
+  namespace: vpnhub
+  labels:
+    app.kubernetes.io/name: vpnhub
+rules:
+  # get — прочитать текущий образ; patch — сменить тег. resourceNames сужает до одного объекта.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["vpnhub"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vpnhub-selfupdate
+  namespace: vpnhub
+  labels:
+    app.kubernetes.io/name: vpnhub
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vpnhub-selfupdate
+subjects:
+  - kind: ServiceAccount
+    name: vpnhub
+    namespace: vpnhub

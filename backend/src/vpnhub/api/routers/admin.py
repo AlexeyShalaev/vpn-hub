@@ -62,6 +62,13 @@ async def upgrade(_: Identity = Depends(require_admin), svc: AdminService = Depe
     return await svc.apply_update()
 
 
+@router.get("/system/upgrade/status")
+async def upgrade_status(
+    _: Identity = Depends(require_admin), svc: AdminService = Depends(service(AdminService))
+) -> dict:
+    return svc.upgrade_status()
+
+
 @router.post("/system/backups")
 async def create_backup(
     _: Identity = Depends(require_admin), svc: BackupService = Depends(service(BackupService))

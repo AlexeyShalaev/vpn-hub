@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 from pathlib import Path
@@ -15,7 +14,7 @@ import vpnhub
 from vpnhub.api.config import Settings
 from vpnhub.common.serializers import user_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
-from vpnhub.infra import keyring
+from vpnhub.infra import keyring, selfupdate
 from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
 from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed
@@ -115,6 +114,7 @@ class AdminService:
         cache = await self._update_cache()
         latest = cache.get("latest") or s.version
         releases = cache.get("releases") or _FALLBACK_RELEASES
+        update_mode = selfupdate.detect_mode(s)
         return {
             "version": s.version,
             "latest": latest,
@@ -127,7 +127,8 @@ class AdminService:
             "baseUrl": s.base_url,
             "masterKeyInsecure": keyring.master_insecure(),
             "masterKeyFromEnv": keyring.master_source() == "env",
-            "updateSupported": bool(s.update_command),
+            "updateSupported": update_mode != "manual",
+            "updateMode": update_mode,
             "db": {
                 "engine": engine,
                 "host": f"{pg.host}:{pg.port}",
@@ -196,29 +197,33 @@ class AdminService:
         }
 
     async def apply_update(self) -> dict:
-        """Применить обновление: выполнить настроенную команду, иначе — честный ручной путь.
+        """Применить обновление доступным драйвером (command/webhook/k8s) в фоне.
 
-        Самообновление контейнера изнутри невозможно без доступа к docker-сокету/оркестратору,
-        поэтому «магической» кнопки нет: если задан VPNHUB_UPDATE_COMMAND — запускаем его,
-        иначе возвращаем инструкцию по ручному апдейту (без фейкового прогресса).
+        Контейнер не может пересоздать сам себя, поэтому применение делегируется
+        внешнему механизму (см. infra/selfupdate.py), а ответ уходит сразу:
+        UI дальше поллит upgrade_status() до смены версии. Если ни один драйвер
+        не настроен — честный ручной путь с инструкцией (без фейкового прогресса).
         """
-        cmd = self.settings.update_command
-        image = self.settings.image
-        if not cmd:
+        s = self.settings
+        if selfupdate.detect_mode(s) == "manual":
             return {
                 "ok": False,
                 "manual": True,
                 "message": "Автообновление не настроено. Обновите образ вручную.",
                 "instructions": [
-                    f"docker pull {image}:latest",
+                    f"docker pull {s.image}:latest",
                     "docker compose up -d  # или перезапустите контейнер с новым образом",
                 ],
             }
-        proc = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-        )
-        out, _ = await proc.communicate()
-        tail = out.decode("utf-8", "replace")[-2000:] if out else ""
-        ok = proc.returncode == 0
-        log.info("update_apply", ok=ok, code=proc.returncode)
-        return {"ok": ok, "manual": False, "code": proc.returncode, "log": tail}
+        cache = await self._update_cache()
+        target = str(cache.get("latest") or "")
+        if not target or not is_newer(target, s.version):
+            fresh = await self.check_updates()  # кнопку могли нажать до первой проверки фида
+            target = str(fresh.get("latest") or "")
+            if not target or not is_newer(target, s.version):
+                return {"ok": False, "manual": False, "message": "Установлена последняя версия — обновлять нечего"}
+        return selfupdate.start(s, target)
+
+    def upgrade_status(self) -> dict:
+        """Статус применения обновления + текущая версия (по ней UI понимает успех)."""
+        return {**selfupdate.status(), "version": self.settings.version}

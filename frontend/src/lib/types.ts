@@ -237,6 +237,7 @@ export interface SystemInfo {
   masterKeyInsecure: boolean;
   masterKeyFromEnv: boolean;
   updateSupported: boolean;
+  updateMode: "command" | "webhook" | "k8s" | "manual";
   db: { engine: string; host: string; name: string; status: string; latency: string | null };
   lastBackup: string;
   backupFrequency: string; // off|daily|weekly|monthly
@@ -256,11 +257,24 @@ export interface UpdateCheck {
 
 export interface UpgradeResult {
   ok: boolean;
+  accepted?: boolean; // применение запущено в фоне — дальше поллим UpgradeStatus
+  mode?: string;
+  target?: string;
+  from?: string;
   manual?: boolean;
   message?: string;
   instructions?: string[];
   code?: number;
   log?: string;
+}
+
+export interface UpgradeStatus {
+  state: "idle" | "running" | "triggered" | "failed";
+  mode?: string;
+  target?: string;
+  from?: string;
+  log?: string;
+  version: string; // текущая версия бэкенда: стала равной target → обновление удалось
 }
 
 export const VPN_LABEL: Record<VpnType, string> = {
