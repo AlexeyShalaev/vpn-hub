@@ -239,6 +239,7 @@ export interface SystemInfo {
   masterKeyFromEnv: boolean;
   updateSupported: boolean;
   updateMode: "command" | "webhook" | "k8s" | "manual";
+  updateHint?: string; // почему кнопка недоступна (напр. в k8s не применён RBAC)
   db: { engine: string; host: string; name: string; status: string; latency: string | null };
   lastBackup: string;
   backupFrequency: string; // off|daily|weekly|monthly

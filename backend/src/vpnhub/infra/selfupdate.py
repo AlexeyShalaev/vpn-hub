@@ -51,6 +51,10 @@ _status: dict = {"state": "idle"}
 # держим ссылки на фоновые задачи — иначе event loop хранит их слабо и задача может быть собрана GC
 _tasks: set[asyncio.Task] = set()
 
+# кэш пре-чека прав в k8s (SelfSubjectAccessReview) — не дёргать API на каждый /system
+_K8S_READY_TTL = 60.0
+_k8s_ready_cache: dict = {}  # {at, ok, reason}
+
 
 def detect_mode(settings: Settings) -> str:
     """Какой драйвер доступен: command > webhook > k8s > manual."""
@@ -183,3 +187,80 @@ async def _apply_k8s(settings: Settings, target: str) -> tuple[bool, str]:
             return False, f"Kubernetes API ответил HTTP {exc.code}.{hint}\n{body}"
 
     return await asyncio.to_thread(_patch)
+
+
+def _ssar_request(settings: Settings, namespace: str, token: str) -> urllib.request.Request:
+    """Собрать SelfSubjectAccessReview «могу ли я patch-ить свой Deployment» (чистая функция)."""
+    host = os.environ.get("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+    port = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+    review = {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "spec": {
+            "resourceAttributes": {
+                "namespace": namespace,
+                "verb": "patch",
+                "group": "apps",
+                "resource": "deployments",
+                "name": settings.update_k8s_deployment,
+            }
+        },
+    }
+    url = f"https://{host}:{port}/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
+    return urllib.request.Request(  # noqa: S310 — https внутри кластера
+        url,
+        data=json.dumps(review).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "vpnhub-selfupdate",
+        },
+        method="POST",
+    )
+
+
+# сообщение, когда панель в k8s, но RBAC не применён (пре-чек вернул allowed=false)
+K8S_NO_RBAC_HINT = (
+    "Панель работает в Kubernetes, но у неё нет прав patch на свой Deployment. "
+    "Примените RBAC: kubectl apply -k нужный оверлей из deploy/k8s "
+    "(или kubectl apply -f deploy/k8s/base/rbac.yaml и задайте serviceAccountName: vpnhub у Deployment)."
+)
+
+
+def _k8s_ssar(settings: Settings) -> tuple[bool, str]:
+    """Синхронный SSAR-запрос. allowed=false → (False, подсказка); сетевая ошибка → fail-open."""
+    try:
+        token = K8S_TOKEN_FILE.read_text().strip()
+        namespace = K8S_NAMESPACE_FILE.read_text().strip() if K8S_NAMESPACE_FILE.exists() else "default"
+    except OSError:
+        return True, ""  # токен недоступен — не прячем кнопку, пусть решает само применение
+    try:
+        req = _ssar_request(settings, namespace, token)
+        # контекст TLS строим ВНУТРИ try: битый/нечитаемый CA (ssl.SSLError ⊂ OSError) не должен
+        # ронять /system — пре-чек обязан fail-open, а не 500-ить всю страницу.
+        ctx = ssl.create_default_context(cafile=str(K8S_CA_FILE)) if K8S_CA_FILE.exists() else None
+        with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:  # noqa: S310
+            data = json.loads(resp.read())
+    except (urllib.error.HTTPError, TimeoutError, OSError, ValueError) as exc:
+        log.warning("selfupdate_ssar_failed", error=str(exc))
+        return True, ""  # fail-open: пре-чек не удался — не прячем кнопку из-за глюка сети/TLS
+    status = data.get("status") if isinstance(data, dict) else None
+    if not isinstance(status, dict):
+        return True, ""  # ответ без внятного status — пре-чек неинформативен, fail-open
+    return (True, "") if status.get("allowed") else (False, K8S_NO_RBAC_HINT)
+
+
+async def k8s_ready(settings: Settings) -> tuple[bool, str]:
+    """Может ли под патчить свой Deployment? Пре-чек через SelfSubjectAccessReview, кэш на TTL.
+
+    SSAR доступен любому аутентифицированному SA (в т.ч. default), поэтому надёжно отличает
+    «RBAC не применён» (allowed=false) от рабочего состояния — не наткнувшись на 403 при апдейте.
+    """
+    now = time.time()
+    if _k8s_ready_cache and now - _k8s_ready_cache.get("at", 0.0) < _K8S_READY_TTL:
+        return _k8s_ready_cache["ok"], _k8s_ready_cache["reason"]
+    ok, reason = await asyncio.to_thread(_k8s_ssar, settings)
+    _k8s_ready_cache.clear()
+    _k8s_ready_cache.update({"at": now, "ok": ok, "reason": reason})
+    return ok, reason

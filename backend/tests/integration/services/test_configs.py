@@ -249,3 +249,5 @@ async def test__generate__xray_xhttp_selected__own_config_without_bundle(uow, se
     # Assert — формата-бандла (id="amnezia") нет; отдана собственная vless-ссылка с uuid xhttp-клиента
     assert "amnezia" not in [f["id"] for f in res["formats"]]
     assert res["uri"].startswith("vless://") and "xhttp-uuid-1" in res["uri"]
+    # имя сервера помечено XHTTP — чтобы в клиенте отличать от обычного Xray/бандла
+    assert "XHTTP" in res["uri"]

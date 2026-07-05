@@ -115,6 +115,14 @@ class AdminService:
         latest = cache.get("latest") or s.version
         releases = cache.get("releases") or _FALLBACK_RELEASES
         update_mode = selfupdate.detect_mode(s)
+        update_supported = update_mode != "manual"
+        update_hint = ""
+        # k8s: кнопка активна, только если под реально может патчить свой Deployment (пре-чек прав),
+        # иначе честно объясняем про RBAC, а не даём наткнуться на 403 при клике.
+        if update_mode == "k8s":
+            ready, reason = await selfupdate.k8s_ready(s)
+            if not ready:
+                update_supported, update_hint = False, reason
         return {
             "version": s.version,
             "latest": latest,
@@ -127,8 +135,9 @@ class AdminService:
             "baseUrl": s.base_url,
             "masterKeyInsecure": keyring.master_insecure(),
             "masterKeyFromEnv": keyring.master_source() == "env",
-            "updateSupported": update_mode != "manual",
+            "updateSupported": update_supported,
             "updateMode": update_mode,
+            "updateHint": update_hint,
             "db": {
                 "engine": engine,
                 "host": f"{pg.host}:{pg.port}",
