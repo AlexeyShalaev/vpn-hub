@@ -174,6 +174,21 @@ async def set_protocol_params(
     return await svc.set_protocol_params(ident.id, sid, proto, preset, values)
 
 
+@router.patch("/servers/{sid}/protocols/{proto}/reality")
+async def set_reality(
+    sid: str,
+    proto: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    # body: { "rotate_short_id"?: bool, "short_id"?: str, "sni"?: str } — управление Xray-Reality с reprovision
+    rotate = bool(body.get("rotate_short_id")) if isinstance(body, dict) else False
+    short_id = body.get("short_id") if isinstance(body, dict) else None
+    sni = body.get("sni") if isinstance(body, dict) else None
+    return await svc.set_reality(ident.id, sid, proto, rotate_short_id=rotate, short_id=short_id, sni=sni)
+
+
 @router.post("/servers/{sid}/protocols/{proto}/{op}")
 async def protocol_op(
     sid: str,

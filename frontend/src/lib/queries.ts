@@ -79,6 +79,13 @@ export const setProtocolParams = (
   proto: string,
   body: { preset?: string; values?: Record<string, string> },
 ) => http.patch<Server>(`/servers/${id}/protocols/${proto}/params`, body);
+// управление Xray-Reality: rotate_short_id (новый shortId) и/или смена sni (маскировочный домен) —
+// переписывает realitySettings в server.json + рестарт контейнера; клиенты (uuid) сохраняются.
+export const setReality = (
+  id: string,
+  proto: string,
+  body: { rotate_short_id?: boolean; short_id?: string; sni?: string },
+) => http.patch<Server>(`/servers/${id}/protocols/${proto}/reality`, body);
 export const listProviders = () => http.get<Provider[]>("/providers");
 
 // server access overview (владелец: пулы/группы/пользователи+конфиги этого сервера)

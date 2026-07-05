@@ -32,6 +32,7 @@ MESSAGES: dict[str, str] = {
     "openvpn_sign_failed": "Не удалось подписать клиентский сертификат OpenVPN на сервере",
     "ssh": "Ошибка SSH-подключения к серверу",
     "invalid_params": "Некорректные параметры обфускации",
+    "invalid_reality": "Некорректные параметры Reality (shortId/SNI)",
     "internal": "Внутренняя ошибка provisioning",
 }
 

@@ -22,8 +22,9 @@ from vpnhub.infra.uow import Uow, UowTransaction
 from vpnhub.services import audit_types
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
-# из material отдаём только публичное (приватные ключи/psk наружу не уходят)
-_PUBLIC_MATERIAL = ("server_public_key", "xray_public_key")
+# из material отдаём только публичное (приватные ключи/psk наружу не уходят).
+# short_id/site публичны сами по себе — они видны в vless://-ссылке; нужны UI для формы Reality.
+_PUBLIC_MATERIAL = ("server_public_key", "xray_public_key", "short_id", "site")
 
 
 class ServerAccessService:

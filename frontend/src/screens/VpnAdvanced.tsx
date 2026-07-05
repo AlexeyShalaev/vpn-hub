@@ -107,6 +107,83 @@ function ObfuscationForm({
   );
 }
 
+// Управление Xray-Reality: ротация shortId и смена SNI/dest (маскировочный домен) с reprovision.
+// short_id/site приходят из proto.keys (публичный материал); значения применяет сервер.
+function RealityForm({
+  serverId,
+  vtype,
+  proto,
+}: {
+  serverId: string;
+  vtype: VpnType;
+  proto: VpnAdvancedProtocol;
+}) {
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const [sni, setSni] = useState<string>(() => proto.keys.site ?? "");
+  const currentShortId = proto.keys.short_id ?? "";
+
+  const mut = useMutation({
+    mutationFn: (body: { rotate_short_id?: boolean; short_id?: string; sni?: string }) =>
+      q.setReality(serverId, proto.proto, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vpn-advanced", serverId, vtype] });
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast("Параметры Reality применены");
+    },
+    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+  });
+
+  // форма недоступна, пока протокол не запущен (бэкенд требует online-сервер и running-протокол).
+  const disabled = mut.isPending || !proto.running;
+
+  return (
+    <details>
+      <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--text-2)" }}>Параметры Reality</summary>
+      <div className="stack" style={{ marginTop: 8, gap: 10 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--danger)",
+            border: "1px solid var(--danger)",
+            borderRadius: 8,
+            padding: "7px 9px",
+            background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+          }}
+        >
+          Смена shortId или SNI сделает уже выданные конфиги нерабочими и перезапустит Xray (активные сессии
+          оборвутся) — пользователям нужно заново скачать конфиг.
+        </div>
+        {!proto.running && (
+          <div className="muted-3" style={{ fontSize: 12 }}>
+            Протокол остановлен или сервер офлайн — смена параметров недоступна.
+          </div>
+        )}
+        <div className="rowflex" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="muted-3" style={{ fontSize: 12 }}>
+            shortId: <code>{currentShortId || "—"}</code>
+          </span>
+          <Btn sm disabled={disabled} onClick={() => mut.mutate({ rotate_short_id: true })}>
+            Ротировать shortId
+          </Btn>
+        </div>
+        <Field label="Маскировочный домен (SNI/dest)">
+          <input
+            className="input"
+            value={sni}
+            disabled={disabled}
+            placeholder="www.googletagmanager.com"
+            onChange={(e) => setSni(e.target.value)}
+          />
+        </Field>
+        <Btn sm disabled={disabled || !sni.trim()} onClick={() => mut.mutate({ sni: sni.trim() })}>
+          Применить SNI
+        </Btn>
+      </div>
+    </details>
+  );
+}
+
 const sectionTitle = {
   fontSize: 12,
   fontWeight: 700,
@@ -246,6 +323,10 @@ export function VpnAdvancedModal({
                         </Btn>
                       </div>
                     ))}
+                    {/* Xray (xray/xray_xhttp) — управление Reality (shortId, SNI/dest); материала в params нет. */}
+                    {(p.proto === "xray" || p.proto === "xray_xhttp") && (
+                      <RealityForm serverId={serverId} vtype={vtype} proto={p} />
+                    )}
                     {p.params &&
                       Object.keys(p.params).length > 0 &&
                       // AWG (awg/awg_legacy) — редактируемая форма пресетов; прочие протоколы — read-only.

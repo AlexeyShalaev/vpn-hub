@@ -289,6 +289,15 @@ class ProvisioningService:
                 raise errors.make("internal", "set_protocol_params вызван для не-AWG протокола")
             await prov.set_params(ssh, new_params)
 
+    async def set_reality(self, server: m.Server, sp: m.ServerProtocol, *, short_id: str, sni: str) -> ServerMaterial:
+        """Применить новые shortId/SNI к живому server.json по SSH + рестарт; вернуть обновлённый материал."""
+        creds = self.creds(server)
+        async with SshClient(creds) as ssh:
+            prov = self.loaded_provisioner(sp)
+            if not isinstance(prov, XrayProvisioner):
+                raise errors.make("internal", "set_reality вызван для не-Xray протокола")
+            return await prov.set_reality(ssh, short_id=short_id, sni=sni)
+
     async def check_server(self, server: m.Server) -> tuple[bool, int | None, dict[str, str]]:
         """Реальная проверка: (online, latency_ms, {container: port}) через docker ps по SSH."""
         creds = self.creds(server)

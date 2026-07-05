@@ -24,11 +24,12 @@ from vpnhub.infra import metrics
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.probe import ProbeResult, probe_tcp
-from vpnhub.infra.provisioning import awg_params, remediation
+from vpnhub.infra.provisioning import awg_params, reality, remediation
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.awg_params import AwgParams
 from vpnhub.infra.provisioning.errors import ProvisioningError
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
+from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
 from vpnhub.infra.provisioning.ssh import SshError
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
@@ -476,6 +477,62 @@ class ServerService:
             sp2 = next((p for p in s.protocols if p.proto == proto_id), None)
             if sp2 is not None:
                 sp2.params_json = json.dumps(target.as_dict())
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            return server_to_dict(s, self._secret(s))
+
+    async def set_reality(
+        self,
+        owner_id: str,
+        sid: str,
+        proto_id: str,
+        *,
+        rotate_short_id: bool = False,
+        short_id: str | None = None,
+        sni: str | None = None,
+    ) -> dict:
+        """Управление Xray-Reality: ротация shortId и/или смена SNI/dest с reprovision (рестарт контейнера).
+
+        Порядок как у set_protocol_params: validate → SSH-применение → запись материала. При SSH-ошибке
+        material_encrypted не меняется (иначе панель разойдётся с сервером). Клиенты (uuid) сохраняются.
+        """
+        if proto_id not in pc.PROTOCOLS:
+            raise BadRequest("Неизвестный протокол")
+        spec = pc.spec_by_id(proto_id)
+        if spec.kind != "xray":
+            raise BadRequest("Параметры Reality доступны только для Xray")
+
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.query() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            if s.status != "online":
+                raise BadRequest("Сервер должен быть онлайн")
+            sp = next((p for p in s.protocols if p.proto == proto_id), None)
+            if not sp or not sp.installed or not sp.running:
+                raise BadRequest("Протокол не установлен или остановлен")
+            material = ServerMaterial.from_dict(prov._dec(sp.material_encrypted))
+
+        try:
+            if rotate_short_id:
+                target_short_id = reality.gen_short_id()
+            elif short_id is not None:
+                target_short_id = reality.validate_short_id(short_id)
+            else:
+                target_short_id = material.short_id or reality.gen_short_id()
+            target_sni = reality.validate_sni(sni) if sni is not None else (material.site or pc.XRAY_DEFAULT_SITE)
+        except ProvisioningError as e:
+            raise BadRequest(e.message) from e
+
+        try:
+            new_material = await prov.set_reality(s, sp, short_id=target_short_id, sni=target_sni)
+        except (SshError, ProvisioningError) as e:
+            raise BadRequest(f"Не удалось применить параметры Reality на сервере: {e}") from e
+
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            sp2 = next((p for p in s.protocols if p.proto == proto_id), None)
+            if sp2 is not None:
+                sp2.material_encrypted = prov._enc(new_material.as_dict())
             await tx.session.flush()
             await tx.session.refresh(s)
             return server_to_dict(s, self._secret(s))

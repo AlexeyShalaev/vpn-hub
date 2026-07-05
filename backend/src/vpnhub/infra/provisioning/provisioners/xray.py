@@ -11,7 +11,7 @@ import json
 from typing import Any, cast
 
 from vpnhub.infra.provisioning import constants as c
-from vpnhub.infra.provisioning import keys, script_runner, vpn_uri
+from vpnhub.infra.provisioning import keys, reality, script_runner, vpn_uri
 from vpnhub.infra.provisioning.provisioners import base
 from vpnhub.infra.provisioning.provisioners.base import ClientMaterial, ConfigArtifact, ServerMaterial
 from vpnhub.infra.provisioning.ssh import SshClient
@@ -83,6 +83,23 @@ class XrayProvisioner:
         doc["inbounds"][0]["settings"]["clients"] = [x for x in clients if x.get("id") != client_id]
         await self._write_and_restart(ssh, doc)
         await base.remove_client_row(ssh, self.spec, client_id)
+
+    async def set_reality(self, ssh: SshClient, *, short_id: str, sni: str) -> ServerMaterial:
+        """Переписать realitySettings (shortIds/serverNames/dest) живого server.json + рестарт контейнера.
+
+        Reality hot-reload у Xray нет — рестарт роняет активные сессии, поэтому reprovision короткий, но
+        не бесшовный. Клиенты (uuid) сохраняются. Возвращает обновлённый ServerMaterial (short_id/site).
+        """
+        doc = await self._read_server_json(ssh)
+        reality.rewrite_reality(doc, short_id=short_id, sni=sni)
+        await self._write_and_restart(ssh, doc)
+        boot = self._material.bootstrap_uuid if self._material else ""
+        pub = self._material.xray_public_key if self._material else ""
+        xhttp = self._material.xhttp_path if self._material else ""
+        self._material = ServerMaterial(
+            xray_public_key=pub, short_id=short_id, bootstrap_uuid=boot, site=sni, xhttp_path=xhttp
+        )
+        return self._material
 
     async def list_clients(self, ssh: SshClient) -> list[dict]:
         rows = await base.read_clients_table(ssh, self.spec)
