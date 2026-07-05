@@ -134,6 +134,10 @@ class XrayProvisioner:
 
     def build_artifact(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> ConfigArtifact:
         is_xhttp = self.spec.xray_network == "xhttp"
+        # xhttp выдаётся отдельной ссылкой (не в бандле), поэтому помечаем имя «XHTTP» —
+        # чтобы в клиенте он явно отличался от обычного Xray/бандла того же сервера.
+        base_alias = server_name or "AmneziaVPN"
+        alias = f"{base_alias} XHTTP" if is_xhttp else base_alias
         vless = vpn_uri.build_vless_url(
             uuid=client.client_id,
             host=server_ip,
@@ -145,7 +149,7 @@ class XrayProvisioner:
             network=self.spec.xray_network,
             path=self.material.xhttp_path if is_xhttp else "",
             mode=self.spec.xray_xhttp_mode if is_xhttp else "",
-            alias=server_name or "AmneziaVPN",
+            alias=alias,
         )
         hint = (
             "Скопируйте ссылку vless:// и добавьте в клиент с поддержкой XHTTP (Hiddify / v2RayTun)."
