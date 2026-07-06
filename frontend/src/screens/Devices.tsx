@@ -112,7 +112,9 @@ function DeviceCard({
                   <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
                 </div>
                 {g.items.map((c) => {
-                  const revoked = c.status && c.status !== "active";
+                  const suspended = c.status === "suspended";
+                  const revoked = c.status && c.status !== "active" && !suspended;
+                  const dimmed = revoked || suspended;
                   return (
                     <div
                       key={`${c.type}-${c.proto ?? ""}`}
@@ -122,7 +124,7 @@ function DeviceCard({
                         gap: 8,
                         flexWrap: "nowrap",
                         paddingLeft: 2,
-                        opacity: revoked ? 0.55 : 1,
+                        opacity: dimmed ? 0.55 : 1,
                       }}
                     >
                       <span className="rowflex" style={{ gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
@@ -131,7 +133,15 @@ function DeviceCard({
                           style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                         >
                           {c.proto || VPN_LABEL[c.type]}
-                          {revoked ? " · отозван" : ""}
+                          {suspended ? (
+                            <span title="Доступ приостановлен из-за лимита трафика — вернётся после сброса периода">
+                              {" · приостановлен (лимит трафика)"}
+                            </span>
+                          ) : revoked ? (
+                            " · отозван"
+                          ) : (
+                            ""
+                          )}
                         </span>
                       </span>
                       <Btn
