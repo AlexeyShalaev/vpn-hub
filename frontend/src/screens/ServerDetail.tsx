@@ -37,7 +37,7 @@ function ChainSection({ server }: { server: Server }) {
     onSuccess: () => {
       setExitId("");
       invalidate();
-      toast("Цепочка создана — трафик пойдёт через выходной сервер");
+      toast("Цепочка Xray создана — трафик Xray пойдёт через выходной сервер");
     },
     onError: (e) => toast(e instanceof Error ? e.message : "Не удалось создать цепочку"),
   });
@@ -65,11 +65,12 @@ function ChainSection({ server }: { server: Server }) {
         className="muted-3"
         style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
       >
-        Цепочка (мультихоп)
+        Мультихоп Xray → Xray
       </div>
       <p className="muted" style={{ fontSize: 13 }}>
-        Клиенты подключаются к этому серверу как ко входу, а трафик выходит в интернет через выбранный выходной сервер
-        (Xray). Полезно, когда нужен вход с локальным IP, а выход — в другой стране.
+        Только для протокола <strong>Xray</strong> (VLESS + Reality): клиенты Xray этого сервера входят здесь, а в
+        интернет выходят через Xray другого вашего сервера. Полезно, когда нужен вход с локальным IP, а выход — в другой
+        стране. Клиенты остальных протоколов этого сервера (AmneziaWG, OpenVPN, Outline, Hysteria2) не затрагиваются.
       </p>
 
       {chains.length > 0 ? (
@@ -90,7 +91,7 @@ function ChainSection({ server }: { server: Server }) {
               <span className="rowflex" style={{ gap: 8, minWidth: 0 }}>
                 <Icon name="refresh" size={15} />
                 <span style={{ fontSize: 13.5 }}>
-                  выход через <strong>{ch.exitServerName || ch.exitServerId}</strong>
+                  Xray → выход через <strong>{ch.exitServerName || ch.exitServerId}</strong> (Xray)
                 </span>
                 <span className={`badge ${ch.state === "linked" ? "ok" : "warn"}`}>{ch.state}</span>
               </span>
@@ -109,7 +110,7 @@ function ChainSection({ server }: { server: Server }) {
       ) : candidates.length > 0 ? (
         <div className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
           <select className="input" value={exitId} onChange={(e) => setExitId(e.target.value)} style={{ flex: 1 }}>
-            <option value="">Выберите выходной сервер…</option>
+            <option value="">Выберите выходной сервер (Xray)…</option>
             {candidates.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} · {s.location || s.ip}
