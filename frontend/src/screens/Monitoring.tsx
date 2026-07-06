@@ -3,7 +3,7 @@
 // в sync-тике по SSH (wg dump / xray statsquery / hysteria trafficStats). Сводка сверху +
 // фильтр по серверу/протоколу + сортировка. Поллинг как у остального owner-UI.
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LineChart } from "../components/chart";
 import { Btn, Empty, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { useT } from "../lib/i18n";
@@ -163,41 +163,147 @@ export function ClientTrafficModal({
   );
 }
 
-// Мультивыбор чипами: клик по значению добавляет/убирает его из набора; пустой набор = «все».
+// Мультивыбор через выпадашку с чекбоксами и поиском (удобно, когда вариантов много):
+// пустой набор = «все». Закрывается по клику вне и по Esc.
 function toggleIn(arr: string[], v: string): string[] {
   return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
 }
-function ChipFilter({
+function MultiSelect({
   label,
   options,
   selected,
-  onToggle,
+  onChange,
 }: {
   label: string;
   options: [string, string][]; // [value, human label]
   selected: string[];
-  onToggle: (v: string) => void;
+  onChange: (next: string[]) => void;
 }) {
-  if (options.length === 0) return null;
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const shown = query.trim()
+    ? options.filter(([, l]) => l.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+  const summary = selected.length === 0 ? "все" : `выбрано ${selected.length}`;
+
+  const trigger: React.CSSProperties = {
+    padding: "6px 10px",
+    borderRadius: "var(--r-sm)",
+    border: `1px solid ${selected.length ? "var(--accent, #3b82f6)" : "var(--border-strong)"}`,
+    background: "var(--surface)",
+    fontSize: 13,
+    color: "var(--text)",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
   return (
-    <div className="rowflex" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-      <span className="muted-3" style={{ fontSize: 12, minWidth: 92 }}>
-        {label}:
-      </span>
-      {options.map(([v, l]) => {
-        const on = selected.includes(v);
-        return (
-          <button
-            key={v}
-            type="button"
-            onClick={() => onToggle(v)}
-            className={`badge ${on ? "ok" : ""}`}
-            style={{ cursor: "pointer", opacity: on || selected.length === 0 ? 1 : 0.5 }}
-          >
-            {l}
-          </button>
-        );
-      })}
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" style={trigger} onClick={() => setOpen((o) => !o)}>
+        {label}: <b>{summary}</b> ▾
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 30,
+            top: "100%",
+            left: 0,
+            marginTop: 4,
+            minWidth: 240,
+            maxWidth: 340,
+            background: "var(--surface)",
+            border: "1px solid var(--border-strong)",
+            borderRadius: 10,
+            boxShadow: "var(--shadow, 0 8px 24px rgba(0,0,0,.18))",
+            padding: 6,
+          }}
+        >
+          {options.length > 8 && (
+            <input
+              autoFocus
+              placeholder="Поиск…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "6px 8px",
+                marginBottom: 4,
+                borderRadius: 7,
+                border: "1px solid var(--border)",
+                background: "var(--surface-2)",
+                fontSize: 13,
+                color: "var(--text)",
+              }}
+            />
+          )}
+          <div style={{ maxHeight: 260, overflowY: "auto" }}>
+            {shown.length === 0 ? (
+              <div className="muted-3" style={{ padding: 8, fontSize: 12.5 }}>
+                ничего не найдено
+              </div>
+            ) : (
+              shown.map(([v, l]) => (
+                <label
+                  key={v}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "6px 8px",
+                    borderRadius: 7,
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(v)}
+                    onChange={() => onChange(toggleIn(selected, v))}
+                  />
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{l}</span>
+                </label>
+              ))
+            )}
+          </div>
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="muted-3"
+              style={{
+                width: "100%",
+                textAlign: "left",
+                padding: "6px 8px",
+                marginTop: 2,
+                fontSize: 12.5,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              Сбросить «{label.toLowerCase()}»
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -301,53 +407,36 @@ export function MonitoringScreen() {
         <SummaryTile label="Серверов" value={summary ? String(summary.serversTotal) : "—"} />
       </div>
 
-      {/* фильтры (мультивыбор: пусто = все) + сортировка */}
-      <div className="card stack" style={{ gap: 8 }}>
-        <ChipFilter
-          label="Серверы"
-          options={serverOpts}
-          selected={selServers}
-          onToggle={(v) => setSelServers((a) => toggleIn(a, v))}
-        />
-        <ChipFilter
-          label="Протоколы"
-          options={protoOpts}
-          selected={selProtos}
-          onToggle={(v) => setSelProtos((a) => toggleIn(a, v))}
-        />
-        <ChipFilter
-          label="Пользователи"
-          options={userOpts}
-          selected={selUsers}
-          onToggle={(v) => setSelUsers((a) => toggleIn(a, v))}
-        />
-        <div className="rowflex" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {anyFilter && (
-            <Btn
-              variant="ghost"
-              sm
-              onClick={() => {
-                setSelServers([]);
-                setSelProtos([]);
-                setSelUsers([]);
-              }}
-            >
-              Сбросить фильтры
-            </Btn>
-          )}
-          <span className="muted-3" style={{ fontSize: 12 }}>
-            Показано: {rows.length}
-          </span>
-          <div style={{ flex: 1 }} />
-          <span className="muted-3" style={{ fontSize: 12 }}>
-            Сортировка:
-          </span>
-          {(["traffic", "speed", "name"] as SortKey[]).map((s) => (
-            <Btn key={s} variant={s === sort ? "primary" : "ghost"} sm onClick={() => setSort(s)}>
-              {s === "traffic" ? "по трафику" : s === "speed" ? "по скорости" : "по имени"}
-            </Btn>
-          ))}
-        </div>
+      {/* фильтры (мультивыбор через выпадашки: пусто = все) + сортировка */}
+      <div className="rowflex" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <MultiSelect label="Серверы" options={serverOpts} selected={selServers} onChange={setSelServers} />
+        <MultiSelect label="Протоколы" options={protoOpts} selected={selProtos} onChange={setSelProtos} />
+        <MultiSelect label="Пользователи" options={userOpts} selected={selUsers} onChange={setSelUsers} />
+        {anyFilter && (
+          <Btn
+            variant="ghost"
+            sm
+            onClick={() => {
+              setSelServers([]);
+              setSelProtos([]);
+              setSelUsers([]);
+            }}
+          >
+            Сбросить
+          </Btn>
+        )}
+        <span className="muted-3" style={{ fontSize: 12 }}>
+          Показано: {rows.length}
+        </span>
+        <div style={{ flex: 1 }} />
+        <span className="muted-3" style={{ fontSize: 12 }}>
+          Сортировка:
+        </span>
+        {(["traffic", "speed", "name"] as SortKey[]).map((s) => (
+          <Btn key={s} variant={s === sort ? "primary" : "ghost"} sm onClick={() => setSort(s)}>
+            {s === "traffic" ? "по трафику" : s === "speed" ? "по скорости" : "по имени"}
+          </Btn>
+        ))}
       </div>
 
       {/* таблица клиентов */}
