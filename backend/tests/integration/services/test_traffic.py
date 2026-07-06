@@ -121,6 +121,32 @@ async def test__overview__unknown_client_is_external(svc, session_maker):
     row = ov["clients"][0]
     assert row["external"] is True
     assert row["deviceName"] == "" and row["userName"] == ""
+    assert row["extName"] == ""  # имени в clientsTable не было
+
+
+async def test__overview__external_client_named_from_clients_table(svc, session_maker):
+    """external-клиент с именем из Amnezia clientsTable (PeerStat.name) → overview отдаёт extName.
+
+    Эмулируем сбор: PeerStat.name (== clientsTable clientName) сохраняется в ext_name сэмпла;
+    overview для external отдаёт его как extName (даже если у части сэмплов имя пусто — берём непустое).
+    """
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110021")
+        srv = await make_server(s, owner_id=owner.id)
+
+    hs = time.time()
+    # первый сэмпл без имени (напр. clientsTable ещё не прочиталась), второй — с именем из clientsTable
+    await svc.record(srv.id, "awg", [PeerStat(client_id="EXT1", rx=1, tx=2, last_handshake=hs)])
+    await svc.record(
+        srv.id, "awg", [PeerStat(client_id="EXT1", rx=5, tx=6, last_handshake=hs, name="Alex · Shalaev Xiaomi")]
+    )
+
+    ov = await svc.overview(owner.id, srv.id)
+    row = ov["clients"][0]
+    assert row["external"] is True
+    assert row["extName"] == "Alex · Shalaev Xiaomi"
+    # имя пользователя/устройства по-прежнему пустое — это именно external-клиент
+    assert row["deviceName"] == "" and row["userName"] == ""
 
 
 async def test__overview__online_status_from_handshake_freshness(svc, session_maker):

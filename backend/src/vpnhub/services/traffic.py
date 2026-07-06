@@ -21,7 +21,7 @@ xray/hysteria2 — поле `online` из stats движка (у них handshak
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import structlog
@@ -32,6 +32,7 @@ from vpnhub.api.config import Settings
 from vpnhub.core.errors import NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
+from vpnhub.infra.provisioning.provisioners import base as pbase
 from vpnhub.infra.provisioning.provisioners.hysteria2 import _STATS_LISTEN, HysteriaProvisioner
 from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XRAY_STATS_PORT
@@ -84,6 +85,7 @@ def _aggregate_clients(
                 "deviceName": dev,
                 "userName": usr,
                 "external": s.device_config_id is None,
+                "extName": "",  # имя из Amnezia clientsTable (только для external; ниже добираем непустое)
                 "rxTotal": 0,
                 "txTotal": 0,
                 "rxBytes": s.rx_bytes,
@@ -101,6 +103,9 @@ def _aggregate_clients(
         agg["rxBytes"] = s.rx_bytes
         agg["txBytes"] = s.tx_bytes
         agg["onlineFlag"] = s.online
+        # extName — имя external-клиента из clientsTable; берём непустое (у части сэмплов может быть пусто)
+        if agg["external"] and not agg["extName"] and s.ext_name:
+            agg["extName"] = s.ext_name
         lh = agg["lastHandshake"]
         if s.last_handshake is not None and (lh is None or s.last_handshake > lh):
             agg["lastHandshake"] = s.last_handshake
@@ -140,6 +145,7 @@ class PeerStat:
     tx: int  # кумулятивно отдано (сервер→клиент, download), байт
     last_handshake: float | None  # epoch; None — рукопожатий не было / протокол без handshake (xray/hysteria)
     online: bool | None = None  # активна ли сессия сейчас (из stats движка); None — определять по handshake
+    name: str | None = None  # имя клиента из Amnezia clientsTable (clientName); нужно для external
 
 
 def parse_wg_dump(text: str) -> list[PeerStat]:
@@ -171,6 +177,31 @@ def parse_wg_dump(text: str) -> list[PeerStat]:
     return out
 
 
+def clients_table_names(rows: list[Any]) -> dict[str, str]:
+    """clientId → clientName из строк Amnezia clientsTable (robust к битым/пустым строкам).
+
+    Формат строки: `{"clientId": "<pubkey|uuid>", "userData": {"clientName": "...", ...}}`.
+    Строки без clientId / без непустого clientName пропускаются (не ошибка). `rows` — сырой
+    JSON-массив из clientsTable, поэтому элементы могут быть чем угодно (проверяем isinstance).
+    """
+    out: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        cid = row.get("clientId")
+        user_data = row.get("userData")
+        if not isinstance(cid, str) or not cid or not isinstance(user_data, dict):
+            continue
+        name = user_data.get("clientName")
+        if isinstance(name, str) and name.strip():
+            out[cid] = name
+    return out
+
+
+# протоколы с Amnezia clientsTable (имена external-клиентов); outline его не использует.
+_CLIENTS_TABLE_KINDS = frozenset({"wireguard", "xray", "hysteria2", "openvpn"})
+
+
 class TrafficCollector:
     """Читает per-client статистику по уже открытому SSH-каналу (диспетч по kind протокола)."""
 
@@ -191,16 +222,33 @@ class TrafficCollector:
         """
         if spec.kind == "wireguard":
             res = await ssh.container_exec(spec.container, f"{spec.bin} show {spec.interface} dump")
-            return parse_wg_dump(res.stdout)
-        if spec.kind == "xray":
-            return await TrafficCollector._collect_xray(ssh, spec)
-        if spec.kind == "hysteria2":
-            return await TrafficCollector._collect_hysteria(ssh, spec)
-        if spec.kind == "openvpn":
-            return await TrafficCollector._collect_openvpn(ssh, spec)
-        if spec.kind == "outline":
-            return await TrafficCollector._collect_outline(ssh, spec, provo)
-        return []
+            stats = parse_wg_dump(res.stdout)
+        elif spec.kind == "xray":
+            stats = await TrafficCollector._collect_xray(ssh, spec)
+        elif spec.kind == "hysteria2":
+            stats = await TrafficCollector._collect_hysteria(ssh, spec)
+        elif spec.kind == "openvpn":
+            stats = await TrafficCollector._collect_openvpn(ssh, spec)
+        elif spec.kind == "outline":
+            stats = await TrafficCollector._collect_outline(ssh, spec, provo)
+        else:
+            return []
+        if stats and spec.kind in _CLIENTS_TABLE_KINDS:
+            stats = await TrafficCollector._attach_names(ssh, spec, stats)
+        return stats
+
+    @staticmethod
+    async def _attach_names(ssh: Any, spec: pc.ProtoSpec, stats: list[PeerStat]) -> list[PeerStat]:
+        """Проставить `PeerStat.name` из Amnezia clientsTable (для показа имён external-клиентов).
+
+        Best-effort: нет файла/ошибка чтения → clientsTable пуст → имена просто не добавляются.
+        clientId в clientsTable == наш device_configs.client_id (== PeerStat.client_id).
+        """
+        rows = await pbase.read_clients_table(ssh, spec)
+        names = clients_table_names(rows)
+        if not names:
+            return stats
+        return [replace(st, name=names[st.client_id]) if st.client_id in names else st for st in stats]
 
     # путь OpenVPN status-лога внутри контейнера. server.conf задаёт относительный `status
     # openvpn-status.log`; демон стартует из / (start.sh без cd) → файл в корне. Пробуем оба
@@ -325,6 +373,7 @@ class TrafficService:
                         tx_delta=tx_delta,
                         last_handshake=st.last_handshake,
                         online=st.online,
+                        ext_name=st.name,
                     )
                 )
             await tx.session.flush()

@@ -84,7 +84,9 @@ function SummaryTile({ label, value, sub }: { label: string; value: string; sub?
 
 function clientName(c: MonitoringClient): string {
   if (c.userName || c.deviceName) return [c.userName, c.deviceName].filter(Boolean).join(" · ");
-  return c.external ? "Внешний клиент" : (c.clientId ?? "—");
+  // external-клиент (заведён мимо панели) — покажем имя из Amnezia clientsTable, если оно есть
+  if (c.external) return c.extName || "Внешний клиент";
+  return c.clientId ?? "—";
 }
 
 // График трафика одного клиента за период. Данные — per-server overview (`series` = per-client

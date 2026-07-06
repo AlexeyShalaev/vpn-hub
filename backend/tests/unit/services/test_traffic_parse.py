@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
 from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
-from vpnhub.services.traffic import TrafficCollector, parse_wg_dump
+from vpnhub.services.traffic import TrafficCollector, clients_table_names, parse_wg_dump
 
 # Реальный формат `wg show <iface> dump`: TSV, первая строка — интерфейс.
 # Пир: pubkey  psk  endpoint  allowed-ips  latest-handshake(epoch)  rx  tx  keepalive
@@ -40,7 +40,42 @@ def test__parse_wg_dump__malformed_lines_are_skipped() -> None:
     assert parse_wg_dump(text) == []  # обе строки битые → пусто
 
 
+# --------------------------------------------------------------------------- clientsTable имена
+
+
+def test__clients_table_names__maps_client_id_to_client_name() -> None:
+    """Реальный формат строк Amnezia clientsTable → {clientId: clientName}."""
+    rows = [
+        {"clientId": "PUBKEY1", "userData": {"clientName": "Alex · Shalaev Xiaomi", "creationDate": "2026-01-01"}},
+        {"clientId": "UUID2", "userData": {"clientName": "Laptop", "creationDate": "2026-02-02"}},
+    ]
+    assert clients_table_names(rows) == {"PUBKEY1": "Alex · Shalaev Xiaomi", "UUID2": "Laptop"}
+
+
+def test__clients_table_names__empty_and_broken_rows_are_skipped() -> None:
+    """Пустой список, битые/неполные строки, пустое имя — пропускаются (best-effort)."""
+    assert clients_table_names([]) == {}
+    rows = [
+        {"clientId": "OK", "userData": {"clientName": "Named"}},
+        {"userData": {"clientName": "no-id"}},  # нет clientId
+        {"clientId": "", "userData": {"clientName": "empty-id"}},  # пустой clientId
+        {"clientId": "NOUD"},  # нет userData
+        {"clientId": "BADUD", "userData": "not-a-dict"},  # userData не dict
+        {"clientId": "BLANK", "userData": {"clientName": "  "}},  # пустое имя
+        "not-a-dict",  # мусор
+    ]
+    assert clients_table_names(rows) == {"OK": "Named"}
+
+
 # --------------------------------------------------------------------------- collector dispatch
+
+
+async def test__collect__wireguard__attaches_name_from_clients_table() -> None:
+    """Для amnezia-протоколов PeerStat.name берётся из clientsTable (по clientId)."""
+    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("awg"))
+    assert len(stats) == 1
+    assert stats[0].client_id == "PEERA"
+    assert stats[0].name == "Alex Xiaomi"
 
 
 @dataclass
@@ -86,6 +121,12 @@ class _FakeSsh:
 
     async def container_exec(self, container: str, command: str, *, detach: bool = False) -> _Res:
         return await self.run(f"docker exec {container} {command}")
+
+    async def read_container_text(self, container: str, path: str) -> str:
+        # фейковая clientsTable: имя для PEERA (wg-dispatch) — как реальный Amnezia clientsTable
+        if path.endswith("clientsTable"):
+            return '[{"clientId":"PEERA","userData":{"clientName":"Alex Xiaomi","creationDate":"2026-01-01"}}]'
+        raise FileNotFoundError(path)
 
 
 async def test__collect__wireguard_dispatch() -> None:

@@ -250,6 +250,9 @@ class TrafficSample(BaseTable):
     # активна ли сессия сейчас (из stats движка: xray statsUserOnline / hysteria /online). None —
     # неизвестно из движка (wg — онлайн вычисляется по свежести last_handshake на чтении).
     online: Mapped[bool | None] = mapped_column(nullable=True)
+    # имя клиента из Amnezia clientsTable (clientName). Нужно, чтобы показывать имя external-клиента
+    # (заведённого мимо панели — без нашего DeviceConfig). Для нон-external имя берётся из device_config.
+    ext_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
 

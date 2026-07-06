@@ -215,7 +215,8 @@ const clientLabel = (c: MonitoringClient): string =>
   c.userName || c.deviceName
     ? [c.userName, c.deviceName].filter(Boolean).join(" · ")
     : c.external
-      ? "Внешний клиент"
+      ? // external-клиент (заведён мимо панели) — имя из Amnezia clientsTable, если есть
+        c.extName || "Внешний клиент"
       : (c.clientId ?? "—");
 const fmtSpeed = (bps: number): string => (bps > 0 ? `${fmtBytes(bps)}/с` : "—");
 

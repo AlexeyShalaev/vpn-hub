@@ -303,6 +303,7 @@ export interface MonitoringClient {
   userName: string; // имя пользователя (пусто для external)
   deviceName: string; // имя устройства (пусто для external)
   external: boolean; // клиент без нашего DeviceConfig (заведён вне панели)
+  extName?: string; // имя из Amnezia clientsTable (только для external — заведён мимо панели, но с именем)
   online: boolean; // активна ли сессия прямо сейчас
   rxTotal: number; // upload (клиент→сервер) за период, байт
   txTotal: number; // download (сервер→клиент) за период, байт

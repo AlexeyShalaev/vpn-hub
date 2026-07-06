@@ -32,10 +32,11 @@
 
 ### Модель данных
 `traffic_samples` + колонка `online BOOLEAN NULL` (миграция `c9d0e1f2a3b4`, за head `b8c9d0e1f2a3`). Для wg `online` пишется NULL (онлайн вычисляется по handshake на чтении); для xray/hysteria2 — флаг из stats (у них handshake нет). `PeerStat.online` пробрасывается через `record()`; `_aggregate_clients()` доверяет флагу движка, иначе падает на свежесть handshake. Скорость (`rxSpeed`/`txSpeed`) — байт/сек из последней дельты по интервалу между двумя последними сэмплами клиента (0 у офлайн).
++ колонка `ext_name VARCHAR NULL` (миграция `d0e1f2a3b4c5`, за head `c9d0e1f2a3b4`) — имя клиента из Amnezia `clientsTable` (`userData.clientName`), проброшено через `PeerStat.name`.
 
 ### API (owner-scoped)
 - `GET /api/v1/servers/{sid}/traffic?period=` — per-server overview (расширен: у клиентов теперь `online`, `rxSpeed`/`txSpeed`, `lastSeen`).
-- `GET /api/v1/monitoring?period=` — ГЛОБАЛЬНО по всем серверам владельца: `summary{clientsTotal, clientsOnline, serversTotal, rxTotal, txTotal}` + `clients[]{userName, deviceName, proto, serverId, serverName, online, rxTotal, txTotal, rxSpeed, txSpeed, lastSeen, external}`. `period ∈ {1h,24h,7d}`.
+- `GET /api/v1/monitoring?period=` — ГЛОБАЛЬНО по всем серверам владельца: `summary{clientsTotal, clientsOnline, serversTotal, rxTotal, txTotal}` + `clients[]{userName, deviceName, extName, proto, serverId, serverName, online, rxTotal, txTotal, rxSpeed, txSpeed, lastSeen, external}` (`extName` — имя из Amnezia clientsTable для external-клиентов; в обоих ответах). `period ∈ {1h,24h,7d}`.
 
 ### Экран «Мониторинг» (owner-навигация: `nav.ts` + `App.tsx` + иконка `monitoring`)
 - Сводка сверху: онлайн сейчас (из N), скачано/отдано за период, число серверов.
@@ -45,6 +46,7 @@
 - **Клик по строке клиента** → модалка с графиком его трафика за период (`LineChart`): две линии — download (tx) и upload (rx). Данные берём из per-server overview этого клиента (`serverTraffic(serverId, period).series`), фильтруем по `clientId`+`proto` и группируем по времени `at`; значения — МБ за интервал сбора. Оси/легенда подписаны человекочитаемо.
 
 ### Собрано по всем протоколам (готово)
+- **имена external-клиентов из Amnezia `clientsTable`**: клиент без нашего `DeviceConfig` (заведён мимо панели) больше не безликий «Внешний клиент» — коллектор для amnezia-протоколов (awg/awg_legacy, xray/xray_xhttp, hysteria2, openvpn) читает `clientsTable` контейнера (`base.read_clients_table`, best-effort) и проставляет `PeerStat.name` из `userData.clientName` по `clientId` (== наш `client_id`). Имя сохраняется в `traffic_samples.ext_name`; `overview`/`global_overview` отдают его как `extName` для external-клиентов (у нон-external имя по-прежнему из device_config). Фронт (`Monitoring.clientName`/`ServerDetail.clientLabel`) показывает `extName` вместо «Внешний клиент», сохраняя тег «вне панели». Outline `clientsTable` не использует — там имя недоступно. Чистый хелпер `clients_table_names(rows)` (юнит-тест на реальном формате + битые/пустые строки).
 - **openvpn**: per-CN трафик+online из OpenVPN status-лога. `status openvpn-status.log` уже в `server.conf` (configure_container.sh) — демон стартует из `/`, поэтому лог в корне контейнера; коллектор пробует `/openvpn-status.log` и `/opt/amnezia/openvpn/openvpn-status.log`, берёт первый непустой (best-effort, без правки конфига/рестарта). rx=`Bytes Received`, tx=`Bytes Sent`, кумулятив; online по `CLIENT_LIST`.
 - **outline**: per-key суммарный трафик через Management API `GET /metrics/transfer` (curl по SSH на localhost, apiUrl из материала протокола — провизионер передаётся в `collect(ssh, spec, provo)` из sync-тика). Outline даёт ТОЛЬКО суммарные байты: `tx=total`, `rx=0`, **online не поддержан** (`None`).
 
