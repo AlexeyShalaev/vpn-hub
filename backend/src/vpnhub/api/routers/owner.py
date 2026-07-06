@@ -19,6 +19,20 @@ from vpnhub.services.traffic import TrafficService
 
 router = APIRouter(prefix="/api/v1", tags=["owner"])
 
+
+def _pos_int(body: dict[str, Any], key: str) -> int | None:
+    """Положительный int из тела запроса; строка/булево/прочее/≤0 → None (снять лимит).
+
+    Санитайзер для лимитов из недоверенного JSON: не даём кривому значению долететь до
+    сравнения `> 0` (иначе TypeError → 500) или до Integer-колонки (float).
+    """
+    raw = body.get(key) if isinstance(body, dict) else None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    n = int(raw)
+    return n if n > 0 else None
+
+
 # ---------- providers ----------
 
 
@@ -243,9 +257,7 @@ async def set_protocol_limit(
     svc: ServerService = Depends(service(ServerService)),
 ) -> dict:
     # body: { "maxClients": int | null } — мягкий лимит числа конфигов на протоколе (null/0 → снять)
-    raw = body.get("maxClients") if isinstance(body, dict) else None
-    max_clients = int(raw) if isinstance(raw, (int, float)) and int(raw) > 0 else None
-    return await svc.set_protocol_limit(ident.id, sid, proto, max_clients)
+    return await svc.set_protocol_limit(ident.id, sid, proto, _pos_int(body, "maxClients"))
 
 
 # ---------- multihop / chains (entry -> exit) ----------
@@ -380,6 +392,29 @@ async def regen_token(
     gid: str, ident: Identity = Depends(require_user), svc: GroupService = Depends(service(GroupService))
 ) -> dict:
     return await svc.regen_token(ident.id, gid)
+
+
+@router.patch("/groups/{gid}/limit")
+async def set_group_limit(
+    gid: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: GroupService = Depends(service(GroupService)),
+) -> dict:
+    # body: { "maxDevices": int | null } — override лимита устройств для участников (null/0 → снять)
+    return await svc.set_group_limit(ident.id, gid, _pos_int(body, "maxDevices"))
+
+
+@router.patch("/groups/{gid}/members/{mid}/limit")
+async def set_member_limit(
+    gid: str,
+    mid: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: GroupService = Depends(service(GroupService)),
+) -> dict:
+    # body: { "maxDevices": int | null } — персональный override лимита устройств участника
+    return await svc.set_member_limit(ident.id, gid, mid, _pos_int(body, "maxDevices"))
 
 
 @router.post("/groups/{gid}/members")

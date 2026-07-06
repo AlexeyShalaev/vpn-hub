@@ -447,7 +447,7 @@ export function ScreenHeader({
   onBack,
 }: {
   title: string;
-  sub?: string;
+  sub?: ReactNode;
   action?: ReactNode;
   onBack?: () => void;
 }) {

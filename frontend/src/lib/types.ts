@@ -85,6 +85,7 @@ export interface Member {
   role: "admin" | "member";
   status: "active" | "invited";
   phone?: string;
+  maxDevices: number | null; // персональный override лимита устройств; null = наследовать
 }
 
 export interface Session {
@@ -108,8 +109,14 @@ export interface Group {
   id: string;
   name: string;
   token: string;
+  maxDevices: number | null; // override лимита устройств для участников; null = глобальный дефолт
   members: Member[];
   access: { pools: string[]; servers: Record<string, VpnType[]> };
+}
+
+export interface DeviceLimit {
+  used: number;
+  limit: number;
 }
 
 export interface DeviceConfig {
@@ -274,6 +281,7 @@ export interface SystemInfo {
   lastBackup: string;
   backupFrequency: string; // off|daily|weekly|monthly
   masterKeySet: boolean;
+  defaultDevicesPerUser: number; // глобальный дефолт лимита устройств на пользователя
   backups: { id: string; at: string; size: string; kind: string }[];
   releases: { v: string; date: string; notes: string[] }[];
 }

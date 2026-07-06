@@ -125,7 +125,14 @@ def pool_to_dict(p: m.Pool, server_ids: list[str]) -> dict:
 
 
 def member_to_dict(mb: m.GroupMember) -> dict:
-    return {"id": mb.id, "name": mb.display_name, "role": mb.role, "status": mb.status, "phone": mb.phone or ""}
+    return {
+        "id": mb.id,
+        "name": mb.display_name,
+        "role": mb.role,
+        "status": mb.status,
+        "phone": mb.phone or "",
+        "maxDevices": mb.max_devices,
+    }
 
 
 def group_to_dict(g: m.Group, pools: list[str], servers: dict[str, list[str]]) -> dict:
@@ -133,6 +140,7 @@ def group_to_dict(g: m.Group, pools: list[str], servers: dict[str, list[str]]) -
         "id": g.id,
         "name": g.name,
         "token": g.token,
+        "maxDevices": g.max_devices,
         "members": [member_to_dict(mb) for mb in g.members],
         "access": {"pools": pools, "servers": servers},
     }

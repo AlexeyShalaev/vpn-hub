@@ -125,6 +125,19 @@ async def backup_settings(
     return {"ok": True}
 
 
+@router.put("/system/device-limit")
+async def set_device_limit(
+    body: dict[str, Any] = Body(default={}),
+    _: Identity = Depends(require_admin),
+    svc: AdminService = Depends(service(AdminService)),
+) -> dict:
+    # кривой (нечисловой) ввод → 0, чтобы сервис вернул чистый 400, а не int() бросил 500
+    raw = body.get("defaultDevicesPerUser") if isinstance(body, dict) else None
+    n = int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 0
+    await svc.set_default_devices(n)
+    return {"ok": True}
+
+
 # ---------- providers (каталог VPS) ----------
 
 

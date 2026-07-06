@@ -19,6 +19,7 @@ from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
 from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed
 from vpnhub.services.backups import BackupService
+from vpnhub.services.limits import SETTING_DEFAULT_DEVICES, global_device_limit
 
 log = structlog.get_logger(__name__)
 
@@ -110,6 +111,8 @@ class AdminService:
         backups = self.backups.list_backups()
         backup_frequency = await self.backups.frequency()
         backup_key_set = await self.backups.key_set()
+        async with self.uow.query() as tx:
+            default_devices = await global_device_limit(tx.session)
         s = self.settings
         cache = await self._update_cache()
         latest = cache.get("latest") or s.version
@@ -149,8 +152,16 @@ class AdminService:
             "backups": backups,
             "backupFrequency": backup_frequency,
             "masterKeySet": backup_key_set,
+            "defaultDevicesPerUser": default_devices,
             "releases": releases,
         }
+
+    async def set_default_devices(self, n: int) -> None:
+        """Глобальный дефолт лимита устройств на пользователя (>=1)."""
+        if n < 1:
+            raise BadRequest("Лимит устройств должен быть не меньше 1")
+        async with self.uow.transaction() as tx:
+            await tx.settings.set_value(SETTING_DEFAULT_DEVICES, str(int(n)))
 
     async def _update_cache(self) -> dict:
         async with self.uow.query() as tx:

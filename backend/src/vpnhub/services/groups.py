@@ -71,6 +71,27 @@ class GroupService:
             await tx.session.refresh(g)
             return await self._ser(tx, g)
 
+    async def set_group_limit(self, owner_id: str, gid: str, max_devices: int | None) -> dict:
+        """Override лимита устройств для участников группы (None/≤0 — снять, наследовать глобал)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            g.max_devices = max_devices if (max_devices is not None and max_devices > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
+    async def set_member_limit(self, owner_id: str, gid: str, mid: str, max_devices: int | None) -> dict:
+        """Персональный override лимита устройств участника (None/≤0 — снять, наследовать группу/глобал)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            mb = next((x for x in g.members if x.id == mid), None)
+            if mb is None:
+                raise NotFound("Участник не найден")
+            mb.max_devices = max_devices if (max_devices is not None and max_devices > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
     async def delete(self, owner_id: str, gid: str) -> None:
         async with self.uow.transaction() as tx:
             g = await self._owned(tx, owner_id, gid)

@@ -13,6 +13,7 @@ from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services.limits import effective_device_limit, used_devices
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 from vpnhub.services.sync_logic import dump_pending, parse_pending
 
@@ -26,10 +27,24 @@ class DeviceService:
         async with self.uow.query() as tx:
             return [device_to_dict(d) for d in await tx.devices.for_user(user_id)]
 
+    async def limit_info(self, user_id: str) -> dict:
+        """Занятость/лимит устройств пользователя для отображения на экране устройств."""
+        async with self.uow.query() as tx:
+            return {
+                "used": await used_devices(tx.session, user_id),
+                "limit": await effective_device_limit(tx.session, user_id),
+            }
+
     async def create(self, user_id: str, name: str, platform: str) -> dict:
         if not name:
             raise BadRequest("Введите имя")
         async with self.uow.transaction() as tx:
+            used = await used_devices(tx.session, user_id)
+            limit = await effective_device_limit(tx.session, user_id)
+            if used >= limit:
+                raise BadRequest(
+                    f"Достигнут лимит устройств ({used}/{limit}). Обратитесь к владельцу, чтобы увеличить лимит."
+                )
             d = m.Device(user_id=user_id, name=name, platform=platform or "ios")
             tx.devices.add(d)
             await tx.session.flush()

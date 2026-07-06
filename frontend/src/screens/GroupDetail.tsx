@@ -47,6 +47,10 @@ export function GroupDetailScreen() {
   const [renameName, setRenameName] = useState("");
   const [inviting, setInviting] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [editingGroupLimit, setEditingGroupLimit] = useState(false);
+  const [groupLimitVal, setGroupLimitVal] = useState("");
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [memberLimitVal, setMemberLimitVal] = useState("");
   const [form, setForm] = useState<{ name: string; role: "admin" | "member"; phone: string }>({
     name: "",
     role: "member",
@@ -97,6 +101,22 @@ export function GroupDetailScreen() {
   const removeMut = useMutation({
     mutationFn: (memberId: string) => q.removeMember(groupId, memberId),
     onSuccess: () => invalidate(),
+  });
+  const groupLimitMut = useMutation({
+    mutationFn: (n: number | null) => q.setGroupLimit(groupId, n),
+    onSuccess: () => {
+      invalidate();
+      setEditingGroupLimit(false);
+      toast("Сохранено");
+    },
+  });
+  const memberLimitMut = useMutation({
+    mutationFn: ({ mid, n }: { mid: string; n: number | null }) => q.setMemberLimit(groupId, mid, n),
+    onSuccess: () => {
+      invalidate();
+      setEditingMember(null);
+      toast("Сохранено");
+    },
   });
 
   const group = groupQ.data;
@@ -237,6 +257,36 @@ export function GroupDetailScreen() {
         </div>
       </div>
 
+      {/* Лимит устройств группы */}
+      <div className="card">
+        <div className="rowflex" style={{ justifyContent: "space-between", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div
+              className="muted"
+              style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}
+            >
+              Лимит устройств
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 6 }}>
+              {group.maxDevices != null ? `${group.maxDevices} на участника` : "по умолчанию (глобальный лимит)"}
+              <span className="muted"> · персональный лимит участника — в его строке ниже</span>
+            </div>
+          </div>
+          <Btn
+            variant="default"
+            sm
+            style={{ flex: "none" }}
+            onClick={() => {
+              setGroupLimitVal(group.maxDevices?.toString() ?? "");
+              setEditingGroupLimit(true);
+            }}
+          >
+            <Icon name="edit" size={15} />
+            Изменить
+          </Btn>
+        </div>
+      </div>
+
       {/* Участники */}
       <div className="card">
         <div className="rowflex" style={{ justifyContent: "space-between", marginBottom: 14 }}>
@@ -265,6 +315,10 @@ export function GroupDetailScreen() {
               member={m}
               onToggleRole={() => roleMut.mutate(m.id)}
               onRemove={() => removeMut.mutate(m.id)}
+              onEditLimit={() => {
+                setMemberLimitVal(m.maxDevices?.toString() ?? "");
+                setEditingMember(m);
+              }}
             />
           ))}
         </div>
@@ -439,6 +493,92 @@ export function GroupDetailScreen() {
           </Field>
         </Modal>
       )}
+
+      {/* Лимит устройств группы */}
+      {editingGroupLimit && (
+        <Modal
+          title="Лимит устройств группы"
+          onClose={() => setEditingGroupLimit(false)}
+          footer={
+            <>
+              <Btn variant="default" block onClick={() => setEditingGroupLimit(false)}>
+                Отмена
+              </Btn>
+              <Btn
+                variant="primary"
+                block
+                onClick={() => {
+                  const n = Number.parseInt(groupLimitVal, 10);
+                  groupLimitMut.mutate(groupLimitVal.trim() === "" || !Number.isFinite(n) ? null : n);
+                }}
+                disabled={groupLimitMut.isPending}
+              >
+                Сохранить
+              </Btn>
+            </>
+          }
+        >
+          <p className="muted" style={{ marginBottom: 16, fontSize: 14 }}>
+            Сколько устройств может завести каждый участник группы. Пусто — наследовать глобальный лимит. Персональный
+            лимит участника (в его строке) перекрывает этот.
+          </p>
+          <Field label="Устройств на участника">
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={groupLimitVal}
+              placeholder="напр. 5 (пусто — глобальный)"
+              autoFocus
+              onChange={(e) => setGroupLimitVal(e.target.value)}
+            />
+          </Field>
+        </Modal>
+      )}
+
+      {/* Персональный лимит устройств участника */}
+      {editingMember && (
+        <Modal
+          title={`Лимит устройств · ${editingMember.name}`}
+          onClose={() => setEditingMember(null)}
+          footer={
+            <>
+              <Btn variant="default" block onClick={() => setEditingMember(null)}>
+                Отмена
+              </Btn>
+              <Btn
+                variant="primary"
+                block
+                onClick={() => {
+                  const n = Number.parseInt(memberLimitVal, 10);
+                  memberLimitMut.mutate({
+                    mid: editingMember.id,
+                    n: memberLimitVal.trim() === "" || !Number.isFinite(n) ? null : n,
+                  });
+                }}
+                disabled={memberLimitMut.isPending}
+              >
+                Сохранить
+              </Btn>
+            </>
+          }
+        >
+          <p className="muted" style={{ marginBottom: 16, fontSize: 14 }}>
+            Персональный лимит устройств для «{editingMember.name}». Пусто — наследовать лимит группы или глобальный.
+          </p>
+          <Field label="Устройств">
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={memberLimitVal}
+              placeholder="пусто — как у группы"
+              autoFocus
+              onChange={(e) => setMemberLimitVal(e.target.value)}
+            />
+          </Field>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -447,10 +587,12 @@ function MemberRow({
   member,
   onToggleRole,
   onRemove,
+  onEditLimit,
 }: {
   member: Member;
   onToggleRole: () => void;
   onRemove: () => void;
+  onEditLimit: () => void;
 }) {
   return (
     <div className="card-row" style={{ gap: 12 }}>
@@ -471,6 +613,14 @@ function MemberRow({
           {member.status === "invited" && <span className="badge warn">приглашён</span>}
         </div>
       </div>
+      <Btn
+        variant="default"
+        sm
+        onClick={onEditLimit}
+        title={member.maxDevices != null ? "Персональный лимит устройств" : "Задать лимит устройств"}
+      >
+        {member.maxDevices != null ? `${member.maxDevices} уст.` : "лимит"}
+      </Btn>
       <Btn variant="default" sm onClick={onToggleRole} title="Сменить роль">
         {member.role === "admin" ? "админ" : "участник"}
       </Btn>

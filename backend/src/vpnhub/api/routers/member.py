@@ -44,6 +44,13 @@ async def list_devices(
     return await svc.list(ident.id)
 
 
+@router.get("/me/devices/limit")
+async def device_limit(
+    ident: Identity = Depends(require_user), svc: DeviceService = Depends(service(DeviceService))
+) -> dict:
+    return await svc.limit_info(ident.id)
+
+
 @router.post("/me/devices")
 async def add_device(
     body: dict[str, Any] = Body(...),

@@ -196,6 +196,11 @@ export function SystemScreen() {
     null,
   );
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [devLimit, setDevLimit] = useState("");
+  useEffect(() => {
+    const n = sysQ.data?.defaultDevicesPerUser;
+    if (n != null) setDevLimit(String(n));
+  }, [sysQ.data?.defaultDevicesPerUser]);
 
   const upgradeMut = useMutation({
     mutationFn: q.adminUpgrade,
@@ -262,6 +267,15 @@ export function SystemScreen() {
     mutationFn: (frequency: string) => q.adminSetBackupSettings({ frequency }),
     onSuccess: () => {
       toast("Частота сохранена");
+      qc.invalidateQueries({ queryKey: ["adminSystem"] });
+    },
+    onError: toastErr,
+  });
+
+  const devLimitMut = useMutation({
+    mutationFn: (n: number) => q.adminSetDeviceLimit(n),
+    onSuccess: () => {
+      toast("Лимит устройств сохранён");
       qc.invalidateQueries({ queryKey: ["adminSystem"] });
     },
     onError: toastErr,
@@ -460,6 +474,51 @@ export function SystemScreen() {
               <div style={{ fontWeight: 600, fontSize: 14 }}>{sys.lastBackup}</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Лимит устройств на пользователя (глобальный дефолт) */}
+      <div className="card">
+        <div
+          style={{
+            font: "700 12px/1 var(--font)",
+            letterSpacing: ".05em",
+            textTransform: "uppercase",
+            color: "var(--text-3)",
+            marginBottom: 12,
+          }}
+        >
+          Лимит устройств на пользователя
+        </div>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+          Глобальный дефолт: сколько устройств может завести пользователь. Владелец может переопределить его для группы
+          или конкретного участника.
+        </p>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+            <span className="muted">Устройств по умолчанию</span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              style={{ width: 140 }}
+              value={devLimit}
+              onChange={(e) => setDevLimit(e.target.value)}
+            />
+          </label>
+          <Btn
+            onClick={() => {
+              const n = Number.parseInt(devLimit, 10);
+              if (!Number.isFinite(n) || n < 1) {
+                toast("Лимит должен быть не меньше 1");
+                return;
+              }
+              devLimitMut.mutate(n);
+            }}
+            disabled={devLimitMut.isPending}
+          >
+            Сохранить
+          </Btn>
         </div>
       </div>
 

@@ -163,6 +163,10 @@ export function DevicesScreen() {
     queryKey: ["devices"],
     queryFn: q.listDevices,
   });
+  const { data: limit } = useQuery({
+    queryKey: ["deviceLimit"],
+    queryFn: q.deviceLimit,
+  });
   const { data: servers } = useQuery({
     queryKey: ["servers"],
     queryFn: q.listServers,
@@ -187,15 +191,18 @@ export function DevicesScreen() {
     mutationFn: () => q.addDevice({ name: name.trim(), platform }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["devices"] });
+      qc.invalidateQueries({ queryKey: ["deviceLimit"] });
       setAdding(false);
       toast("Устройство добавлено");
     },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось добавить устройство"),
   });
 
   const removeMut = useMutation({
     mutationFn: (id: string) => q.removeDevice(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["devices"] });
+      qc.invalidateQueries({ queryKey: ["deviceLimit"] });
       setRemoving(null);
       toast("Устройство удалено");
     },
@@ -227,14 +234,29 @@ export function DevicesScreen() {
   }
 
   const list = devices ?? [];
+  const cap = limit?.limit ?? null;
+  const used = list.length;
+  const atLimit = cap != null && used >= cap;
+  const limitHint = atLimit ? `Достигнут лимит устройств (${used}/${cap}). Обратитесь к владельцу.` : undefined;
 
   return (
     <div className="screen">
       <ScreenHeader
         title="Мои устройства"
-        sub="Куда вы ставите конфиги"
+        sub={
+          cap != null ? (
+            <>
+              Куда вы ставите конфиги ·{" "}
+              <span style={{ color: atLimit ? "var(--danger)" : "var(--text-2)", fontWeight: 600 }}>
+                устройств {used} / {cap}
+              </span>
+            </>
+          ) : (
+            "Куда вы ставите конфиги"
+          )
+        }
         action={
-          <Btn variant="primary" onClick={openAdd}>
+          <Btn variant="primary" onClick={openAdd} disabled={atLimit} title={limitHint}>
             Добавить устройство
           </Btn>
         }

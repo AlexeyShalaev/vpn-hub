@@ -163,6 +163,8 @@ class Group(BaseTable, DatetimeColumnsMixin):
     owner_user_id: Mapped[str] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(120))
     token: Mapped[str] = mapped_column(String(64), unique=True)
+    # override глобального лимита устройств на участника этой группы; NULL = наследовать глобал
+    max_devices: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     members: Mapped[list[GroupMember]] = relationship(
         back_populates="group", cascade="all, delete-orphan", lazy="selectin"
@@ -178,6 +180,8 @@ class GroupMember(BaseTable):
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     role: Mapped[str] = mapped_column(String(16), default="member")  # admin|member
     status: Mapped[str] = mapped_column(String(16), default="active")  # active|invited
+    # персональный override лимита устройств; NULL = наследовать лимит группы/глобал
+    max_devices: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     group: Mapped[Group] = relationship(back_populates="members")
 

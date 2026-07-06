@@ -7,6 +7,7 @@ import type {
   ChainLink,
   ConfigResult,
   Device,
+  DeviceLimit,
   Group,
   InvitePeek,
   Me,
@@ -155,6 +156,10 @@ export const addMember = (id: string, b: { name: string; role: string; phone?: s
   http.post<Group>(`/groups/${id}/members`, b);
 export const toggleMemberRole = (gid: string, mid: string) => http.post<Group>(`/groups/${gid}/members/${mid}/role`);
 export const removeMember = (gid: string, mid: string) => http.del<Group>(`/groups/${gid}/members/${mid}`);
+export const setGroupLimit = (gid: string, maxDevices: number | null) =>
+  http.patch<Group>(`/groups/${gid}/limit`, { maxDevices });
+export const setMemberLimit = (gid: string, mid: string, maxDevices: number | null) =>
+  http.patch<Group>(`/groups/${gid}/members/${mid}/limit`, { maxDevices });
 export const toggleGroupPool = (gid: string, poolId: string) =>
   http.put<Group>(`/groups/${gid}/access/pools/${poolId}`);
 export const toggleGroupServer = (gid: string, serverId: string) =>
@@ -165,6 +170,7 @@ export const toggleGroupServerVpn = (gid: string, serverId: string, type: string
 // member
 export const listAvailable = () => http.get<AvailableServer[]>("/me/available");
 export const listDevices = () => http.get<Device[]>("/me/devices");
+export const deviceLimit = () => http.get<DeviceLimit>("/me/devices/limit");
 export const addDevice = (b: { name: string; platform: string }) => http.post<Device>("/me/devices", b);
 export const removeDevice = (id: string) => http.del(`/me/devices/${id}`);
 // peek=true: только список протоколов/приложений для выбора, БЕЗ провижининга конфига на сервере
@@ -212,6 +218,8 @@ export const adminImportBackup = (file: File, key: string) => {
 };
 export const adminSetBackupSettings = (b: { frequency?: string; key?: string }) =>
   http.put<{ ok: boolean }>("/admin/system/backup-settings", b);
+export const adminSetDeviceLimit = (defaultDevicesPerUser: number) =>
+  http.put<{ ok: boolean }>("/admin/system/device-limit", { defaultDevicesPerUser });
 
 // admin: providers catalog (YAML-backed)
 export const adminCreateProvider = (b: Record<string, unknown>) => http.post<Provider>("/admin/providers", b);

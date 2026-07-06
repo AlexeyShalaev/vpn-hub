@@ -416,7 +416,14 @@ def test__member_to_dict__with_phone__maps_display_name_to_name() -> None:
     # Act
     result = s.member_to_dict(member)
     # Assert
-    assert result == {"id": "mb1", "name": "Мама", "role": "member", "status": "active", "phone": "+79001112233"}
+    assert result == {
+        "id": "mb1",
+        "name": "Мама",
+        "role": "member",
+        "status": "active",
+        "phone": "+79001112233",
+        "maxDevices": None,
+    }
 
 
 def test__member_to_dict__no_phone__defaults_to_empty_string() -> None:
@@ -443,7 +450,10 @@ def test__group_to_dict__maps_members_and_access() -> None:
         "id": "g1",
         "name": "Семья",
         "token": "grp-tok",
-        "members": [{"id": "mb1", "name": "Папа", "role": "admin", "status": "active", "phone": ""}],
+        "maxDevices": None,
+        "members": [
+            {"id": "mb1", "name": "Папа", "role": "admin", "status": "active", "phone": "", "maxDevices": None}
+        ],
         "access": {"pools": ["p1"], "servers": {"s1": ["amnezia", "openvpn"]}},
     }
 
