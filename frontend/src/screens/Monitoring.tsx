@@ -90,7 +90,7 @@ function clientName(c: MonitoringClient): string {
 // График трафика одного клиента за период. Данные — per-server overview (`series` = per-client
 // дельты по времени); фильтруем по clientId+proto этого клиента и группируем по времени (at).
 // Значения — байт за интервал сбора; для читаемости отрисовываем в МБ (две линии: download/upload).
-function ClientTrafficModal({
+export function ClientTrafficModal({
   client,
   period,
   periodLabel,

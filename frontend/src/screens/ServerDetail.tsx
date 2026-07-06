@@ -8,6 +8,7 @@ import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } fr
 import { vpnLogo } from "../lib/vpnLogos";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
+import { ClientTrafficModal } from "./Monitoring";
 import { ServerAccessSections } from "./ServerAccess";
 import { VpnAdvancedModal } from "./VpnAdvanced";
 
@@ -227,6 +228,9 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
     enabled: !!serverId,
     refetchInterval: 60000,
   });
+  // клик по клиенту → та же модалка с графиком трафика, что в общем «Мониторинге».
+  // per-server overview не заполняет serverId у клиента — подставляем текущий при открытии.
+  const [selected, setSelected] = useState<MonitoringClient | null>(null);
   const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
   const clients: MonitoringClient[] = [...(tq.data?.clients ?? [])].sort(
     (a, b) => Number(b.online) - Number(a.online) || b.rxTotal + b.txTotal - (a.rxTotal + a.txTotal),
@@ -275,7 +279,12 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
             </thead>
             <tbody>
               {clients.map((c) => (
-                <tr key={`${c.proto}:${c.clientId}`}>
+                <tr
+                  key={`${c.proto}:${c.clientId}`}
+                  onClick={() => setSelected({ ...c, serverId })}
+                  style={{ cursor: "pointer" }}
+                  title="Показать график трафика"
+                >
                   <td style={td}>
                     <div style={{ fontWeight: 600 }}>{clientLabel(c)}</div>
                     {c.external && (
@@ -307,6 +316,9 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
             </tbody>
           </table>
         </div>
+      )}
+      {selected && (
+        <ClientTrafficModal client={selected} period="24h" periodLabel="24 часа" onClose={() => setSelected(null)} />
       )}
     </div>
   );
