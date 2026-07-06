@@ -163,11 +163,51 @@ export function ClientTrafficModal({
   );
 }
 
+// Мультивыбор чипами: клик по значению добавляет/убирает его из набора; пустой набор = «все».
+function toggleIn(arr: string[], v: string): string[] {
+  return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
+function ChipFilter({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: [string, string][]; // [value, human label]
+  selected: string[];
+  onToggle: (v: string) => void;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <div className="rowflex" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <span className="muted-3" style={{ fontSize: 12, minWidth: 92 }}>
+        {label}:
+      </span>
+      {options.map(([v, l]) => {
+        const on = selected.includes(v);
+        return (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onToggle(v)}
+            className={`badge ${on ? "ok" : ""}`}
+            style={{ cursor: "pointer", opacity: on || selected.length === 0 ? 1 : 0.5 }}
+          >
+            {l}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function MonitoringScreen() {
   const t = useT();
   const [period, setPeriod] = useState<Period>("24h");
-  const [server, setServer] = useState<string>("");
-  const [proto, setProto] = useState<string>("");
+  const [selServers, setSelServers] = useState<string[]>([]);
+  const [selProtos, setSelProtos] = useState<string[]>([]);
+  const [selUsers, setSelUsers] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("traffic");
   const [selected, setSelected] = useState<MonitoringClient | null>(null);
 
@@ -180,16 +220,32 @@ export function MonitoringScreen() {
   const clients = mq.data?.clients ?? [];
   const summary = mq.data?.summary;
 
-  // варианты для фильтров — из полученных данных
-  const servers = useMemo(() => {
+  // варианты для фильтров — из полученных данных (мультивыбор)
+  const serverOpts = useMemo(() => {
     const seen = new Map<string, string>();
     for (const c of clients) if (c.serverId) seen.set(c.serverId, c.serverName || c.serverId);
-    return [...seen.entries()];
+    return [...seen.entries()] as [string, string][];
   }, [clients]);
-  const protos = useMemo(() => [...new Set(clients.map((c) => c.proto))], [clients]);
+  const protoOpts = useMemo(
+    () => [...new Set(clients.map((c) => c.proto))].map((p) => [p, PROTO_LABEL[p] ?? p] as [string, string]),
+    [clients],
+  );
+  const userOpts = useMemo(() => {
+    const seen = new Set<string>();
+    for (const c of clients) if (c.userName) seen.add(c.userName);
+    return [...seen].sort((a, b) => a.localeCompare(b, "ru")).map((u) => [u, u] as [string, string]);
+  }, [clients]);
+  const anyFilter = selServers.length > 0 || selProtos.length > 0 || selUsers.length > 0;
 
   const rows = useMemo(() => {
-    let out = clients.filter((c) => (!server || c.serverId === server) && (!proto || c.proto === proto));
+    // пустой набор в фильтре = «все»; иначе — членство. Пользователь фильтруется по userName
+    // (external-клиенты без userName выпадают, когда фильтр по пользователям активен).
+    let out = clients.filter(
+      (c) =>
+        (selServers.length === 0 || (c.serverId != null && selServers.includes(c.serverId))) &&
+        (selProtos.length === 0 || selProtos.includes(c.proto)) &&
+        (selUsers.length === 0 || selUsers.includes(c.userName)),
+    );
     const cmp: Record<SortKey, (a: MonitoringClient, b: MonitoringClient) => number> = {
       traffic: (a, b) => b.rxTotal + b.txTotal - (a.rxTotal + a.txTotal),
       speed: (a, b) => b.rxSpeed + b.txSpeed - (a.rxSpeed + a.txSpeed),
@@ -198,7 +254,7 @@ export function MonitoringScreen() {
     // онлайн — всегда выше при равенстве по остальным критериям
     out = [...out].sort((a, b) => cmp[sort](a, b) || Number(b.online) - Number(a.online));
     return out;
-  }, [clients, server, proto, sort]);
+  }, [clients, selServers, selProtos, selUsers, sort]);
 
   const th: React.CSSProperties = {
     textAlign: "left",
@@ -215,15 +271,6 @@ export function MonitoringScreen() {
     textAlign: "right",
     fontVariantNumeric: "tabular-nums",
     whiteSpace: "nowrap",
-  };
-
-  const selStyle: React.CSSProperties = {
-    padding: "6px 10px",
-    borderRadius: "var(--r-sm)",
-    border: "1px solid var(--border-strong)",
-    background: "var(--surface)",
-    fontSize: 13,
-    color: "var(--text)",
   };
 
   return (
@@ -254,33 +301,53 @@ export function MonitoringScreen() {
         <SummaryTile label="Серверов" value={summary ? String(summary.serversTotal) : "—"} />
       </div>
 
-      {/* фильтры + сортировка */}
-      <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select style={selStyle} value={server} onChange={(e) => setServer(e.target.value)}>
-          <option value="">Все серверы</option>
-          {servers.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
+      {/* фильтры (мультивыбор: пусто = все) + сортировка */}
+      <div className="card stack" style={{ gap: 8 }}>
+        <ChipFilter
+          label="Серверы"
+          options={serverOpts}
+          selected={selServers}
+          onToggle={(v) => setSelServers((a) => toggleIn(a, v))}
+        />
+        <ChipFilter
+          label="Протоколы"
+          options={protoOpts}
+          selected={selProtos}
+          onToggle={(v) => setSelProtos((a) => toggleIn(a, v))}
+        />
+        <ChipFilter
+          label="Пользователи"
+          options={userOpts}
+          selected={selUsers}
+          onToggle={(v) => setSelUsers((a) => toggleIn(a, v))}
+        />
+        <div className="rowflex" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {anyFilter && (
+            <Btn
+              variant="ghost"
+              sm
+              onClick={() => {
+                setSelServers([]);
+                setSelProtos([]);
+                setSelUsers([]);
+              }}
+            >
+              Сбросить фильтры
+            </Btn>
+          )}
+          <span className="muted-3" style={{ fontSize: 12 }}>
+            Показано: {rows.length}
+          </span>
+          <div style={{ flex: 1 }} />
+          <span className="muted-3" style={{ fontSize: 12 }}>
+            Сортировка:
+          </span>
+          {(["traffic", "speed", "name"] as SortKey[]).map((s) => (
+            <Btn key={s} variant={s === sort ? "primary" : "ghost"} sm onClick={() => setSort(s)}>
+              {s === "traffic" ? "по трафику" : s === "speed" ? "по скорости" : "по имени"}
+            </Btn>
           ))}
-        </select>
-        <select style={selStyle} value={proto} onChange={(e) => setProto(e.target.value)}>
-          <option value="">Все протоколы</option>
-          {protos.map((p) => (
-            <option key={p} value={p}>
-              {PROTO_LABEL[p] ?? p}
-            </option>
-          ))}
-        </select>
-        <div style={{ flex: 1 }} />
-        <span className="muted-3" style={{ fontSize: 12 }}>
-          Сортировка:
-        </span>
-        {(["traffic", "speed", "name"] as SortKey[]).map((s) => (
-          <Btn key={s} variant={s === sort ? "primary" : "ghost"} sm onClick={() => setSort(s)}>
-            {s === "traffic" ? "по трафику" : s === "speed" ? "по скорости" : "по имени"}
-          </Btn>
-        ))}
+        </div>
       </div>
 
       {/* таблица клиентов */}
