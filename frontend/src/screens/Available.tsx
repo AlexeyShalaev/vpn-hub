@@ -2,6 +2,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Btn, Empty, Icon, Modal, ScreenHeader, Spinner, StatusBadge, VpnChip } from "../components/ui";
+import { deepLinkFor } from "../lib/deviceGuide";
+import { useT } from "../lib/i18n";
 import { amneziaQrChunks, toDataUrl } from "../lib/qr";
 import * as q from "../lib/queries";
 import type { AvailableServer, VpnType } from "../lib/types";
@@ -139,6 +141,7 @@ function GetConfigModal({
   onNoDevices: () => void;
 }) {
   const toast = useStore((s) => s.toast);
+  const t = useT();
 
   const { data: devices, isLoading: devicesLoading } = useQuery({
     queryKey: ["devices"],
@@ -260,6 +263,8 @@ function GetConfigModal({
     const selected = formats.find((f) => f.id === fmt) ?? formats[0];
     const shownText = selected?.text ?? cfg.text;
     const shownQr = selected?.qr ?? cfg.uri;
+    // deep-link «Открыть в приложении» по формату конфига (vpn://, vless://, hy2://, ss://).
+    const deepLink = selected ? deepLinkFor(selected.text, target.vpn) : null;
     return (
       <Modal
         title={title}
@@ -335,6 +340,16 @@ function GetConfigModal({
               <Icon name="share" size={16} />
               Поделиться
             </Btn>
+          </div>
+        )}
+        {deepLink && (
+          <div style={{ display: "flex", marginBottom: 14 }}>
+            <a href={deepLink.href} rel="noopener" style={{ textDecoration: "none", width: "100%" }}>
+              <Btn variant="primary" block>
+                <Icon name="external" size={16} />
+                {t("setup.openInApp")} · {deepLink.app.name}
+              </Btn>
+            </a>
           </div>
         )}
 

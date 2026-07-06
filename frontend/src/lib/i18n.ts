@@ -125,6 +125,40 @@ const ru = {
   "home.eventsTitle": "Последние события",
   "home.eventsAll": "Все события",
   "home.eventsEmpty": "Событий пока нет",
+
+  // «Настрой устройство» — справочные инструкции по платформам
+  "nav.setup": "Настройка",
+  "setup.title": "Настрой устройство",
+  "setup.sub": "Как поставить VPN на телефон, компьютер или роутер",
+  "setup.pickPlatform": "Выберите платформу",
+  "setup.recommendedApp": "Рекомендуемое приложение",
+  "setup.openStore": "Открыть в сторе",
+  "setup.stepsTitle": "Шаги",
+  "setup.hint":
+    "Приложение зависит от формата конфига, который вам выдали. Универсальные клиенты ниже открывают vless:// и hy2://; для Amnezia используйте AmneziaVPN, для Outline — Outline.",
+  "setup.vendorApps": "Приложения по формату конфига",
+  "setup.vendorAmnezia": "Для конфигов Amnezia (vpn://)",
+  "setup.vendorOutline": "Для конфигов Outline (ss://)",
+  "setup.openInApp": "Открыть в приложении",
+  // платформы
+  "setup.platformIos": "iPhone / iPad (iOS)",
+  "setup.platformAndroid": "Android",
+  "setup.platformWindows": "Windows",
+  "setup.platformMac": "macOS",
+  "setup.platformLinux": "Linux",
+  "setup.platformRouter": "Роутер",
+  // источники
+  "setup.storeAppStore": "App Store",
+  "setup.storeGooglePlay": "Google Play",
+  "setup.storeSite": "Официальный сайт",
+  // шаги
+  "setup.stepInstall": "Установите приложение по ссылке выше.",
+  "setup.stepGetConfig": "На вкладке «Доступно» получите конфиг и скопируйте ссылку или скачайте файл (QR-код тоже подойдёт).",
+  "setup.stepImportUri": "В приложении нажмите «Добавить из буфера» или отсканируйте QR — конфиг импортируется автоматически.",
+  "setup.stepImportFile": "В приложении выберите «Импорт из файла» или вставьте ссылку конфига из буфера обмена.",
+  "setup.stepConnect": "Включите переключатель подключения — готово.",
+  "setup.stepRouterFw": "Убедитесь, что на роутере есть поддержка WireGuard/AmneziaWG (OpenWrt, Keenetic и т.п.).",
+  "setup.stepRouterImport": "В веб-интерфейсе роутера создайте WireGuard-интерфейс и вставьте параметры из выданного конфига.",
 } satisfies Record<string, string | PluralForms>;
 
 export type Lang = "ru" | "en";
@@ -236,6 +270,40 @@ const en = {
   "home.eventsTitle": "Recent events",
   "home.eventsAll": "All events",
   "home.eventsEmpty": "No events yet",
+
+  // "Set up your device" — per-platform reference instructions
+  "nav.setup": "Setup",
+  "setup.title": "Set up your device",
+  "setup.sub": "How to install the VPN on a phone, computer, or router",
+  "setup.pickPlatform": "Pick a platform",
+  "setup.recommendedApp": "Recommended app",
+  "setup.openStore": "Open store",
+  "setup.stepsTitle": "Steps",
+  "setup.hint":
+    "The app depends on the config format you were given. The universal clients below open vless:// and hy2://; use AmneziaVPN for Amnezia and Outline for Outline.",
+  "setup.vendorApps": "Apps by config format",
+  "setup.vendorAmnezia": "For Amnezia configs (vpn://)",
+  "setup.vendorOutline": "For Outline configs (ss://)",
+  "setup.openInApp": "Open in app",
+  // platforms
+  "setup.platformIos": "iPhone / iPad (iOS)",
+  "setup.platformAndroid": "Android",
+  "setup.platformWindows": "Windows",
+  "setup.platformMac": "macOS",
+  "setup.platformLinux": "Linux",
+  "setup.platformRouter": "Router",
+  // sources
+  "setup.storeAppStore": "App Store",
+  "setup.storeGooglePlay": "Google Play",
+  "setup.storeSite": "Official site",
+  // steps
+  "setup.stepInstall": "Install the app from the link above.",
+  "setup.stepGetConfig": "On the Available tab, get a config and copy the link or download the file (a QR code works too).",
+  "setup.stepImportUri": "In the app tap “Add from clipboard” or scan the QR — the config imports automatically.",
+  "setup.stepImportFile": "In the app choose “Import from file” or paste the config link from your clipboard.",
+  "setup.stepConnect": "Flip the connect toggle — you're done.",
+  "setup.stepRouterFw": "Make sure your router supports WireGuard/AmneziaWG (OpenWrt, Keenetic, etc.).",
+  "setup.stepRouterImport": "In the router web UI create a WireGuard interface and paste the parameters from the config you got.",
 } satisfies Dict;
 
 const DICTS: Record<Lang, Dict> = { ru, en };

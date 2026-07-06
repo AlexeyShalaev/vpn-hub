@@ -21,6 +21,7 @@ import { ProfileScreen } from "../screens/Profile";
 import { ServerDetailScreen } from "../screens/ServerDetail";
 import { ServerFormScreen } from "../screens/ServerForm";
 import { ServersScreen } from "../screens/Servers";
+import { SetupScreen as DeviceSetupScreen } from "../screens/Setup";
 import { SystemScreen } from "../screens/System";
 import { UsersScreen } from "../screens/Users";
 import { useStore } from "../store";
@@ -442,6 +443,7 @@ const NAV_META: Record<string, { labelKey: TKey; icon: string }> = {
   access: { labelKey: "nav.access", icon: "access" },
   available: { labelKey: "nav.available", icon: "available" },
   devices: { labelKey: "nav.devices", icon: "devices" },
+  setup: { labelKey: "nav.setup", icon: "file" },
   events: { labelKey: "nav.events", icon: "events" },
   users: { labelKey: "nav.users", icon: "users" },
   system: { labelKey: "nav.system", icon: "system" },
@@ -459,7 +461,7 @@ function Shell({ me }: { me: Me }) {
   useEffect(() => subscribeEvents(qc), [qc]);
 
   const ownerItems = ["home", "servers", "groups", "access", "events"];
-  const memberItems = ["available", "devices"];
+  const memberItems = ["available", "devices", "setup"];
   const main = viewRole === "owner" ? ownerItems : memberItems;
   const adminItems = me.isAdmin ? ["users", "system"] : [];
 
@@ -492,6 +494,8 @@ function Shell({ me }: { me: Me }) {
         return <AvailableScreen />;
       case "devices":
         return <DevicesScreen />;
+      case "setup":
+        return <DeviceSetupScreen />;
       case "events":
         return <EventsScreen />;
       case "users":

@@ -11,6 +11,7 @@ export type Screen =
   | "access"
   | "available"
   | "devices"
+  | "setup"
   | "events"
   | "users"
   | "system"
@@ -50,6 +51,8 @@ function screenToPath(screen: Screen, params: Params): string {
       return "/available";
     case "devices":
       return "/devices";
+    case "setup":
+      return "/setup";
     case "events":
       return "/events";
     case "users":
@@ -91,6 +94,8 @@ function pathToState(pathname: string, search: string): { screen: Screen; params
       return { screen: "available", params: {} };
     case "devices":
       return { screen: "devices", params: {} };
+    case "setup":
+      return { screen: "setup", params: {} };
     case "events":
       return { screen: "events", params: {} };
     case "users":
