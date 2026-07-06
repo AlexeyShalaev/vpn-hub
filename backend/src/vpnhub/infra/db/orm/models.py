@@ -297,7 +297,12 @@ class ServerMetric(BaseTable):
     disk_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт (/)
     tcp_estab: Mapped[int | None] = mapped_column(Integer, nullable=True)  # TCP established
     uptime_s: Mapped[int | None] = mapped_column(Integer, nullable=True)  # аптайм хоста, сек
-    online_clients: Mapped[int | None] = mapped_column(Integer, nullable=True)  # онлайн-VPN-пиры
+    online_clients: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # суммарно онлайн (сумма известных по протоколам)
+    # честный online по протоколам: JSON {proto: int|null}. null = «неизвестно» (stats не включён/
+    # протокол без счётчика, напр. outline). Сумма известных значений идёт в online_clients.
+    online_by_proto: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (Index("server_metrics_scope_idx", "server_id", "at"),)
 

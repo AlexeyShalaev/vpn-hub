@@ -111,6 +111,10 @@ export const listProviders = () => http.get<Provider[]>("/providers");
 // per-server ресурсы хоста (CPU/RAM/диск/load/uptime/TCP + онлайн-клиенты) — последние + история
 export const serverMetrics = (sid: string) => http.get<ServerMetrics>(`/servers/${sid}/metrics`);
 
+// включить точную онлайн-статистику (Xray Stats API / Hysteria2 trafficStats) — рестарт контейнеров
+export const enableServerStats = (sid: string) =>
+  http.post<{ enabled: Record<string, string> }>(`/servers/${sid}/stats/enable`, {});
+
 // server access overview (владелец: пулы/группы/пользователи+конфиги этого сервера)
 export const serverAccess = (sid: string) => http.get<ServerAccess>(`/servers/${sid}/access`);
 export const renameServerClient = (sid: string, cid: string, name: string) =>

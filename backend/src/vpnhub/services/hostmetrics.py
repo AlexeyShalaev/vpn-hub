@@ -14,6 +14,7 @@ SSH-сессия к онлайн-серверу гоняет `HOST_METRICS_CMD` 
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -31,11 +32,18 @@ from vpnhub.infra.hostmetrics import (
     parse_host_metrics,
     parse_online_clients,
 )
+from vpnhub.infra.provisioning import constants as pc
+from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
+from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.ssh import ServerCreds, SshClient, SshError
 from vpnhub.infra.security import decrypt_secret
 from vpnhub.infra.uow import Uow
 
 log = structlog.get_logger(__name__)
+
+# протоколы с включаемым stats-API (точный per-user online): xray/xray_xhttp — Xray Stats API,
+# hysteria2 — trafficStats. awg/awg_legacy считаются по handshakes (включать нечего), outline/openvpn — нет.
+_STATS_PROTOS = ("xray", "xray_xhttp", "hysteria2")
 
 
 def _creds(settings: Settings, server: m.Server) -> ServerCreds:
@@ -89,6 +97,49 @@ async def _online_clients(ssh: Any) -> int | None:
     return None
 
 
+async def collect_online_by_proto(ssh: Any, protocols: list[m.ServerProtocol]) -> dict[str, int | None]:
+    """Честный online по каждому installed-протоколу сервера (read-only, в одной SSH-сессии).
+
+    Контракт значения: int>=0 — известно; None — «неизвестно» (stats не включён / нет счётчика /
+    ошибка). Сбой на одном протоколе → его значение None, не роняет остальные.
+    - awg/awg_legacy: свежие handshakes в контейнере протокола (`wg show latest-handshakes`);
+    - xray/xray_xhttp: `XrayProvisioner.query_online` (Xray Stats API);
+    - hysteria2: `HysteriaProvisioner.query_online` с секретом из config.yaml (trafficStats);
+    - openvpn: пока None (status-лог — на будущее); outline: None (Shadowsocks без сессий).
+    """
+    now = time.time()
+    out: dict[str, int | None] = {}
+    for sp in protocols:
+        if not sp.installed:
+            continue
+        proto = sp.proto
+        try:
+            spec = pc.spec_by_id(proto)
+        except (KeyError, ValueError):
+            continue
+        try:
+            if proto in ("xray", "xray_xhttp"):
+                out[proto] = await XrayProvisioner(spec).query_online(ssh)
+            elif proto == "hysteria2":
+                prov = HysteriaProvisioner(spec)
+                out[proto] = await prov.query_online(ssh, await prov._read_stats_secret(ssh))
+            elif proto in ("awg", "awg_legacy"):
+                res = await ssh.run(f"sudo docker exec -i {spec.container} wg show all latest-handshakes 2>/dev/null")
+                raw = res.output.strip()
+                out[proto] = parse_online_clients(raw, now) if raw and any(c.isdigit() for c in raw) else None
+            else:  # openvpn (status-лог — TODO), outline (Shadowsocks без сессий)
+                out[proto] = None
+        except (SshError, OSError):
+            out[proto] = None
+    return out
+
+
+def _sum_known(by_proto: dict[str, int | None]) -> int | None:
+    """Сумма известных значений (None-протоколы не считаются). Всё неизвестно → None."""
+    known = [v for v in by_proto.values() if v is not None]
+    return sum(known) if known else None
+
+
 class HostMetricsService:
     """Сбор/хранение/агрегация ресурсных метрик серверов (owner-scoped на чтении)."""
 
@@ -104,15 +155,23 @@ class HostMetricsService:
         creds = _creds(self.settings, server)
         try:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
-                metrics = await collect_host_metrics(ssh)
+                # host-метрики + честный online по протоколам — одной SSH-сессией
+                metrics = await collect_host_metrics(ssh, count_clients=False)
+                by_proto = await collect_online_by_proto(ssh, list(server.protocols))
         except (SshError, OSError) as e:
             log.info("host_metrics collect skipped", server=server.id, error=str(e))
             return None
-        await self.record(server.id, metrics)
+        await self.record(server.id, metrics, by_proto)
         return metrics
 
-    async def record(self, server_id: str, metrics: HostMetrics) -> None:
-        """Записать один сэмпл ресурсов хоста (отдельная транзакция)."""
+    async def record(self, server_id: str, metrics: HostMetrics, by_proto: dict[str, int | None] | None = None) -> None:
+        """Записать один сэмпл ресурсов хоста (отдельная транзакция).
+
+        online_clients = сумма известных per-proto значений; при отсутствии per-proto берётся
+        `metrics.online_clients` (обратная совместимость).
+        """
+        by_proto = by_proto or {}
+        total = _sum_known(by_proto) if by_proto else metrics.online_clients
         async with self.uow.transaction() as tx:
             tx.session.add(
                 m.ServerMetric(
@@ -126,7 +185,8 @@ class HostMetricsService:
                     disk_total=metrics.disk_total,
                     tcp_estab=metrics.tcp_estab,
                     uptime_s=metrics.uptime_s,
-                    online_clients=metrics.online_clients,
+                    online_clients=total,
+                    online_by_proto=json.dumps(by_proto) if by_proto else None,
                 )
             )
             await tx.session.flush()
@@ -168,6 +228,7 @@ class HostMetricsService:
             "tcpEstab": r.tcp_estab,
             "uptimeS": r.uptime_s,
             "onlineClients": r.online_clients,
+            "onlineByProto": json.loads(r.online_by_proto) if r.online_by_proto else {},
         }
 
     async def purge_old(self) -> int:
@@ -176,3 +237,34 @@ class HostMetricsService:
         async with self.uow.transaction() as tx:
             res: Any = await tx.session.execute(sa_delete(m.ServerMetric).where(m.ServerMetric.at < cutoff))
             return int(res.rowcount or 0)
+
+    async def enable_stats(self, owner_id: str, sid: str) -> dict[str, str]:
+        """Включить точную онлайн-статистику на сервере (owner-scoped).
+
+        Идёт по installed-протоколам xray/xray_xhttp/hysteria2 и вызывает `enable_stats` провизионера
+        (идемпотентно; контейнер перезапускается ТОЛЬКО если конфиг реально менялся). Возвращает
+        {proto: 'enabled'|'already'|'error'}. Best-effort по каждому протоколу.
+        """
+        async with self.uow.query() as tx:
+            server = await tx.servers.get(sid)
+            if not server or server.owner_user_id != owner_id:
+                raise NotFound("Сервер не найден")
+            protos = [sp.proto for sp in server.protocols if sp.installed and sp.proto in _STATS_PROTOS]
+            creds = _creds(self.settings, server)
+        result: dict[str, str] = {}
+        if not protos:
+            return result
+        async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
+            for proto in protos:
+                spec = pc.spec_by_id(proto)
+                try:
+                    if proto in ("xray", "xray_xhttp"):
+                        changed = await XrayProvisioner(spec).enable_stats(ssh)
+                        result[proto] = "enabled" if changed else "already"
+                    else:  # hysteria2
+                        await HysteriaProvisioner(spec).enable_stats(ssh)
+                        result[proto] = "enabled"
+                except (SshError, OSError) as e:
+                    log.warning("enable_stats failed", server=sid, proto=proto, error=str(e))
+                    result[proto] = "error"
+        return result

@@ -121,6 +121,16 @@ async def server_metrics(
     return await svc.overview(ident.id, sid)
 
 
+@router.post("/servers/{sid}/stats/enable")
+async def server_stats_enable(
+    sid: str,
+    ident: Identity = Depends(require_user),
+    svc: HostMetricsService = Depends(service(HostMetricsService)),
+) -> dict:
+    # включить точную онлайн-статистику (Xray Stats API / Hysteria2 trafficStats); рестарт xray/hysteria
+    return {"enabled": await svc.enable_stats(ident.id, sid)}
+
+
 @router.get("/servers/{sid}/access")
 async def server_access_overview(
     sid: str,

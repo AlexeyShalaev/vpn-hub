@@ -58,14 +58,41 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
   );
 }
 
-// Карточка «Ресурсы сервера»: текущие CPU/RAM/диск/load/uptime/TCP/онлайн-клиенты + мини-графики.
+const PROTO_ONLINE_LABEL: Record<string, string> = {
+  awg: "AmneziaWG",
+  awg_legacy: "AWG Legacy",
+  xray: "Xray",
+  xray_xhttp: "Xray XHTTP",
+  hysteria2: "Hysteria2",
+  openvpn: "OpenVPN",
+  outline: "Outline",
+};
+// подсказка, ПОЧЕМУ online неизвестен (—) для протокола
+const ONLINE_NA_HINT: Record<string, string> = {
+  outline: "Shadowsocks не поддерживает счётчик онлайн-сессий",
+  openvpn: "Онлайн для OpenVPN пока не поддержан",
+};
+// протоколы, для которых точную статистику можно включить (Xray Stats API / Hysteria2 trafficStats)
+const STATS_ENABLABLE = ["xray", "xray_xhttp", "hysteria2"];
+
+// Карточка «Ресурсы сервера»: текущие CPU/RAM/диск/load/uptime/TCP + честный online по протоколам + мини-графики.
 // Сбор — в monitor-тике по SSH (best-effort); поллинг здесь — как и остальной ServerDetail.
 function ServerMetricsCard({ serverId, online }: { serverId: string; online: boolean }) {
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
   const mq = useQuery({
     queryKey: ["serverMetrics", serverId],
     queryFn: () => q.serverMetrics(serverId),
     enabled: !!serverId,
     refetchInterval: 60000, // как страховочный поллинг всего ServerDetail
+  });
+  const enableStatsMut = useMutation({
+    mutationFn: () => q.enableServerStats(serverId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["serverMetrics", serverId] });
+      toast("Точная онлайн-статистика включена — цифры появятся после ближайшего цикла мониторинга");
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось включить статистику"),
   });
 
   const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
@@ -112,7 +139,41 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
             <Metric label="Аптайм" value={fmtUptime(cur.uptimeS)} />
             <Metric label="TCP-соединения" value={cur.tcpEstab != null ? String(cur.tcpEstab) : "—"} />
             {cur.onlineClients != null && (
-              <Metric label="Онлайн-клиенты" value={String(cur.onlineClients)} sub="VPN-пиры" />
+              <Metric label="Онлайн-клиенты" value={String(cur.onlineClients)} sub="всего по протоколам" />
+            )}
+          </div>
+
+          {/* Честный online по протоколам: число — точное; «—» = неизвестно (stats не включён / нет счётчика) */}
+          <div className="stack" style={{ gap: 8 }}>
+            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Онлайн по протоколам</div>
+            <div className="rowflex" style={{ gap: 6, flexWrap: "wrap" }}>
+              {Object.entries(cur.onlineByProto ?? {}).map(([proto, n]) => (
+                <span
+                  key={proto}
+                  className={`badge ${n == null ? "" : "ok"}`}
+                  title={
+                    n == null ? (ONLINE_NA_HINT[proto] ?? "Точная статистика не включена — нажмите «Включить»") : ""
+                  }
+                >
+                  {PROTO_ONLINE_LABEL[proto] ?? proto}: {n == null ? "—" : n}
+                </span>
+              ))}
+              {Object.keys(cur.onlineByProto ?? {}).length === 0 && (
+                <span className="muted-3" style={{ fontSize: 12.5 }}>
+                  нет данных
+                </span>
+              )}
+            </div>
+            {Object.entries(cur.onlineByProto ?? {}).some(([p, n]) => STATS_ENABLABLE.includes(p) && n == null) && (
+              <Btn
+                variant="ghost"
+                sm
+                disabled={enableStatsMut.isPending}
+                title="Включит Xray Stats API / Hysteria2 trafficStats. Контейнеры xray/hysteria2 будут перезапущены (короткий обрыв сессий)."
+                onClick={() => enableStatsMut.mutate()}
+              >
+                {enableStatsMut.isPending ? <Spinner /> : "Включить точную онлайн-статистику"}
+              </Btn>
             )}
           </div>
 

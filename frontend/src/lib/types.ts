@@ -287,7 +287,8 @@ export interface ServerMetricSample {
   diskTotal: number | null; // байт (/)
   tcpEstab: number | null; // TCP established
   uptimeS: number | null; // аптайм хоста, сек
-  onlineClients: number | null; // онлайн-VPN-пиры (может быть недоступно)
+  onlineClients: number | null; // суммарно онлайн (сумма известных по протоколам)
+  onlineByProto?: Record<string, number | null>; // честный online по протоколам: {proto: count|null}
 }
 export interface ServerMetrics {
   serverId: string;
