@@ -153,12 +153,15 @@ const ru = {
   "setup.storeSite": "Официальный сайт",
   // шаги
   "setup.stepInstall": "Установите приложение по ссылке выше.",
-  "setup.stepGetConfig": "На вкладке «Доступно» получите конфиг и скопируйте ссылку или скачайте файл (QR-код тоже подойдёт).",
-  "setup.stepImportUri": "В приложении нажмите «Добавить из буфера» или отсканируйте QR — конфиг импортируется автоматически.",
+  "setup.stepGetConfig":
+    "На вкладке «Доступно» получите конфиг и скопируйте ссылку или скачайте файл (QR-код тоже подойдёт).",
+  "setup.stepImportUri":
+    "В приложении нажмите «Добавить из буфера» или отсканируйте QR — конфиг импортируется автоматически.",
   "setup.stepImportFile": "В приложении выберите «Импорт из файла» или вставьте ссылку конфига из буфера обмена.",
   "setup.stepConnect": "Включите переключатель подключения — готово.",
   "setup.stepRouterFw": "Убедитесь, что на роутере есть поддержка WireGuard/AmneziaWG (OpenWrt, Keenetic и т.п.).",
-  "setup.stepRouterImport": "В веб-интерфейсе роутера создайте WireGuard-интерфейс и вставьте параметры из выданного конфига.",
+  "setup.stepRouterImport":
+    "В веб-интерфейсе роутера создайте WireGuard-интерфейс и вставьте параметры из выданного конфига.",
 
   // мелочи UX
   "ux.crashTitle": "Что-то пошло не так",
@@ -305,12 +308,14 @@ const en = {
   "setup.storeSite": "Official site",
   // steps
   "setup.stepInstall": "Install the app from the link above.",
-  "setup.stepGetConfig": "On the Available tab, get a config and copy the link or download the file (a QR code works too).",
+  "setup.stepGetConfig":
+    "On the Available tab, get a config and copy the link or download the file (a QR code works too).",
   "setup.stepImportUri": "In the app tap “Add from clipboard” or scan the QR — the config imports automatically.",
   "setup.stepImportFile": "In the app choose “Import from file” or paste the config link from your clipboard.",
   "setup.stepConnect": "Flip the connect toggle — you're done.",
   "setup.stepRouterFw": "Make sure your router supports WireGuard/AmneziaWG (OpenWrt, Keenetic, etc.).",
-  "setup.stepRouterImport": "In the router web UI create a WireGuard interface and paste the parameters from the config you got.",
+  "setup.stepRouterImport":
+    "In the router web UI create a WireGuard interface and paste the parameters from the config you got.",
 
   // UX niceties
   "ux.crashTitle": "Something went wrong",
@@ -363,7 +368,12 @@ function makeT(lang: Lang): TFunc {
 // Кэш связанных t по языку — чтобы не пересоздавать функцию на каждый рендер.
 const T_CACHE: Partial<Record<Lang, TFunc>> = {};
 export function tFor(lang: Lang): TFunc {
-  return (T_CACHE[lang] ??= makeT(lang));
+  let fn = T_CACHE[lang];
+  if (!fn) {
+    fn = makeT(lang);
+    T_CACHE[lang] = fn;
+  }
+  return fn;
 }
 
 // ── реактивный хук: t перестраивается при смене языка (lang живёт в Zustand) ─────

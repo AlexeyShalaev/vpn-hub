@@ -108,12 +108,7 @@ function ChainSection({ server }: { server: Server }) {
         </div>
       ) : candidates.length > 0 ? (
         <div className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
-          <select
-            className="input"
-            value={exitId}
-            onChange={(e) => setExitId(e.target.value)}
-            style={{ flex: 1 }}
-          >
+          <select className="input" value={exitId} onChange={(e) => setExitId(e.target.value)} style={{ flex: 1 }}>
             <option value="">Выберите выходной сервер…</option>
             {candidates.map((s) => (
               <option key={s.id} value={s.id}>

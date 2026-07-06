@@ -74,7 +74,7 @@ function serverLines(series: MetricSeries[]): ChartLine[] {
   const lines: ChartLine[] = [];
   for (const status of ["online", "offline", "unknown"]) {
     const s = series.find((x) => x.name === "vpnhub_servers" && x.labels === `status=${status}`);
-    if (s && s.points.length) {
+    if (s?.points.length) {
       lines.push({ points: s.points, color: SERVER_COLORS[status], label: SERVER_LABELS[status] });
     }
   }
@@ -94,7 +94,9 @@ function MonitoringSection() {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <div
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+      >
         <SectionLabel>Мониторинг</SectionLabel>
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
           {PERIODS.map((p) => (

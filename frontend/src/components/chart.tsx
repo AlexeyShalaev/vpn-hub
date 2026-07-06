@@ -14,7 +14,7 @@ const PAD = { top: 12, right: 12, bottom: 22, left: 34 };
 
 function niceMax(max: number): number {
   if (max <= 0) return 1;
-  const pow = Math.pow(10, Math.floor(Math.log10(max)));
+  const pow = 10 ** Math.floor(Math.log10(max));
   const n = max / pow;
   const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
   return step * pow;

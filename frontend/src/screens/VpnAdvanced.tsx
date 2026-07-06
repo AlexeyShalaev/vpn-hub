@@ -19,15 +19,7 @@ const AWG_FIELDS_BASE = ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4
 const AWG_FIELDS_AWG2 = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"];
 
 // awg2 → H1..H4 диапазоны "a-b", S3/S4 присутствуют; awg_legacy → одиночные H, без S3/S4.
-function ObfuscationForm({
-  serverId,
-  vtype,
-  proto,
-}: {
-  serverId: string;
-  vtype: VpnType;
-  proto: VpnAdvancedProtocol;
-}) {
+function ObfuscationForm({ serverId, vtype, proto }: { serverId: string; vtype: VpnType; proto: VpnAdvancedProtocol }) {
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
   const params = proto.params ?? {};
@@ -65,7 +57,8 @@ function ObfuscationForm({
             background: "color-mix(in srgb, var(--danger) 8%, transparent)",
           }}
         >
-          Смена параметров обфускации сделает уже выданные конфиги нерабочими — пользователям нужно заново скачать конфиг.
+          Смена параметров обфускации сделает уже выданные конфиги нерабочими — пользователям нужно заново скачать
+          конфиг.
         </div>
         {!proto.running && (
           <div className="muted-3" style={{ fontSize: 12 }}>
@@ -109,15 +102,7 @@ function ObfuscationForm({
 
 // Управление Xray-Reality: ротация shortId и смена SNI/dest (маскировочный домен) с reprovision.
 // short_id/site приходят из proto.keys (публичный материал); значения применяет сервер.
-function RealityForm({
-  serverId,
-  vtype,
-  proto,
-}: {
-  serverId: string;
-  vtype: VpnType;
-  proto: VpnAdvancedProtocol;
-}) {
+function RealityForm({ serverId, vtype, proto }: { serverId: string; vtype: VpnType; proto: VpnAdvancedProtocol }) {
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
   const [sni, setSni] = useState<string>(() => proto.keys.site ?? "");
@@ -151,8 +136,8 @@ function RealityForm({
             background: "color-mix(in srgb, var(--danger) 8%, transparent)",
           }}
         >
-          Смена shortId или SNI сделает уже выданные конфиги нерабочими и перезапустит Xray (активные сессии
-          оборвутся) — пользователям нужно заново скачать конфиг.
+          Смена shortId или SNI сделает уже выданные конфиги нерабочими и перезапустит Xray (активные сессии оборвутся)
+          — пользователям нужно заново скачать конфиг.
         </div>
         {!proto.running && (
           <div className="muted-3" style={{ fontSize: 12 }}>

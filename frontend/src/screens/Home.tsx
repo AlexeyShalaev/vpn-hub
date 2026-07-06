@@ -5,8 +5,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import { Btn, Icon, ScreenHeader, Spinner } from "../components/ui";
-import { useT } from "../lib/i18n";
 import type { TKey } from "../lib/i18n";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Screen } from "../nav";
 import { useNav } from "../nav";

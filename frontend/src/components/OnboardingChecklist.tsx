@@ -5,8 +5,8 @@
 // его переиспользует будущий экран Home (задача №10) — здесь он лишь встроен
 // вверху экрана Servers для владельца.
 import { useQuery } from "@tanstack/react-query";
-import { useT } from "../lib/i18n";
 import type { TKey } from "../lib/i18n";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Group, Server } from "../lib/types";
 import type { Screen } from "../nav";
@@ -31,15 +31,37 @@ export function computeSteps(servers: Server[], groups: Group[], meId: string | 
   // Участник «кроме самого владельца»: любой member группы с id, отличным от владельца.
   const hasMember = groups.some((g) => g.members.some((m) => m.id !== meId));
   // Доступ выдан: группе открыт пул ИЛИ хотя бы один сервер.
-  const hasAccess = groups.some(
-    (g) => g.access.pools.length > 0 || Object.keys(g.access.servers).length > 0,
-  );
+  const hasAccess = groups.some((g) => g.access.pools.length > 0 || Object.keys(g.access.servers).length > 0);
   return [
-    { key: "server", titleKey: "onboarding.stepServer", subKey: "onboarding.stepServerSub", done: hasServer, go: "serverForm" },
-    { key: "install", titleKey: "onboarding.stepInstall", subKey: "onboarding.stepInstallSub", done: hasInstalled, go: "servers" },
+    {
+      key: "server",
+      titleKey: "onboarding.stepServer",
+      subKey: "onboarding.stepServerSub",
+      done: hasServer,
+      go: "serverForm",
+    },
+    {
+      key: "install",
+      titleKey: "onboarding.stepInstall",
+      subKey: "onboarding.stepInstallSub",
+      done: hasInstalled,
+      go: "servers",
+    },
     { key: "group", titleKey: "onboarding.stepGroup", subKey: "onboarding.stepGroupSub", done: hasGroup, go: "groups" },
-    { key: "invite", titleKey: "onboarding.stepInvite", subKey: "onboarding.stepInviteSub", done: hasMember, go: "groups" },
-    { key: "access", titleKey: "onboarding.stepAccess", subKey: "onboarding.stepAccessSub", done: hasAccess, go: "access" },
+    {
+      key: "invite",
+      titleKey: "onboarding.stepInvite",
+      subKey: "onboarding.stepInviteSub",
+      done: hasMember,
+      go: "groups",
+    },
+    {
+      key: "access",
+      titleKey: "onboarding.stepAccess",
+      subKey: "onboarding.stepAccessSub",
+      done: hasAccess,
+      go: "access",
+    },
   ];
 }
 
@@ -90,9 +112,7 @@ function StepRow({ step }: { step: Step }) {
         >
           {t(step.titleKey)}
         </span>
-        <span style={{ display: "block", fontSize: 12.5, color: "var(--text-3)", marginTop: 1 }}>
-          {t(step.subKey)}
-        </span>
+        <span style={{ display: "block", fontSize: 12.5, color: "var(--text-3)", marginTop: 1 }}>{t(step.subKey)}</span>
       </span>
       <span style={{ flex: "none", color: "var(--text-3)", display: "inline-flex" }}>
         <Icon name="chevron" size={16} />
