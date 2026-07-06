@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from vpnhub.infra.provisioning import constants as pc
+from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
+from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.services.traffic import TrafficCollector, parse_wg_dump
 
 # Реальный формат `wg show <iface> dump`: TSV, первая строка — интерфейс.
@@ -66,10 +66,20 @@ class _FakeSsh:
             )
         if "trafficStats" in cmd:  # hysteria _read_stats_secret (awk по config.yaml)
             return _Res(stdout="0123456789abcdef0123456789abcdef")
+        if "/metrics/transfer" in cmd:  # outline Management API
+            return _Res(stdout='{"bytesTransferredByUserId":{"0":9000}}')
         if "/traffic" in cmd:  # hysteria trafficStats GET /traffic
             return _Res(stdout='{"AUTH":{"tx":50,"rx":5}}')
         if "/online" in cmd:  # hysteria trafficStats GET /online
             return _Res(stdout='{"AUTH":1}')
+        if "openvpn-status.log" in cmd:  # openvpn status-лог (первый кандидат — корень)
+            if "/openvpn-status.log" in cmd and "/opt/" not in cmd:
+                return _Res(
+                    stdout="HEADER,CLIENT_LIST,Common Name,Real Address,Virtual Address,"
+                    "Virtual IPv6 Address,Bytes Received,Bytes Sent,Connected Since\n"
+                    "CLIENT_LIST,CN1,1.2.3.4:1,10.8.0.2,,333,444,x\n"
+                )
+            return _Res(stdout="")  # второй кандидат пуст
         if "show" in cmd and "dump" in cmd:  # wg dump (через container_exec → run)
             return _Res(stdout="IFACE\tX\nPEERA\tPSK\tep\tips\t1720180000\t111\t222\t0\n")
         return _Res(stdout="")
@@ -99,6 +109,25 @@ async def test__collect__hysteria_dispatch__per_authid_with_online() -> None:
     assert (s.client_id, s.rx, s.tx, s.online) == ("AUTH", 5, 50, True)
 
 
-@pytest.mark.parametrize("proto", ["openvpn", "outline"])
-async def test__collect__unsupported_kinds__return_empty(proto: str) -> None:
-    assert await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id(proto)) == []
+async def test__collect__openvpn_dispatch__per_cn_from_status_log() -> None:
+    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("openvpn"))
+    assert len(stats) == 1
+    s = stats[0]
+    assert (s.client_id, s.rx, s.tx, s.online) == ("CN1", 333, 444, True)
+    assert s.last_handshake is None  # у openvpn handshake-эпоху не читаем
+
+
+async def test__collect__outline_dispatch__per_key_total_bytes() -> None:
+    prov = OutlineProvisioner(
+        pc.spec_by_id("outline"), material=ServerMaterial(outline_api_url="https://1.2.3.4:9000/x")
+    )
+    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("outline"), prov)
+    assert len(stats) == 1
+    s = stats[0]
+    # Outline: суммарный трафик в tx, rx=0, online не поддержан (None)
+    assert (s.client_id, s.rx, s.tx, s.online) == ("0", 0, 9000, None)
+
+
+async def test__collect__outline_without_provisioner__returns_empty() -> None:
+    # без провизионера (нет apiUrl) → пусто, не падаем
+    assert await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("outline")) == []

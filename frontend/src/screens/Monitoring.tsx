@@ -4,7 +4,8 @@
 // фильтр по серверу/протоколу + сортировка. Поллинг как у остального owner-UI.
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Btn, Empty, Icon, ScreenHeader, Spinner } from "../components/ui";
+import { LineChart } from "../components/chart";
+import { Btn, Empty, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { MonitoringClient } from "../lib/types";
@@ -86,12 +87,89 @@ function clientName(c: MonitoringClient): string {
   return c.external ? "Внешний клиент" : (c.clientId ?? "—");
 }
 
+// График трафика одного клиента за период. Данные — per-server overview (`series` = per-client
+// дельты по времени); фильтруем по clientId+proto этого клиента и группируем по времени (at).
+// Значения — байт за интервал сбора; для читаемости отрисовываем в МБ (две линии: download/upload).
+function ClientTrafficModal({
+  client,
+  period,
+  periodLabel,
+  onClose,
+}: {
+  client: MonitoringClient;
+  period: Period;
+  periodLabel: string;
+  onClose: () => void;
+}) {
+  const sid = client.serverId ?? "";
+  const tq = useQuery({
+    queryKey: ["serverTraffic", sid, period],
+    queryFn: () => q.serverTraffic(sid, period),
+    enabled: !!sid,
+    refetchInterval: 30000,
+  });
+
+  // series → две линии (rx/tx) точками {at, value в МБ}, отфильтрованные по этому клиенту.
+  const { rxPoints, txPoints } = useMemo(() => {
+    const MB = 1024 * 1024;
+    const rx: { at: number; value: number }[] = [];
+    const tx: { at: number; value: number }[] = [];
+    // сумма по at на случай, если клиент присутствует несколько раз в один момент
+    const rxAt = new Map<number, number>();
+    const txAt = new Map<number, number>();
+    for (const s of tq.data?.series ?? []) {
+      if (s.clientId !== client.clientId || s.proto !== client.proto) continue;
+      rxAt.set(s.at, (rxAt.get(s.at) ?? 0) + s.rx);
+      txAt.set(s.at, (txAt.get(s.at) ?? 0) + s.tx);
+    }
+    for (const [at, v] of [...rxAt.entries()].sort((a, b) => a[0] - b[0])) rx.push({ at, value: v / MB });
+    for (const [at, v] of [...txAt.entries()].sort((a, b) => a[0] - b[0])) tx.push({ at, value: v / MB });
+    return { rxPoints: rx, txPoints: tx };
+  }, [tq.data, client.clientId, client.proto]);
+
+  const hasData = rxPoints.length > 0 || txPoints.length > 0;
+
+  return (
+    <Modal title={`Трафик клиента · ${clientName(client)}`} onClose={onClose} wide>
+      <div className="stack" style={{ gap: 12 }}>
+        <div className="muted-3" style={{ fontSize: 12.5 }}>
+          {PROTO_LABEL[client.proto] ?? client.proto}
+          {client.serverName ? ` · ${client.serverName}` : ""} · за {periodLabel} · значения в МБ за интервал
+        </div>
+        {tq.isLoading ? (
+          <div style={{ padding: 24, textAlign: "center" }}>
+            <Spinner />
+          </div>
+        ) : !hasData ? (
+          <Empty title="Пока нет точек трафика" sub="История накапливается по мере сбора статистики в фоне." />
+        ) : (
+          <LineChart
+            lines={[
+              { points: txPoints, color: "#3b82f6", label: "Скачано (download), МБ" },
+              { points: rxPoints, color: "#22c55e", label: "Отдано (upload), МБ" },
+            ]}
+          />
+        )}
+        <div className="rowflex" style={{ gap: 16, fontSize: 13, flexWrap: "wrap" }}>
+          <span>
+            Всего скачано: <b>{fmtBytes(client.txTotal)}</b>
+          </span>
+          <span>
+            Всего отдано: <b>{fmtBytes(client.rxTotal)}</b>
+          </span>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function MonitoringScreen() {
   const t = useT();
   const [period, setPeriod] = useState<Period>("24h");
   const [server, setServer] = useState<string>("");
   const [proto, setProto] = useState<string>("");
   const [sort, setSort] = useState<SortKey>("traffic");
+  const [selected, setSelected] = useState<MonitoringClient | null>(null);
 
   const mq = useQuery({
     queryKey: ["monitoring", period],
@@ -239,7 +317,12 @@ export function MonitoringScreen() {
               </thead>
               <tbody>
                 {rows.map((c) => (
-                  <tr key={`${c.serverId}:${c.proto}:${c.clientId}`}>
+                  <tr
+                    key={`${c.serverId}:${c.proto}:${c.clientId}`}
+                    onClick={() => c.serverId && setSelected(c)}
+                    style={c.serverId ? { cursor: "pointer" } : undefined}
+                    title={c.serverId ? "Показать график трафика" : undefined}
+                  >
                     <td style={td}>
                       <div style={{ fontWeight: 600 }}>{clientName(c)}</div>
                       {c.external && (
@@ -272,6 +355,15 @@ export function MonitoringScreen() {
           <Icon name="refresh" size={15} />
           Не удалось загрузить мониторинг. Обновление произойдёт автоматически.
         </div>
+      )}
+
+      {selected && (
+        <ClientTrafficModal
+          client={selected}
+          period={period}
+          periodLabel={PERIOD_LABEL[period]}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );

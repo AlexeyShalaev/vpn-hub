@@ -6,8 +6,11 @@
 - wireguard (awg/awg_legacy): `{bin} show {iface} dump` (rx/tx кумулятивно, online — свежесть handshake);
 - xray (kind=="xray"): `xray api statsquery -reset=false` → per-uuid uplink/downlink/online;
 - hysteria2: trafficStats API `/traffic`+`/online` → per-authid rx/tx/online;
-- openvpn/outline: пока пусто (см. tasks/17-client-monitoring.md).
-Идентификатор движка = наш `device_configs.client_id` (pubkey / uuid / authid).
+- openvpn: OpenVPN status-лог (`status <path>` уже в server.conf) → per-CN Bytes Received/Sent
+  (rx/tx кумулятивно) + online по присутствию в CLIENT_LIST;
+- outline: `GET <apiUrl>/metrics/transfer` (по SSH на localhost) → per-key СУММАРНЫЙ трафик
+  (кладём в tx; rx=0, online не поддержан Outline). Нужен провизионер с материалом (apiUrl).
+Идентификатор движка = наш `device_configs.client_id` (pubkey / uuid / authid / CN / key-id).
 
 Хранение — таблица дельта-сэмплов `traffic_samples` (одна строка на клиента-протокол на тик).
 Дельта считается от прошлого сэмпла; при рестарте счётчиков (curr<prev) дельта = curr.
@@ -30,8 +33,14 @@ from vpnhub.core.errors import NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.hysteria2 import _STATS_LISTEN, HysteriaProvisioner
+from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XRAY_STATS_PORT
-from vpnhub.infra.trafficstats import parse_hysteria_traffic, parse_xray_stats
+from vpnhub.infra.trafficstats import (
+    parse_hysteria_traffic,
+    parse_openvpn_traffic,
+    parse_outline_transfer,
+    parse_xray_stats,
+)
 from vpnhub.infra.uow import Uow
 
 log = structlog.get_logger(__name__)
@@ -166,7 +175,7 @@ class TrafficCollector:
     """Читает per-client статистику по уже открытому SSH-каналу (диспетч по kind протокола)."""
 
     @staticmethod
-    async def collect(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
+    async def collect(ssh: Any, spec: pc.ProtoSpec, provo: Any = None) -> list[PeerStat]:
         """Собрать PeerStat для протокола `spec` (best-effort; сбой/выкл. stats → пусто, не ошибка).
 
         - wireguard (awg/awg_legacy): `{spec.bin} show {spec.interface} dump` (rx/tx кумулятивно,
@@ -174,7 +183,11 @@ class TrafficCollector:
         - xray (VLESS+Reality/XHTTP): `xray api statsquery -reset=false` → per-uuid uplink/downlink/online
           (кумулятив, счётчики НЕ сбрасываются — дельты считает record());
         - hysteria2: trafficStats API `/traffic`+`/online` (кумулятив, без ?clear=1);
-        - openvpn/outline: пока пусто (см. tasks/17-client-monitoring.md).
+        - openvpn: OpenVPN status-лог → per-CN Bytes Received/Sent (кумулятив) + online по CLIENT_LIST;
+        - outline: `GET <apiUrl>/metrics/transfer` → per-key суммарный трафик (нужен `provo` с apiUrl).
+
+        `provo` — уже загруженный/адаптированный провизионер этого протокола (из sync-тика); нужен
+        только для outline (взять apiUrl). Для остальных протоколов не требуется.
         """
         if spec.kind == "wireguard":
             res = await ssh.container_exec(spec.container, f"{spec.bin} show {spec.interface} dump")
@@ -183,7 +196,57 @@ class TrafficCollector:
             return await TrafficCollector._collect_xray(ssh, spec)
         if spec.kind == "hysteria2":
             return await TrafficCollector._collect_hysteria(ssh, spec)
+        if spec.kind == "openvpn":
+            return await TrafficCollector._collect_openvpn(ssh, spec)
+        if spec.kind == "outline":
+            return await TrafficCollector._collect_outline(ssh, spec, provo)
         return []
+
+    # путь OpenVPN status-лога внутри контейнера. server.conf задаёт относительный `status
+    # openvpn-status.log`; демон стартует из / (start.sh без cd) → файл в корне. Пробуем оба
+    # кандидата (рабочая директория демона и папка конфига) — берём первый непустой.
+    _OVPN_STATUS_PATHS = ("/openvpn-status.log", "/opt/amnezia/openvpn/openvpn-status.log")
+
+    @staticmethod
+    async def _collect_openvpn(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
+        """Per-CN трафик+онлайн из OpenVPN status-лога (`status <path>` уже в server.conf).
+
+        rx = Bytes Received (client→server), tx = Bytes Sent (server→client), кумулятивно.
+        online = присутствие CN в CLIENT_LIST. Лог не настроен/недоступен → пусто (best-effort).
+        """
+        for path in TrafficCollector._OVPN_STATUS_PATHS:
+            res = await ssh.run(f"sudo docker exec {spec.container} cat {path} 2>/dev/null")
+            if res.exit_status != 0:
+                continue
+            rows = parse_openvpn_traffic(res.output)
+            if rows:
+                return [
+                    PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
+                    for c in rows
+                ]
+        return []
+
+    @staticmethod
+    async def _collect_outline(ssh: Any, spec: pc.ProtoSpec, provo: Any) -> list[PeerStat]:
+        """Per-key суммарный трафик через Outline Management API `GET /metrics/transfer`.
+
+        Ходим curl-ом по SSH на localhost сервера (как сам провизионер). Материал (apiUrl) берём из
+        `provo`; без провизионера/материала → пусто. Outline даёт только суммарные байты: tx=total,
+        rx=0, online не поддержан (None). Недоступность API → пусто (best-effort).
+        """
+        if not isinstance(provo, OutlineProvisioner):
+            return []
+        try:
+            url = f"{provo._local_api()}/metrics/transfer"
+        except ValueError:  # нет материала (apiUrl)
+            return []
+        res = await ssh.run(f'curl -sfk --max-time 20 "{url}" 2>/dev/null')
+        if res.exit_status != 0:
+            return []
+        return [
+            PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
+            for c in parse_outline_transfer(res.output)
+        ]
 
     @staticmethod
     async def _collect_xray(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:

@@ -118,7 +118,8 @@ class SyncService:
                         except Exception as e:  # чтение клиентов не удалось — не рискуем revoke
                             log.warning("sync: read clients failed", server=server_id, proto=pid, error=str(e))
                         try:  # сбор трафика строго best-effort: НЕ влияет на решения sync/revoke
-                            stats = await TrafficCollector.collect(ssh, spec)
+                            # provs[pid] уже загружен/адаптирован выше — outline берёт из него apiUrl
+                            stats = await TrafficCollector.collect(ssh, spec, provs.get(pid))
                             if stats:
                                 traffic_by_proto[pid] = stats
                         except Exception as e:

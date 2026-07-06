@@ -11,8 +11,8 @@
 | awg / awg_legacy | `{bin} show {iface} dump` в контейнере (как раньше) | кумулятив из dump | по свежести `last_handshake` (<`traffic_online_window_seconds`) |
 | xray / xray_xhttp | `xray api statsquery --server=127.0.0.1:10085 -reset=false -pattern 'user>>>'` | `user>>>{uuid}>>>traffic>>>uplink` / `downlink` (кумулятив) | `user>>>{uuid}>>>online` > 0 |
 | hysteria2 | trafficStats API: `curl -H "Authorization: <secret>" /traffic` + `/online` (секрет из config.yaml) | `{authid:{rx,tx}}` (кумулятив) | `/online`: `{authid:count}`, count>0 |
-| openvpn | — (TODO: status-лог `bytes per CN`) | — | — |
-| outline | — (TODO: `GET /metrics/transfer`, per-key байты, без rx/tx-сплита и online) | — | — |
+| openvpn | OpenVPN status-лог (`status openvpn-status.log` уже в server.conf, читаем `cat` в контейнере) | per-CN `Bytes Received` (rx=upload) / `Bytes Sent` (tx=download), кумулятив; форматы v2 и v3 | клиент присутствует в `CLIENT_LIST` |
+| outline | `curl -sfk <local_api_url>/metrics/transfer` по SSH на localhost (apiUrl из материала протокола) | per-key `bytesTransferredByUserId` — **ТОЛЬКО суммарные байты**: кладём в tx, rx=0 (rx/tx-сплита нет) | **не поддержан** (`online=None`) |
 
 **Кумулятив, не дельта.** Xray читаем с `-reset=false`, hysteria `/traffic` без `?clear=1` — счётчики НЕ сбрасываются. `TrafficService.record` сам считает дельты от прошлого сэмпла (как для wg; при рестарте счётчиков `curr<prev` → дельта = `curr`).
 
@@ -26,7 +26,9 @@
 ### Чистые парсеры (юнит-тестируемы, без SSH) — `infra/trafficstats.py`
 - `parse_xray_stats(traffic, online?) -> list[ClientTraffic]` — per-uuid uplink/downlink/online.
 - `parse_hysteria_traffic(traffic, online?) -> list[ClientTraffic]` — per-authid rx/tx/online; online-only клиенты добавляются с rx=tx=0.
-- Пустой/битый ответ (`{}`, не-JSON, `""`) → `[]`. Тесты: `tests/unit/infra/test_trafficstats.py`, диспетч коллектора — `tests/unit/services/test_traffic_parse.py`.
+- `parse_openvpn_traffic(text) -> list[ClientTraffic]` — per-CN `Bytes Received`/`Bytes Sent` из status-лога (форматы v2 и v3); online=True по присутствию в `CLIENT_LIST`; дубли CN (`duplicate-cn`) суммируются.
+- `parse_outline_transfer(text) -> list[ClientTraffic]` — per-key `bytesTransferredByUserId` → tx=total, rx=0, online=None (Outline даёт только суммарные байты).
+- Пустой/битый ответ (`{}`, не-JSON, `""`, нет секции) → `[]`. Тесты: `tests/unit/infra/test_trafficstats.py`, диспетч коллектора — `tests/unit/services/test_traffic_parse.py`.
 
 ### Модель данных
 `traffic_samples` + колонка `online BOOLEAN NULL` (миграция `c9d0e1f2a3b4`, за head `b8c9d0e1f2a3`). Для wg `online` пишется NULL (онлайн вычисляется по handshake на чтении); для xray/hysteria2 — флаг из stats (у них handshake нет). `PeerStat.online` пробрасывается через `record()`; `_aggregate_clients()` доверяет флагу движка, иначе падает на свежесть handshake. Скорость (`rxSpeed`/`txSpeed`) — байт/сек из последней дельты по интервалу между двумя последними сэмплами клиента (0 у офлайн).
@@ -40,8 +42,13 @@
 - Таблица клиентов: имя · устройство · протокол · сервер · онлайн-индикатор · скачал · отдал · скорость ↓/↑ · активность (последний онлайн).
 - Фильтры: сервер, протокол. Сортировка: по трафику / скорости / имени (онлайн выше при равенстве). Переключатель периода. Поллинг 30с.
 - Карточка сервера (ServerDetail) обогащена секцией «Клиенты сервера» (переиспользует per-server overview).
+- **Клик по строке клиента** → модалка с графиком его трафика за период (`LineChart`): две линии — download (tx) и upload (rx). Данные берём из per-server overview этого клиента (`serverTraffic(serverId, period).series`), фильтруем по `clientId`+`proto` и группируем по времени `at`; значения — МБ за интервал сбора. Оси/легенда подписаны человекочитаемо.
+
+### Собрано по всем протоколам (готово)
+- **openvpn**: per-CN трафик+online из OpenVPN status-лога. `status openvpn-status.log` уже в `server.conf` (configure_container.sh) — демон стартует из `/`, поэтому лог в корне контейнера; коллектор пробует `/openvpn-status.log` и `/opt/amnezia/openvpn/openvpn-status.log`, берёт первый непустой (best-effort, без правки конфига/рестарта). rx=`Bytes Received`, tx=`Bytes Sent`, кумулятив; online по `CLIENT_LIST`.
+- **outline**: per-key суммарный трафик через Management API `GET /metrics/transfer` (curl по SSH на localhost, apiUrl из материала протокола — провизионер передаётся в `collect(ssh, spec, provo)` из sync-тика). Outline даёт ТОЛЬКО суммарные байты: `tx=total`, `rx=0`, **online не поддержан** (`None`).
 
 ### Что осталось (TODO)
-- **openvpn**: per-CN байты из status-лога (`bytes_received`/`bytes_sent`), online через `CLIENT_LIST` (парсер №16 уже есть) — включить в коллектор.
-- **outline**: `GET <apiUrl>/metrics/transfer` → `bytesTransferredByUserId` (только суммарные байты, без rx/tx-сплита и без online).
-- Ретеншн/агрегация: даунсэмплинг старых сэмплов (сейчас — только purge по `traffic_retention_days`); графики per-client трафика на экране мониторинга (LineChart уже есть, данные в `series`).
+- Ретеншн/агрегация: даунсэмплинг старых сэмплов (сейчас — только purge по `traffic_retention_days`).
+- **outline**: разбить суммарный трафик на приём/отдачу (Management API отдаёт только суммарные байты — нужен либо ss-access-log, либо доработка shadowbox) и честный online (у Shadowsocks нет понятия сессии).
+- **openvpn**: для полностью машинного парсинга можно перевести status-лог в v3 (`status <path> 5\nstatus-version 3`) — сейчас парсер поддерживает оба формата, доп. настройка не требуется.
