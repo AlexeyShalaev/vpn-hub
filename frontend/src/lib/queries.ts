@@ -13,6 +13,7 @@ import type {
   Me,
   MetricsOverview,
   Monitoring,
+  MyUsage,
   Pool,
   Provider,
   Server,
@@ -181,6 +182,7 @@ export const toggleGroupServerVpn = (gid: string, serverId: string, type: string
 export const listAvailable = () => http.get<AvailableServer[]>("/me/available");
 export const listDevices = () => http.get<Device[]>("/me/devices");
 export const deviceLimit = () => http.get<DeviceLimit>("/me/devices/limit");
+export const myUsage = () => http.get<MyUsage[]>("/me/usage");
 export const addDevice = (b: { name: string; platform: string }) => http.post<Device>("/me/devices", b);
 export const removeDevice = (id: string) => http.del(`/me/devices/${id}`);
 // peek=true: только список протоколов/приложений для выбора, БЕЗ провижининга конфига на сервере

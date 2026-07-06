@@ -130,6 +130,15 @@ export interface DeviceLimit {
   limit: number;
 }
 
+export interface MyUsage {
+  serverId: string;
+  serverName: string;
+  used: number; // байт за период (rx+tx)
+  limit: number | null; // байт-лимит per сервер, null = без лимита
+  suspended: boolean; // доступ приостановлен из-за лимита
+  periodStart: number;
+}
+
 export interface DeviceConfig {
   serverId: string;
   type: VpnType;

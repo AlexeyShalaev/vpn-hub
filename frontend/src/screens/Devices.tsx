@@ -5,10 +5,79 @@ import * as q from "../lib/queries";
 import type { Device, DeviceConfig } from "../lib/types";
 import { PLATFORM_LABEL, VPN_LABEL } from "../lib/types";
 import { useStore } from "../store";
+import { fmtBytes } from "./Monitoring";
 
 type Platform = Device["platform"];
 
 const PLATFORMS: Platform[] = ["ios", "android", "mac", "windows", "linux", "router"];
+
+// «Мой трафик за период по серверам»: израсходовано / лимит + пометка приостановки.
+function TrafficUsageCard({ rows }: { rows: import("../lib/types").MyUsage[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div
+      style={{
+        padding: "var(--pad)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r)",
+        background: "var(--surface)",
+        boxShadow: "var(--shadow)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        marginBottom: 16,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: ".05em",
+          textTransform: "uppercase",
+          color: "var(--text-3)",
+        }}
+      >
+        Мой трафик за период
+      </div>
+      {rows.map((r) => {
+        const pct = r.limit && r.limit > 0 ? Math.min(100, Math.round((r.used / r.limit) * 100)) : null;
+        const col =
+          r.suspended || (pct != null && pct >= 100)
+            ? "var(--danger)"
+            : pct != null && pct >= 80
+              ? "#d97706"
+              : "var(--text-2)";
+        return (
+          <div key={r.serverId} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <div className="rowflex" style={{ justifyContent: "space-between", gap: 8, fontSize: 13.5 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {r.serverName}
+                {r.suspended && (
+                  <span
+                    className="badge warn"
+                    style={{ marginLeft: 8 }}
+                    title="Доступ приостановлен из-за лимита — вернётся после сброса периода"
+                  >
+                    приостановлен
+                  </span>
+                )}
+              </span>
+              <span style={{ color: col, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flex: "none" }}>
+                {fmtBytes(r.used)}
+                {r.limit != null ? ` / ${fmtBytes(r.limit)}` : " · без лимита"}
+              </span>
+            </div>
+            {pct != null && (
+              <div style={{ height: 6, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: col }} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function configLabel(c: DeviceConfig, serverName: string) {
   return `${serverName} · ${c.proto || VPN_LABEL[c.type]}`;
@@ -177,6 +246,11 @@ export function DevicesScreen() {
     queryKey: ["deviceLimit"],
     queryFn: q.deviceLimit,
   });
+  const { data: usage } = useQuery({
+    queryKey: ["myUsage"],
+    queryFn: q.myUsage,
+    refetchInterval: 60000,
+  });
   const { data: servers } = useQuery({
     queryKey: ["servers"],
     queryFn: q.listServers,
@@ -271,6 +345,8 @@ export function DevicesScreen() {
           </Btn>
         }
       />
+
+      <TrafficUsageCard rows={usage ?? []} />
 
       {isLoading ? (
         <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>

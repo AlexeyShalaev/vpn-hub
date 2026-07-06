@@ -37,6 +37,11 @@ async def available(
     return await svc.available(ident.id)
 
 
+@router.get("/me/usage")
+async def my_usage(ident: Identity = Depends(require_user), svc: MeService = Depends(service(MeService))) -> list[dict]:
+    return await svc.usage(ident.id)
+
+
 @router.get("/me/devices")
 async def list_devices(
     ident: Identity = Depends(require_user), svc: DeviceService = Depends(service(DeviceService))
