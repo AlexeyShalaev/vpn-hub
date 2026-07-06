@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_foundation_kit import BaseTable, DatetimeColumnsMixin
 
@@ -241,10 +241,11 @@ class TrafficSample(BaseTable):
     client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # pubkey/uuid; None — агрегат
     device_config_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # None → external-клиент
     at: Mapped[float] = mapped_column(index=True)  # epoch seconds (как AuditEvent.at)
-    rx_bytes: Mapped[int] = mapped_column(Integer, default=0)  # кумулятивно (как отдаёт wg)
-    tx_bytes: Mapped[int] = mapped_column(Integer, default=0)
-    rx_delta: Mapped[int] = mapped_column(Integer, default=0)  # прирост от прошлого сэмпла
-    tx_delta: Mapped[int] = mapped_column(Integer, default=0)
+    # BigInteger: реальные счётчики wg легко превышают int32 (>2 ГБ трафика)
+    rx_bytes: Mapped[int] = mapped_column(BigInteger, default=0)  # кумулятивно (как отдаёт wg)
+    tx_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    rx_delta: Mapped[int] = mapped_column(BigInteger, default=0)  # прирост от прошлого сэмпла
+    tx_delta: Mapped[int] = mapped_column(BigInteger, default=0)
     last_handshake: Mapped[float | None] = mapped_column(nullable=True)  # epoch; None — рукопожатий не было
 
     __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
