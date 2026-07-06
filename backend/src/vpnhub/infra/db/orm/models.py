@@ -105,6 +105,10 @@ class ServerProtocol(BaseTable, DatetimeColumnsMixin):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(48), nullable=True)  # стабильный код (ProvisioningError.code)
     external_clients: Mapped[int] = mapped_column(Integer, default=0)  # клиенты, заведённые внешним клиентом
+    # мягкий (панельный) лимит числа конфигов-клиентов на этом протоколе, задаётся владельцем.
+    # None = без лимита. Это НЕ физический потолок: у AmneziaWG адресов /24 растёт намеренно, а
+    # выдача сверх лимита просто блокируется в services/configs. Занятость = active configs + external.
+    max_clients: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # версия бинарника компонента в запущенном контейнере (xray/hysteria2), читается sync по SSH.
     # Сравнивается с эталоном релиза панели (component_versions) → флаг «доступно обновление».
     # None = не читалась/детект не поддержан для протокола.

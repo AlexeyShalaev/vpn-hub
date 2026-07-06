@@ -613,6 +613,24 @@ class ServerService:
             await tx.session.refresh(s)
             return server_to_dict(s, self._secret(s))
 
+    async def set_protocol_limit(self, owner_id: str, sid: str, proto_id: str, max_clients: int | None) -> dict:
+        """Мягкий лимит числа конфигов на протоколе (панельный soft-cap; None = без лимита).
+
+        Только запись в БД, без SSH/reprovision. Лимит меньше текущей занятости задать можно —
+        это просто запретит выдавать НОВЫЕ конфиги; уже выданные не трогаются.
+        """
+        if proto_id not in pc.PROTOCOLS:
+            raise BadRequest("Неизвестный протокол")
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            sp = next((p for p in s.protocols if p.proto == proto_id), None)
+            if sp is None:
+                raise BadRequest("Протокол не установлен на сервере")
+            sp.max_clients = max_clients if (max_clients is not None and max_clients > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            return server_to_dict(s, self._secret(s))
+
     async def set_reality(
         self,
         owner_id: str,

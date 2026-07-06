@@ -234,6 +234,20 @@ async def set_reality(
     return await svc.set_reality(ident.id, sid, proto, rotate_short_id=rotate, short_id=short_id, sni=sni)
 
 
+@router.patch("/servers/{sid}/protocols/{proto}/limit")
+async def set_protocol_limit(
+    sid: str,
+    proto: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    # body: { "maxClients": int | null } — мягкий лимит числа конфигов на протоколе (null/0 → снять)
+    raw = body.get("maxClients") if isinstance(body, dict) else None
+    max_clients = int(raw) if isinstance(raw, (int, float)) and int(raw) > 0 else None
+    return await svc.set_protocol_limit(ident.id, sid, proto, max_clients)
+
+
 # ---------- multihop / chains (entry -> exit) ----------
 
 

@@ -102,6 +102,10 @@ export const setReality = (
   proto: string,
   body: { rotate_short_id?: boolean; short_id?: string; sni?: string },
 ) => http.patch<Server>(`/servers/${id}/protocols/${proto}/reality`, body);
+// мягкий лимит числа конфигов на протоколе (owner): maxClients=null/0 → снять лимит
+export const setProtocolLimit = (id: string, proto: string, maxClients: number | null) =>
+  http.patch<Server>(`/servers/${id}/protocols/${proto}/limit`, { maxClients });
+
 // мультихоп: цепочки, где этот сервер — вход (entry); трафик выходит через exit-сервер (Xray outbound)
 export const listChains = (sid: string) => http.get<ChainLink[]>(`/servers/${sid}/chains`);
 export const createChain = (sid: string, exitServerId: string) =>

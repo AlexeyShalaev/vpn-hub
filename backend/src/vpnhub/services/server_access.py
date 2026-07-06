@@ -20,6 +20,7 @@ from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.security import decrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
 from vpnhub.services import audit_types
+from vpnhub.services.limits import used_clients
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
 # из material отдаём только публичное (приватные ключи/psk наружу не уходят).
@@ -150,6 +151,9 @@ class ServerAccessService:
                         "externalClients": p.external_clients,
                         "params": params,
                         "keys": keys,
+                        # лимит числа конфигов (soft-cap владельца; null = без лимита) + текущая занятость
+                        "maxClients": p.max_clients,
+                        "usedClients": await used_clients(tx.session, p),
                     }
                 )
 

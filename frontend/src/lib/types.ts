@@ -230,6 +230,8 @@ export interface VpnAdvancedProtocol {
   externalClients: number;
   params: Record<string, string> | null;
   keys: Record<string, string>;
+  maxClients: number | null; // мягкий лимит числа конфигов (null = без лимита)
+  usedClients: number; // занято: активные конфиги + внешние клиенты
 }
 
 export interface VpnAdvancedClient {

@@ -102,6 +102,66 @@ function ObfuscationForm({ serverId, vtype, proto }: { serverId: string; vtype: 
 
 // Управление Xray-Reality: ротация shortId и смена SNI/dest (маскировочный домен) с reprovision.
 // short_id/site приходят из proto.keys (публичный материал); значения применяет сервер.
+// Мягкий лимит числа конфигов на протоколе (owner). Показывает «занято/лимит» и форму задать/снять.
+function LimitForm({ serverId, vtype, proto }: { serverId: string; vtype: VpnType; proto: VpnAdvancedProtocol }) {
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const [val, setVal] = useState<string>(proto.maxClients != null ? String(proto.maxClients) : "");
+  const mut = useMutation({
+    mutationFn: (maxClients: number | null) => q.setProtocolLimit(serverId, proto.proto, maxClients),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vpn-advanced", serverId, vtype] });
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast("Лимит конфигов обновлён");
+    },
+    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+  });
+  const cap = proto.maxClients;
+  const full = cap != null && proto.usedClients >= cap;
+  const near = cap != null && !full && proto.usedClients >= cap * 0.8;
+  const save = () => {
+    const n = val.trim() === "" ? null : Math.max(0, Number.parseInt(val, 10) || 0);
+    mut.mutate(n && n > 0 ? n : null);
+  };
+  return (
+    <details>
+      <summary
+        style={{
+          cursor: "pointer",
+          fontSize: 12.5,
+          color: full ? "var(--danger)" : near ? "var(--warn)" : "var(--text-2)",
+        }}
+      >
+        Клиентов: {proto.usedClients}
+        {cap != null ? ` / ${cap}` : ""}
+        {full ? " · лимит достигнут" : near ? " · близко к лимиту" : ""}
+      </summary>
+      <div className="stack" style={{ marginTop: 8, gap: 8 }}>
+        <div className="muted-3" style={{ fontSize: 12 }}>
+          Мягкий лимит числа конфигов на этом протоколе. Пусто = без лимита. Сверх лимита новые конфиги не выдаются (уже
+          выданные не трогаются).
+          {proto.proto === "openvpn" ? " У OpenVPN технический пул ≈253 адреса." : ""}
+        </div>
+        <div className="rowflex" style={{ gap: 8, alignItems: "center" }}>
+          <input
+            className="input"
+            type="number"
+            min={0}
+            placeholder="без лимита"
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            style={{ width: 150 }}
+            disabled={mut.isPending}
+          />
+          <Btn sm variant="primary" disabled={mut.isPending} onClick={save}>
+            Сохранить
+          </Btn>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 function RealityForm({ serverId, vtype, proto }: { serverId: string; vtype: VpnType; proto: VpnAdvancedProtocol }) {
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
@@ -308,6 +368,8 @@ export function VpnAdvancedModal({
                         </Btn>
                       </div>
                     ))}
+                    {/* Лимит числа конфигов (для любого протокола) — занято/лимит + форма */}
+                    <LimitForm serverId={serverId} vtype={vtype} proto={p} />
                     {/* Xray (xray/xray_xhttp) — управление Reality (shortId, SNI/dest); материала в params нет. */}
                     {(p.proto === "xray" || p.proto === "xray_xhttp") && (
                       <RealityForm serverId={serverId} vtype={vtype} proto={p} />

@@ -24,6 +24,7 @@ from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
 from vpnhub.services import audit_types
 from vpnhub.services.access import effective_access
+from vpnhub.services.limits import over_limit, used_clients
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
 # протоколы Amnezia, которые объединяются в один vpn:// (multi-container).
@@ -213,6 +214,14 @@ class ConfigService:
             client_name = self._client_name(user, device)
             existing = self._find_config(device, server_id, spec)
             client = self._client_from_config(existing) if existing else None
+            # лимит конфигов на протоколе (soft-cap владельца): проверяем только на НОВУЮ выдачу
+            if existing is None and sp.max_clients is not None:
+                used = await used_clients(tx.session, sp)
+                if over_limit(used, sp.max_clients):
+                    raise BadRequest(
+                        f"Достигнут лимит конфигов на «{spec.label}» этого сервера "
+                        f"({used}/{sp.max_clients}). Владелец может увеличить лимит."
+                    )
 
         # установленные amnezia-протоколы, что склеиваются в ОДИН vpn:// (awg/awg_legacy/xray).
         # UI выдаёт их одной кнопкой «все сразу»; xray_xhttp и прочие вендоры сюда не входят.
