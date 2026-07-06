@@ -45,7 +45,7 @@ Homepage = "https://github.com/AlexeyShalaev/vpn-hub"
 Documentation = "https://AlexeyShalaev.github.io/vpn-hub/"
 Repository = "https://github.com/AlexeyShalaev/vpn-hub"
 Issues = "https://github.com/AlexeyShalaev/vpn-hub/issues"
-Changelog = "https://github.com/AlexeyShalaev/vpn-hub/blob/master/backend/CHANGELOG.md"
+Changelog = "https://github.com/AlexeyShalaev/vpn-hub/blob/master/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
