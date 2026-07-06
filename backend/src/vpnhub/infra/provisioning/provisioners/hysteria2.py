@@ -29,8 +29,10 @@ _ID_RE = re.compile(r"[A-Za-z0-9]+")
 
 # traffic-stats API Hysteria2: слушает только на localhost, доступ по секрету в Authorization.
 _STATS_LISTEN = "127.0.0.1:9999"
-# awk: вытащить secret из уже настроенного блока trafficStats: (для перечитывания при повторном enable)
-_READ_SECRET_AWK = "awk '/^trafficStats:/{f=1} f&&/secret:/{print $2; exit}'"
+# awk: вытащить secret из уже настроенного блока trafficStats: (для перечитывания при повторном enable).
+# $2 экранирован (\\$2): команда идёт в `sh -c "..."`, и без экранирования внешний host-шелл
+# раскроет $2 в пустоту ДО awk — секрет не прочитается ("unauthorized" при запросе /online).
+_READ_SECRET_AWK = "awk '/^trafficStats:/{f=1} f&&/secret:/{print \\$2; exit}'"
 # hex-секрет валидируем перед подстановкой в Authorization-заголовок (anti-injection).
 _HEX_RE = re.compile(r"[0-9a-fA-F]+")
 
