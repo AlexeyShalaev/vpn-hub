@@ -14,6 +14,14 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9" />
     </>
   ),
+  // «Настройка устройства» (пункт nav.setup у участника) — документ/инструкция с чек-строками
+  file: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6M9 17h4" />
+    </>
+  ),
   servers: (
     <>
       <rect x="3" y="4" width="18" height="7" rx="2" />
