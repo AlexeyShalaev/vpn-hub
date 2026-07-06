@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import { Btn, Empty, Icon, ScreenHeader, Spinner, StatusBadge, VpnChip } from "../components/ui";
 import * as q from "../lib/queries";
 import type { Server } from "../lib/types";
 import { useNav } from "../nav";
+import { useStore } from "../store";
 
 function mono(name: string) {
   return (name || "?").slice(0, 2).toUpperCase();

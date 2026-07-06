@@ -94,6 +94,21 @@ const ru = {
   "events.resource": "ресурс",
   "events.emptyTitle": "Событий пока нет",
   "events.emptySub": "Действия пользователей появятся здесь.",
+
+  // онбординг владельца (чеклист первого запуска)
+  "onboarding.title": "Быстрый старт",
+  "onboarding.sub": "Пять шагов, чтобы раздать VPN близким",
+  "onboarding.progress": "{done} из {total}",
+  "onboarding.stepServer": "Добавьте сервер",
+  "onboarding.stepServerSub": "Подключите арендованный VPS по SSH",
+  "onboarding.stepInstall": "Установите VPN",
+  "onboarding.stepInstallSub": "Разверните протокол на сервере",
+  "onboarding.stepGroup": "Создайте группу",
+  "onboarding.stepGroupSub": "Группа объединяет людей и доступы",
+  "onboarding.stepInvite": "Пригласите участника",
+  "onboarding.stepInviteSub": "Добавьте человека или дайте ссылку-приглашение",
+  "onboarding.stepAccess": "Выдайте доступ",
+  "onboarding.stepAccessSub": "Откройте группе сервер или пул",
 } satisfies Record<string, string | PluralForms>;
 
 export type Lang = "ru" | "en";
@@ -176,6 +191,20 @@ const en = {
   "events.resource": "resource",
   "events.emptyTitle": "No events yet",
   "events.emptySub": "User actions will appear here.",
+
+  "onboarding.title": "Quick start",
+  "onboarding.sub": "Five steps to share VPN with the people you care about",
+  "onboarding.progress": "{done} of {total}",
+  "onboarding.stepServer": "Add a server",
+  "onboarding.stepServerSub": "Connect a rented VPS over SSH",
+  "onboarding.stepInstall": "Install VPN",
+  "onboarding.stepInstallSub": "Deploy a protocol on the server",
+  "onboarding.stepGroup": "Create a group",
+  "onboarding.stepGroupSub": "A group ties people and access together",
+  "onboarding.stepInvite": "Invite a member",
+  "onboarding.stepInviteSub": "Add a person or share an invite link",
+  "onboarding.stepAccess": "Grant access",
+  "onboarding.stepAccessSub": "Open a server or pool to the group",
 } satisfies Dict;
 
 const DICTS: Record<Lang, Dict> = { ru, en };
