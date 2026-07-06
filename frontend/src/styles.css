@@ -583,6 +583,27 @@ a {
   animation: spin 0.8s linear infinite;
 }
 
+/* skeleton-загрузка: плейсхолдер с бегущим шиммером */
+.skeleton {
+  display: block;
+  background: var(--surface-2, var(--border));
+  position: relative;
+  overflow: hidden;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.13), transparent);
+  animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 /* responsive */
 @media (max-width: 900px) {
   .sidebar {

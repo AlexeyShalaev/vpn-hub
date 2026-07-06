@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { OnboardingChecklist } from "../components/OnboardingChecklist";
-import { Btn, Empty, Icon, ScreenHeader, Spinner, StatusBadge, VpnChip } from "../components/ui";
+import { Btn, Empty, Icon, ScreenHeader, SkeletonCard, StatusBadge, VpnChip } from "../components/ui";
 import * as q from "../lib/queries";
 import type { Server } from "../lib/types";
 import { useNav } from "../nav";
@@ -158,8 +158,10 @@ export function ServersScreen() {
       />
 
       {isLoading ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
-          <Spinner />
+        <div className="grid">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
         </div>
       ) : all.length === 0 ? (
         <Empty

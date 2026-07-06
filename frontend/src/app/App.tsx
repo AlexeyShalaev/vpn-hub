@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { Component, type ReactNode, useEffect, useState } from "react";
 import { PhoneField } from "../components/PhoneField";
 import { Btn, Field, FilePicker, Icon, KeyInput } from "../components/ui";
 import { ApiError } from "../lib/api";
@@ -568,6 +568,51 @@ function Shell({ me }: { me: Me }) {
   );
 }
 
+// Error Boundary: перехватывает краши рендера дочернего дерева и вместо белого экрана
+// показывает аккуратный экран с кнопкой перезагрузки. Строки приходят пропами (class
+// component не может пользоваться хуком useT), локализуются в обёртке ErrorBoundary.
+class ErrorBoundaryInner extends Component<
+  { children: ReactNode; labels: { title: string; sub: string; reload: string } },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("Необработанная ошибка рендера:", error);
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    const { title, sub, reload } = this.props.labels;
+    return (
+      <div className="auth-wrap">
+        <div className="auth-card" style={{ textAlign: "center" }}>
+          <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{title}</div>
+          <div className="muted" style={{ fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
+            {sub}
+          </div>
+          <Btn variant="primary" block onClick={() => window.location.reload()}>
+            {reload}
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+}
+
+function ErrorBoundary({ children }: { children: ReactNode }) {
+  const t = useT();
+  return (
+    <ErrorBoundaryInner labels={{ title: t("ux.crashTitle"), sub: t("ux.crashSub"), reload: t("ux.reload") }}>
+      {children}
+    </ErrorBoundaryInner>
+  );
+}
+
 export function App() {
   const me = useStore((s) => s.me);
   const setMe = useStore((s) => s.setMe);
@@ -631,7 +676,9 @@ export function App() {
 
   return (
     <>
-      <Shell me={current} />
+      <ErrorBoundary>
+        <Shell me={current} />
+      </ErrorBoundary>
       <Toast />
     </>
   );

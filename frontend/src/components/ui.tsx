@@ -473,3 +473,36 @@ export function Spinner() {
     </span>
   );
 }
+
+// Плейсхолдер-заглушка с шиммером — показываем во время загрузки списков вместо
+// голого спиннера, чтобы каркас страницы не «прыгал».
+export function Skeleton({
+  width = "100%",
+  height = 16,
+  radius = 8,
+  style,
+}: {
+  width?: number | string;
+  height?: number | string;
+  radius?: number | string;
+  style?: React.CSSProperties;
+}) {
+  return <span className="skeleton" style={{ width, height, borderRadius: radius, ...style }} />;
+}
+
+// Готовый скелет-каркас карточки для сеток (Серверы, Группы и т.п.).
+export function SkeletonCard() {
+  return (
+    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Skeleton width={44} height={44} radius={13} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+          <Skeleton width="60%" height={15} />
+          <Skeleton width="35%" height={12} />
+        </div>
+      </div>
+      <Skeleton width="100%" height={12} />
+      <Skeleton width="45%" height={12} />
+    </div>
+  );
+}

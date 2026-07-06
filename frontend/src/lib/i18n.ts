@@ -159,6 +159,13 @@ const ru = {
   "setup.stepConnect": "Включите переключатель подключения — готово.",
   "setup.stepRouterFw": "Убедитесь, что на роутере есть поддержка WireGuard/AmneziaWG (OpenWrt, Keenetic и т.п.).",
   "setup.stepRouterImport": "В веб-интерфейсе роутера создайте WireGuard-интерфейс и вставьте параметры из выданного конфига.",
+
+  // мелочи UX
+  "ux.crashTitle": "Что-то пошло не так",
+  "ux.crashSub": "Произошла непредвиденная ошибка. Попробуйте перезагрузить страницу.",
+  "ux.reload": "Перезагрузить",
+  "ux.shareInvite": "Пригласить",
+  "ux.inviteCopied": "Ссылка-приглашение скопирована",
 } satisfies Record<string, string | PluralForms>;
 
 export type Lang = "ru" | "en";
@@ -304,6 +311,13 @@ const en = {
   "setup.stepConnect": "Flip the connect toggle — you're done.",
   "setup.stepRouterFw": "Make sure your router supports WireGuard/AmneziaWG (OpenWrt, Keenetic, etc.).",
   "setup.stepRouterImport": "In the router web UI create a WireGuard interface and paste the parameters from the config you got.",
+
+  // UX niceties
+  "ux.crashTitle": "Something went wrong",
+  "ux.crashSub": "An unexpected error occurred. Try reloading the page.",
+  "ux.reload": "Reload",
+  "ux.shareInvite": "Invite",
+  "ux.inviteCopied": "Invite link copied",
 } satisfies Dict;
 
 const DICTS: Record<Lang, Dict> = { ru, en };

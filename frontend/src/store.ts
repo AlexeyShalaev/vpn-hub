@@ -15,7 +15,15 @@ interface State {
   toast: (msg: string) => void;
 }
 
-const savedTheme = (localStorage.getItem("vpnhub.theme") as "light" | "dark") || "light";
+// Если пользователь не выбирал тему явно (в localStorage нет vpnhub.theme) — берём
+// системную из prefers-color-scheme; явный выбор всегда имеет приоритет.
+function initialTheme(): "light" | "dark" {
+  const stored = localStorage.getItem("vpnhub.theme");
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+const savedTheme = initialTheme();
 document.documentElement.setAttribute("data-theme", savedTheme);
 
 const initialLang = detectLang();

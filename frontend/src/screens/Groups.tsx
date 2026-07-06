@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Avatar, Btn, Empty, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
+import { Avatar, Btn, Empty, Field, Icon, Modal, ScreenHeader, SkeletonCard } from "../components/ui";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Group, Pool } from "../lib/types";
 import { useNav } from "../nav";
-import { useStore } from "../store";
+import { copyText, useStore } from "../store";
 
 function plural(n: number, a: string, b: string, c: string): string {
   const n10 = n % 10;
@@ -35,6 +36,7 @@ export function GroupsScreen() {
   const toast = useStore((s) => s.toast);
   const go = useNav((s) => s.go);
   const qc = useQueryClient();
+  const t = useT();
 
   const groupsQ = useQuery({ queryKey: ["groups"], queryFn: q.listGroups });
   const poolsQ = useQuery({ queryKey: ["pools"], queryFn: q.listPools });
@@ -63,6 +65,7 @@ export function GroupsScreen() {
         return {
           id: g.id,
           name: g.name,
+          token: g.token,
           mono: mono2(g.name),
           memberLabel: `${g.members.length} ${plural(g.members.length, "участник", "участника", "участников")}`,
           accessSummary: count ? `${count} ${plural(count, "сервер", "сервера", "серверов")}` : "без доступов",
@@ -94,8 +97,10 @@ export function GroupsScreen() {
       <ScreenHeader title="Группы" sub="Кому вы раздаёте доступ" action={action} />
 
       {groupsQ.isLoading ? (
-        <div className="card" style={{ display: "flex", justifyContent: "center", padding: 40 }}>
-          <Spinner />
+        <div className="grid">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
         </div>
       ) : groups.length === 0 ? (
         <Empty
@@ -171,6 +176,29 @@ export function GroupsScreen() {
                 <Icon name="access" size={15} />
                 <span className="muted" style={{ fontSize: 13 }}>
                   Доступ: {c.accessSummary}
+                </span>
+                <div style={{ flex: 1 }} />
+                {/* Быстрый шаринг инвайт-ссылки прямо из списка — без захода в детали.
+                    role=button внутри карточки-<button>, чтобы не вкладывать <button> в <button>. */}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="btn sm ghost"
+                  title={t("ux.shareInvite")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    copyText(`${location.origin}/join/${c.token}`, toast, t("ux.inviteCopied"));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      copyText(`${location.origin}/join/${c.token}`, toast, t("ux.inviteCopied"));
+                    }
+                  }}
+                >
+                  <Icon name="share" size={15} />
+                  {t("ux.shareInvite")}
                 </span>
               </div>
             </button>
