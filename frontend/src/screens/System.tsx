@@ -88,6 +88,7 @@ function MonitoringSection() {
     queryKey: ["adminMetrics", period],
     queryFn: () => q.adminMetrics(period),
     refetchInterval: METRICS_POLL_MS,
+    retry: 2, // глобально retry=false → разовый сбой оставлял бы график пустым
   });
   const data = mq.data;
   const lines = data ? serverLines(data.series) : [];

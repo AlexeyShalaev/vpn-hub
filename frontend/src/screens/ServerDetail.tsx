@@ -86,6 +86,7 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
     queryFn: () => q.serverMetrics(serverId),
     enabled: !!serverId,
     refetchInterval: 60000, // как страховочный поллинг всего ServerDetail
+    retry: 2, // глобально retry=false → разовый сбой оставлял бы карточку пустой
   });
   const enableStatsMut = useMutation({
     mutationFn: () => q.enableServerStats(serverId),
@@ -228,6 +229,7 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
     queryFn: () => q.serverTraffic(serverId, "24h"),
     enabled: !!serverId,
     refetchInterval: 60000,
+    retry: 2, // глобально retry=false → разовый сбой оставлял бы карточку пустой
   });
   // клик по клиенту → та же модалка с графиком трафика, что в общем «Мониторинге».
   // per-server overview не заполняет serverId у клиента — подставляем текущий при открытии.

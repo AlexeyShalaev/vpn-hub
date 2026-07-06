@@ -109,6 +109,7 @@ export function ClientTrafficModal({
     queryFn: () => q.serverTraffic(sid, period),
     enabled: !!sid,
     refetchInterval: 30000,
+    retry: 2,
   });
 
   // series → две линии (rx/tx) точками {at, value в МБ}, отфильтрованные по этому клиенту.
@@ -323,6 +324,10 @@ export function MonitoringScreen() {
     queryKey: ["monitoring", period],
     queryFn: () => q.monitoring(period),
     refetchInterval: 30000,
+    // глобально retry=false и refetchOnWindowFocus=false (main.tsx) → разовый сбой фетча оставлял
+    // экран пустым до следующего 30с-тика («мониторинг раз через раз»). Здесь чиним точечно:
+    retry: 2,
+    refetchOnWindowFocus: true,
   });
 
   const clients = mq.data?.clients ?? [];
@@ -387,12 +392,22 @@ export function MonitoringScreen() {
         title={t("nav.monitoring")}
         sub="Кто онлайн, по какому протоколу и сколько трафика — по всем вашим серверам"
         action={
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             {PERIODS.map((p) => (
               <Btn key={p} variant={p === period ? "primary" : "ghost"} sm onClick={() => setPeriod(p)}>
                 {PERIOD_LABEL[p]}
               </Btn>
             ))}
+            <Btn
+              variant="ghost"
+              sm
+              onClick={() => mq.refetch()}
+              disabled={mq.isFetching}
+              title="Обновить метрики"
+              aria-label="Обновить"
+            >
+              {mq.isFetching ? <Spinner /> : <Icon name="refresh" size={16} />}
+            </Btn>
           </div>
         }
       />
@@ -446,6 +461,19 @@ export function MonitoringScreen() {
         {mq.isLoading ? (
           <div style={{ padding: 24 }}>
             <Spinner />
+          </div>
+        ) : mq.isError && clients.length === 0 ? (
+          // сбой запроса ≠ «нет данных»: данные не потеряны, предлагаем повторить
+          <div style={{ padding: 8 }}>
+            <Empty
+              title="Не удалось загрузить мониторинг"
+              sub="Это сбой запроса, а не отсутствие данных. Нажмите «Обновить»."
+              action={
+                <Btn variant="primary" sm onClick={() => mq.refetch()} disabled={mq.isFetching}>
+                  {mq.isFetching ? <Spinner /> : "Обновить"}
+                </Btn>
+              }
+            />
           </div>
         ) : rows.length === 0 ? (
           <div style={{ padding: 8 }}>
