@@ -305,8 +305,38 @@ class ServerService:
 
         online = sum(1 for _, r in results if r.ok)
         await self._update_metrics()  # прикладные гейджи для admin-дашборда (best-effort)
+        online_ids = [sid for sid, r in results if r.ok]
+        await self._collect_host_metrics(online_ids)  # per-server ресурсы (best-effort, не влияет на статус)
         log.info("server_monitor_tick", total=len(results), online=online, offline=len(results) - online)
         return len(results)
+
+    async def _collect_host_metrics(self, online_ids: builtins.list[str]) -> None:
+        """Собрать ресурсы хоста (CPU/RAM/диск/…) с онлайн-серверов отдельными SSH-сессиями.
+
+        Строго best-effort: гоняется ПОСЛЕ записи статусов, каждый сервер изолирован (сбой одного не
+        трогает остальных), общий сбой глотается — мониторинг online/offline от этого не зависит.
+        """
+        if not online_ids:
+            return
+        try:
+            from vpnhub.services.hostmetrics import HostMetricsService  # noqa: PLC0415 — избегаем цикла import
+
+            svc = HostMetricsService(self.uow, self.settings)
+            async with self.uow.query() as tx:
+                servers = [s for sid in online_ids if (s := await tx.servers.get(sid)) is not None]
+
+            sem = asyncio.Semaphore(max(1, self.settings.monitor_concurrency))
+
+            async def one(server: m.Server) -> None:
+                async with sem:
+                    try:
+                        await svc.collect_for(server)
+                    except Exception as e:  # изоляция: один сервер не роняет сбор остальных
+                        log.warning("host_metrics_collect_failed", server_id=server.id, error=str(e))
+
+            await asyncio.gather(*(one(s) for s in servers))
+        except Exception:
+            log.warning("host_metrics_tick_failed", exc_info=True)
 
     async def _update_metrics(self) -> None:
         """Обновить прикладные гейджи (серверы по статусу/latency, ошибки provisioning).

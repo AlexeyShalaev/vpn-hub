@@ -10,6 +10,7 @@ from vpnhub.api.deps import require_user, service
 from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.services.auth import Identity
 from vpnhub.services.groups import GroupService
+from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.multihop import ChainService
 from vpnhub.services.pools import PoolService
 from vpnhub.services.server_access import ServerAccessService
@@ -108,6 +109,16 @@ async def server_traffic(
     svc: TrafficService = Depends(service(TrafficService)),
 ) -> dict:
     return await svc.overview(ident.id, sid, period)
+
+
+@router.get("/servers/{sid}/metrics")
+async def server_metrics(
+    sid: str,
+    ident: Identity = Depends(require_user),
+    svc: HostMetricsService = Depends(service(HostMetricsService)),
+) -> dict:
+    # ресурсы хоста этого сервера: последние значения + история сэмплов для мини-графиков
+    return await svc.overview(ident.id, sid)
 
 
 @router.get("/servers/{sid}/access")

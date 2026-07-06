@@ -276,6 +276,25 @@ export interface SystemInfo {
   releases: { v: string; date: string; notes: string[] }[];
 }
 
+// per-server мониторинг ресурсов хоста (owner): один сэмпл = один monitor-тик по SSH
+export interface ServerMetricSample {
+  at: number; // epoch seconds
+  cpuPct: number | null; // 0..100
+  load1: number | null; // 1-минутный load average
+  memUsed: number | null; // байт
+  memTotal: number | null; // байт
+  diskUsed: number | null; // байт (/)
+  diskTotal: number | null; // байт (/)
+  tcpEstab: number | null; // TCP established
+  uptimeS: number | null; // аптайм хоста, сек
+  onlineClients: number | null; // онлайн-VPN-пиры (может быть недоступно)
+}
+export interface ServerMetrics {
+  serverId: string;
+  current: ServerMetricSample | null; // последнее значение (гейджи/цифры)
+  samples: ServerMetricSample[]; // история (мини-графики), в хронологическом порядке
+}
+
 // admin-дашборд здоровья инстанса (не путать с owner-трафиком)
 export interface MetricPoint {
   at: number; // epoch seconds

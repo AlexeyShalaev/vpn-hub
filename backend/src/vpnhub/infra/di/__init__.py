@@ -21,6 +21,7 @@ from vpnhub.services.backups import BackupService
 from vpnhub.services.configs import ConfigService
 from vpnhub.services.devices import DeviceService
 from vpnhub.services.groups import GroupService
+from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.me import MeService
 from vpnhub.services.metrics import MetricsService
 from vpnhub.services.multihop import ChainService
@@ -79,6 +80,7 @@ class AppProvider(Provider):
     backups = provide(BackupService)
     audit = provide(AuditService)
     traffic = provide(TrafficService)
+    host_metrics = provide(HostMetricsService)
     metrics = provide(MetricsService)
     chains = provide(ChainService)
 

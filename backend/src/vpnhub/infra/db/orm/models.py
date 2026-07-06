@@ -272,6 +272,36 @@ class MetricSample(BaseTable):
     __table_args__ = (Index("metric_samples_scope_idx", "name", "at"),)
 
 
+class ServerMetric(BaseTable):
+    """Точка временного ряда ресурсов хоста одного сервера (per-server host monitoring).
+
+    Пишется в monitor-тике (best-effort, отдельной короткой SSH-сессией) для онлайн-серверов:
+    CPU%, load average, RAM (used/total), диск `/` (used/total), число TCP established, uptime и
+    (опционально) число онлайн-VPN-клиентов. Значения памяти/диска — BigInteger: >2 ГБ легко
+    переполнят int32 (реальный баг, уже ловили в traffic_samples). Все метрики nullable —
+    поле, которое не удалось прочитать по SSH, пишется NULL и не роняет тик.
+
+    Ретеншн — фоновой purge-джобой (`server_metrics_retention_days`).
+    """
+
+    __tablename__ = "server_metrics"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    server_id: Mapped[str] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"), index=True)
+    at: Mapped[float] = mapped_column(index=True)  # epoch seconds (как TrafficSample.at)
+    cpu_pct: Mapped[float | None] = mapped_column(nullable=True)  # 0..100
+    load1: Mapped[float | None] = mapped_column(nullable=True)  # 1-минутный load average
+    # BigInteger: RAM/диск легко >2 ГБ (int32 overflow) — как rx_bytes в traffic_samples
+    mem_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт
+    mem_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт
+    disk_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт (/)
+    disk_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт (/)
+    tcp_estab: Mapped[int | None] = mapped_column(Integer, nullable=True)  # TCP established
+    uptime_s: Mapped[int | None] = mapped_column(Integer, nullable=True)  # аптайм хоста, сек
+    online_clients: Mapped[int | None] = mapped_column(Integer, nullable=True)  # онлайн-VPN-пиры
+
+    __table_args__ = (Index("server_metrics_scope_idx", "server_id", "at"),)
+
+
 class Setting(BaseTable):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)

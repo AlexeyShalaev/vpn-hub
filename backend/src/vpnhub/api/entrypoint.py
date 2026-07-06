@@ -27,6 +27,7 @@ from vpnhub.infra.uow import Uow
 from vpnhub.services.audit import AuditService
 from vpnhub.services.backups import BackupService
 from vpnhub.services.bootstrap import ensure_bootstrap_admin, normalize_user_phones
+from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.metrics import MetricsService
 from vpnhub.services.servers import ServerService
 from vpnhub.services.sync import SyncService
@@ -100,6 +101,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "interval",
         hours=24,
         id="traffic-retention",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    host_metrics = await container.get(HostMetricsService)
+    scheduler.add_job(
+        mx.instrument_job("server-metrics-retention", host_metrics.purge_old),
+        "interval",
+        hours=24,
+        id="server-metrics-retention",
         max_instances=1,
         coalesce=True,
     )

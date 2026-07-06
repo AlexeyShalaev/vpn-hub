@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     # клиент считается онлайн, если последний handshake свежее этого окна (сек)
     traffic_online_window_seconds: int = 180
 
+    # per-server мониторинг ресурсов хоста (CPU/RAM/диск/load/uptime/TCP) — сбор в monitor-тике по SSH
+    server_metrics_retention_days: int = 14  # сколько дней хранить хост-сэмплы (фоновой purge)
+    server_metrics_history_limit: int = 120  # сколько последних сэмплов отдавать для графиков
+
     # admin-дашборд здоровья инстанса: скрейп in-process метрик в metric_samples
     metrics_interval: int = 60  # период снятия сэмплов метрик, сек
     metrics_retention_days: int = 30  # сколько дней хранить сэмплы (фоновой purge metrics-retention)

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
-import type { Protocol, Server, Vpn, VpnType } from "../lib/types";
+import type { Protocol, Server, ServerMetricSample, Vpn, VpnType } from "../lib/types";
 import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } from "../lib/types";
 import { vpnLogo } from "../lib/vpnLogos";
 import { useNav } from "../nav";
@@ -15,6 +16,129 @@ const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
 // установлен ли на сервере запущенный tcp-Reality Xray (условие мультихопа для entry/exit)
 const hasRunningXray = (s: Server): boolean =>
   (s.protocols ?? []).some((p) => p.proto === "xray" && p.installed && p.running);
+
+// человекочитаемые размеры/время для карточки ресурсов
+const fmtBytes = (n: number | null): string => {
+  if (n == null) return "—";
+  const u = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+};
+const fmtUptime = (s: number | null): string => {
+  if (s == null) return "—";
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}д ${h}ч`;
+  if (h > 0) return `${h}ч ${m}м`;
+  return `${m}м`;
+};
+const pct = (used: number | null, total: number | null): number | null =>
+  used != null && total != null && total > 0 ? Math.round((used / total) * 100) : null;
+
+// плитка-показатель (значение + подпись + опциональный процент)
+function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px", minWidth: 0 }}>
+      <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.1 }}>{value}</div>
+      {sub && (
+        <div className="muted-3" style={{ fontSize: 11.5, marginTop: 3 }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Карточка «Ресурсы сервера»: текущие CPU/RAM/диск/load/uptime/TCP/онлайн-клиенты + мини-графики.
+// Сбор — в monitor-тике по SSH (best-effort); поллинг здесь — как и остальной ServerDetail.
+function ServerMetricsCard({ serverId, online }: { serverId: string; online: boolean }) {
+  const mq = useQuery({
+    queryKey: ["serverMetrics", serverId],
+    queryFn: () => q.serverMetrics(serverId),
+    enabled: !!serverId,
+    refetchInterval: 60000, // как страховочный поллинг всего ServerDetail
+  });
+
+  const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
+  const cur = mq.data?.current ?? null;
+  const samples: ServerMetricSample[] = mq.data?.samples ?? [];
+
+  const line = (pick: (s: ServerMetricSample) => number | null, color: string, name: string): ChartLine => ({
+    color,
+    label: name,
+    points: samples.filter((s) => pick(s) != null).map((s) => ({ at: s.at, value: pick(s) as number })),
+  });
+
+  const memPct = cur ? pct(cur.memUsed, cur.memTotal) : null;
+  const diskPct = cur ? pct(cur.diskUsed, cur.diskTotal) : null;
+
+  return (
+    <div className="card stack">
+      <div className="muted-3" style={label}>
+        Ресурсы сервера
+      </div>
+
+      {mq.isLoading ? (
+        <Spinner />
+      ) : !cur ? (
+        <p className="muted" style={{ fontSize: 13 }}>
+          {online
+            ? "Метрики появятся после ближайшего цикла мониторинга (собираются по SSH)."
+            : "Сервер офлайн — метрики ресурсов не собираются."}
+        </p>
+      ) : (
+        <>
+          <div className="grid">
+            <Metric label="CPU" value={cur.cpuPct != null ? `${cur.cpuPct}%` : "—"} sub={`load ${cur.load1 ?? "—"}`} />
+            <Metric
+              label="Память"
+              value={memPct != null ? `${memPct}%` : "—"}
+              sub={`${fmtBytes(cur.memUsed)} / ${fmtBytes(cur.memTotal)}`}
+            />
+            <Metric
+              label="Диск /"
+              value={diskPct != null ? `${diskPct}%` : "—"}
+              sub={`${fmtBytes(cur.diskUsed)} / ${fmtBytes(cur.diskTotal)}`}
+            />
+            <Metric label="Аптайм" value={fmtUptime(cur.uptimeS)} />
+            <Metric label="TCP-соединения" value={cur.tcpEstab != null ? String(cur.tcpEstab) : "—"} />
+            {cur.onlineClients != null && (
+              <Metric label="Онлайн-клиенты" value={String(cur.onlineClients)} sub="VPN-пиры" />
+            )}
+          </div>
+
+          {samples.length > 1 && (
+            <div className="stack" style={{ gap: 14, marginTop: 4 }}>
+              <div>
+                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>CPU / память (%)</div>
+                <LineChart
+                  height={130}
+                  lines={[
+                    line((s) => s.cpuPct, "#3b82f6", "CPU %"),
+                    line((s) => pct(s.memUsed, s.memTotal), "#a855f7", "Память %"),
+                  ]}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>TCP-соединения</div>
+                <LineChart height={130} lines={[line((s) => s.tcpEstab, "#22c55e", "TCP established")]} />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 // Секция «Цепочка (мультихоп)»: трафик клиентов этого (entry) сервера выходит в интернет через
 // другой (exit) сервер. Реализация — Xray outbound chaining: entry становится vless-клиентом exit.
@@ -719,6 +843,8 @@ export function ServerDetailScreen() {
           })}
         </div>
       </div>
+
+      <ServerMetricsCard serverId={serverId} online={online} />
 
       <ChainSection server={server} />
 
