@@ -8,6 +8,12 @@ import { VPN_LABEL } from "../lib/types";
 
 // ---------- icons ----------
 const PATHS: Record<string, ReactNode> = {
+  home: (
+    <>
+      <path d="M4 11l8-7 8 7" />
+      <path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9" />
+    </>
+  ),
   servers: (
     <>
       <rect x="3" y="4" width="18" height="7" rx="2" />

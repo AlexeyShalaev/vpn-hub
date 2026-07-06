@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 export type Screen =
+  | "home"
   | "servers"
   | "server"
   | "serverForm"
@@ -28,6 +29,8 @@ interface NavState {
 
 function screenToPath(screen: Screen, params: Params): string {
   switch (screen) {
+    case "home":
+      return "/home";
     case "servers":
       return "/servers";
     case "server":
@@ -71,6 +74,8 @@ function pathToState(pathname: string, search: string): { screen: Screen; params
   if (seg.length === 0) return { screen: "available", params: {} };
   const [a, b, c] = seg;
   switch (a) {
+    case "home":
+      return { screen: "home", params: {} };
     case "servers":
       if (!b) return { screen: "servers", params: {} };
       if (b === "new") return { screen: "serverForm", params: { provider: sp.get("provider") ?? undefined } };

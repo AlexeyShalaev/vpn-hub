@@ -109,6 +109,22 @@ const ru = {
   "onboarding.stepInviteSub": "Добавьте человека или дайте ссылку-приглашение",
   "onboarding.stepAccess": "Выдайте доступ",
   "onboarding.stepAccessSub": "Откройте группе сервер или пул",
+
+  // главная-сводка владельца (Home)
+  "home.title": "Главная",
+  "home.sub": "Сводка по вашей панели VPN",
+  "nav.home": "Главная",
+  "home.serversTitle": "Серверы",
+  "home.serversOnline": "{n} онлайн",
+  "home.serversOffline": "{n} офлайн",
+  "home.serversEmpty": "Серверов пока нет",
+  "home.groupsTitle": "Группы и участники",
+  "home.groupsCount": "групп: {groups}",
+  "home.membersCount": "участников: {members}",
+  "home.groupsEmpty": "Групп пока нет",
+  "home.eventsTitle": "Последние события",
+  "home.eventsAll": "Все события",
+  "home.eventsEmpty": "Событий пока нет",
 } satisfies Record<string, string | PluralForms>;
 
 export type Lang = "ru" | "en";
@@ -205,6 +221,21 @@ const en = {
   "onboarding.stepInviteSub": "Add a person or share an invite link",
   "onboarding.stepAccess": "Grant access",
   "onboarding.stepAccessSub": "Open a server or pool to the group",
+
+  "home.title": "Home",
+  "home.sub": "Overview of your VPN panel",
+  "nav.home": "Home",
+  "home.serversTitle": "Servers",
+  "home.serversOnline": "{n} online",
+  "home.serversOffline": "{n} offline",
+  "home.serversEmpty": "No servers yet",
+  "home.groupsTitle": "Groups & members",
+  "home.groupsCount": "groups: {groups}",
+  "home.membersCount": "members: {members}",
+  "home.groupsEmpty": "No groups yet",
+  "home.eventsTitle": "Recent events",
+  "home.eventsAll": "All events",
+  "home.eventsEmpty": "No events yet",
 } satisfies Dict;
 
 const DICTS: Record<Lang, Dict> = { ru, en };

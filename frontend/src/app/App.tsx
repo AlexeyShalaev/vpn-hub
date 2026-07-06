@@ -16,6 +16,7 @@ import { DevicesScreen } from "../screens/Devices";
 import { EventsScreen } from "../screens/Events";
 import { GroupDetailScreen } from "../screens/GroupDetail";
 import { GroupsScreen } from "../screens/Groups";
+import { HomeScreen } from "../screens/Home";
 import { ProfileScreen } from "../screens/Profile";
 import { ServerDetailScreen } from "../screens/ServerDetail";
 import { ServerFormScreen } from "../screens/ServerForm";
@@ -49,7 +50,7 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
       const me = await q.login({ phone: form.phone, password: form.password });
       setMe(me);
       qc.invalidateQueries();
-      if (redirect) go(me.role === "owner" ? "servers" : "available");
+      if (redirect) go(me.role === "owner" ? "home" : "available");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Ошибка входа");
     } finally {
@@ -190,7 +191,7 @@ function JoinScreen({ token, me }: { token: string; me: Me }) {
         ) : peekQ.isError || !peekQ.data ? (
           <>
             <div className="err">Приглашение недействительно или было отозвано.</div>
-            <Btn block onClick={() => go(me.role === "owner" ? "servers" : "available")}>
+            <Btn block onClick={() => go(me.role === "owner" ? "home" : "available")}>
               На главную
             </Btn>
           </>
@@ -209,7 +210,7 @@ function JoinScreen({ token, me }: { token: string; me: Me }) {
               {state === "joining" ? "Присоединяемся…" : `Присоединиться как ${me.name}`}
             </Btn>
             <div style={{ textAlign: "center", marginTop: 12 }}>
-              <Btn variant="ghost" sm onClick={() => go(me.role === "owner" ? "servers" : "available")}>
+              <Btn variant="ghost" sm onClick={() => go(me.role === "owner" ? "home" : "available")}>
                 Не сейчас
               </Btn>
             </div>
@@ -435,6 +436,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
 }
 
 const NAV_META: Record<string, { labelKey: TKey; icon: string }> = {
+  home: { labelKey: "nav.home", icon: "home" },
   servers: { labelKey: "nav.servers", icon: "servers" },
   groups: { labelKey: "nav.groups", icon: "groups" },
   access: { labelKey: "nav.access", icon: "access" },
@@ -456,7 +458,7 @@ function Shell({ me }: { me: Me }) {
   // так что двойной вызов под React StrictMode (dev) не оставляет висящих коннектов.
   useEffect(() => subscribeEvents(qc), [qc]);
 
-  const ownerItems = ["servers", "groups", "access", "events"];
+  const ownerItems = ["home", "servers", "groups", "access", "events"];
   const memberItems = ["available", "devices"];
   const main = viewRole === "owner" ? ownerItems : memberItems;
   const adminItems = me.isAdmin ? ["users", "system"] : [];
@@ -470,6 +472,8 @@ function Shell({ me }: { me: Me }) {
 
   const renderScreen = () => {
     switch (screen) {
+      case "home":
+        return <HomeScreen />;
       case "servers":
         return <ServersScreen />;
       case "server":
