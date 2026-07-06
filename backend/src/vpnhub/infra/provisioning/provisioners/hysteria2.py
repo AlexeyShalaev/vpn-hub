@@ -96,6 +96,31 @@ class HysteriaProvisioner:
         await ssh.upload_to_container(self.spec.container, new_text, self.spec.hysteria_users_path, append=False)
         await base.remove_client_row(ssh, self.spec, cid)
 
+    # ---- suspend / resume (лимит трафика, Этап 3b) ----
+    #
+    # suspend убирает строку `cid password` только из файла токенов (clientsTable НЕ трогаем);
+    # resume возвращает ТУ ЖЕ пару (cid из client_id, пароль из client_private_key). cid уникален —
+    # новый выданный конфиг «слот» не займёт, конфиг пользователя не меняется.
+
+    async def suspend_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cid = self._check_id(material.client_id)
+        raw = await ssh.read_container_text(self.spec.container, self.spec.hysteria_users_path)
+        kept = [ln for ln in raw.splitlines() if ln.split() and ln.split()[0] != cid]
+        if len(kept) == len([ln for ln in raw.splitlines() if ln.split()]):
+            return  # строки нет — no-op
+        new_text = ("\n".join(kept) + "\n") if kept else ""
+        await ssh.upload_to_container(self.spec.container, new_text, self.spec.hysteria_users_path, append=False)
+
+    async def resume_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cid = self._check_id(material.client_id)
+        password = material.client_private_key
+        raw = await ssh.read_container_text(self.spec.container, self.spec.hysteria_users_path)
+        if any(ln.split() and ln.split()[0] == cid for ln in raw.splitlines()):
+            return  # уже на месте — no-op
+        await ssh.upload_to_container(
+            self.spec.container, f"{cid} {password}\n", self.spec.hysteria_users_path, append=True
+        )
+
     async def list_clients(self, ssh: SshClient) -> list[dict]:
         return await base.read_clients_table(ssh, self.spec)
 

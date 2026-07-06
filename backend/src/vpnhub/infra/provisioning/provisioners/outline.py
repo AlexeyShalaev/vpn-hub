@@ -149,6 +149,31 @@ class OutlineProvisioner:
         if code not in (0, 22):
             raise errors.make("internal", f"Outline: DELETE access-key {key_id} не удался (rc={code})")
 
+    # ---- suspend / resume (лимит трафика, Этап 3b) ----
+    #
+    # НЕ удаляем ключ (иначе потерялись бы password/access_url и юзеру пришлось бы перевставлять конфиг).
+    # suspend = per-key data-limit 0 байт (shadowbox перестаёт пропускать трафик по ключу, ключ цел);
+    # resume = снять data-limit. Материал и ss://-URL не меняются.
+
+    async def suspend_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        key_id = self._check_key_id(material.client_id)
+        body = f"/tmp/outline_dl_{key_id}.json"  # noqa: S108 — временный файл на удалённом хосте, ниже удаляем
+        try:
+            await ssh.upload_to_host(json.dumps({"limit": {"bytes": 0}}), body)
+            url = f"{self._local_api()}/access-keys/{key_id}/data-limit"
+            res = await ssh.run(f'{_CURL} -X PUT -H "Content-Type: application/json" -d @{body} "{url}"')
+            if res.exit_status != 0:
+                raise errors.make("internal", f"Outline: PUT data-limit {key_id} не удался (rc={res.exit_status})")
+        finally:
+            await ssh.run(f"rm -f {body} 2>/dev/null || true")
+
+    async def resume_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        key_id = self._check_key_id(material.client_id)
+        code, _ = await self._api(ssh, "DELETE", f"/access-keys/{key_id}/data-limit")
+        # 0 → снят; 22 → 404 (лимита не было) — уже без ограничения, ок
+        if code not in (0, 22):
+            raise errors.make("internal", f"Outline: DELETE data-limit {key_id} не удался (rc={code})")
+
     async def _list_keys(self, ssh: SshClient) -> list[dict]:
         """Сырой GET /access-keys → список ключей. Бросает при недоступности API (не пустой список)."""
         code, out = await self._api(ssh, "GET", "/access-keys")

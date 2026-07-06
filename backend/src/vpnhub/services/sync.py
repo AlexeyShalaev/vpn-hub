@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
@@ -37,6 +39,7 @@ from vpnhub.infra.provisioning.script_runner import list_known_containers
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.security import encrypt_secret
 from vpnhub.infra.uow import Uow
+from vpnhub.services.limits import effective_byte_limit, period_start, period_usage
 from vpnhub.services.provisioning import PROVISIONED_PROTO_IDS, PROVISIONED_VENDORS, ProvisioningService
 from vpnhub.services.sync_logic import (
     ConfigRow,
@@ -55,6 +58,19 @@ log = structlog.get_logger()
 # Фоновая asyncio-задача не переживает рестарт приложения — иначе протокол завис бы навсегда.
 INSTALLING_GRACE_SECONDS = 600
 
+# Пер-серверный лок: сериализует sync одного сервера (scheduled run_tick И ручной POST /servers/{id}/sync
+# не должны идти параллельно на одном сервере — иначе двойной счёт дельт трафика и гонки suspend/resume).
+# Один процесс/один event-loop → module-level dict корректен.
+_SERVER_SYNC_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _server_sync_lock(server_id: str) -> asyncio.Lock:
+    lock = _SERVER_SYNC_LOCKS.get(server_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _SERVER_SYNC_LOCKS[server_id] = lock
+    return lock
+
 
 class SyncService:
     def __init__(self, uow: Uow, settings: Settings, bus: EventBus | None = None) -> None:
@@ -63,6 +79,11 @@ class SyncService:
         self.bus = bus or get_event_bus()  # realtime-сигналы (см. infra/events)
 
     async def sync_server(self, server_id: str) -> dict:
+        # сериализуем sync одного сервера (см. _SERVER_SYNC_LOCKS)
+        async with _server_sync_lock(server_id):
+            return await self._sync_server_impl(server_id)
+
+    async def _sync_server_impl(self, server_id: str) -> dict:
         prov = ProvisioningService(self.uow, self.settings)
 
         # ── фаза 1: снимок нашего состояния + провизионеры с материалом ──
@@ -154,7 +175,73 @@ class SyncService:
                     await traffic.record(server_id, pid, stats)
                 except Exception as e:  # запись статистики не должна ронять результат sync
                     log.warning("sync: traffic record failed", server=server_id, proto=pid, error=str(e))
+
+        # ── фаза 5: честная отсечка по лимиту трафика (suspend/resume; Этап 3b) ──
+        try:
+            await self._reconcile_byte_limits(server_id, prov)
+        except Exception as e:  # отсечка best-effort — не роняет результат sync
+            log.warning("sync: byte-limit reconcile failed", server=server_id, error=str(e))
         return result
+
+    async def _reconcile_byte_limits(self, server_id: str, prov: ProvisioningService) -> None:
+        """Suspend доступ пользователей, превысивших лимит трафика на сервере за текущий период, и
+        resume вернувшихся под лимит (в т.ч. после сброса периода / повышения лимита). Материал
+        сохраняется — пользователю не нужно перевставлять конфиг (см. provisioners.*.suspend_client).
+        """
+        # (cfg_id, client_id, (server_id, proto_label, material))
+        to_suspend: list[tuple[str, str, tuple[str, str, Any]]] = []
+        to_resume: list[tuple[str, str, tuple[str, str, Any]]] = []
+        async with self.uow.query() as tx:
+            server = await tx.servers.get(server_id)
+            if not server:
+                return
+            ps = period_start(time.time(), server.billing_day)
+            rows = (
+                await tx.session.execute(
+                    select(m.DeviceConfig, m.Device.user_id)
+                    .join(m.Device, m.Device.id == m.DeviceConfig.device_id)
+                    .where(
+                        m.DeviceConfig.server_id == server_id,
+                        m.DeviceConfig.client_id.isnot(None),
+                        m.DeviceConfig.vpn_type.in_(list(PROVISIONED_VENDORS)),
+                        m.DeviceConfig.status.in_(["active", "suspended"]),
+                    )
+                )
+            ).all()
+            by_user: dict[str, list[m.DeviceConfig]] = defaultdict(list)
+            for cfg, uid in rows:
+                if uid:
+                    by_user[uid].append(cfg)
+            for uid, cfgs in by_user.items():
+                limit = await effective_byte_limit(tx.session, uid)
+                over = False
+                if limit is not None:
+                    urx, utx = await period_usage(tx.session, server_id, uid, ps)
+                    over = (urx + utx) >= limit
+                for cfg in cfgs:
+                    ref = (server_id, cfg.proto or "", prov.material_from_config(cfg))
+                    if over and cfg.status == "active":
+                        to_suspend.append((cfg.id, cfg.client_id or "", ref))
+                    elif not over and cfg.status == "suspended":
+                        to_resume.append((cfg.id, cfg.client_id or "", ref))
+
+        await self._apply_reconcile(prov, to_suspend, suspend=True)
+        await self._apply_reconcile(prov, to_resume, suspend=False)
+
+    async def _apply_reconcile(
+        self, prov: ProvisioningService, items: list[tuple[str, str, tuple[str, str, Any]]], *, suspend: bool
+    ) -> None:
+        if not items:
+            return
+        refs = [ref for _cfg_id, _cid, ref in items]
+        done = await (prov.suspend_configs(refs) if suspend else prov.resume_configs(refs))
+        new_status = "suspended" if suspend else "active"
+        async with self.uow.transaction() as tx:
+            for cfg_id, client_id, _ref in items:
+                if client_id in done:
+                    obj = await tx.session.get(m.DeviceConfig, cfg_id)
+                    if obj is not None:
+                        obj.status = new_status
 
     async def _drain_pending(
         self, ssh: SshClient, server_id: str, pid: str, pending: set[str], obs: ProtocolObservation, provo: Any

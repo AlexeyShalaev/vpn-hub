@@ -172,6 +172,35 @@ class XrayProvisioner:
         await self._write_and_restart(ssh, doc)
         await base.remove_client_row(ssh, self.spec, client_id)
 
+    # ---- suspend / resume (лимит трафика, Этап 3b) ----
+    #
+    # suspend убирает uuid только из ЖИВОГО server.json (clientsTable НЕ трогаем — имя/запись клиента
+    # сохраняются); resume возвращает ТОТ ЖЕ uuid. uuid глобально уникален, поэтому новый выданный
+    # конфиг никогда не займёт освободившийся «слот» — конфликта нет, конфиг пользователя не меняется.
+
+    async def suspend_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cid = (material.client_id or "").strip()
+        if not cid:
+            return
+        doc = await self._read_server_json(ssh)
+        clients = doc["inbounds"][0]["settings"].get("clients", [])
+        kept = [x for x in clients if x.get("id") != cid]
+        if len(kept) == len(clients):
+            return  # уже нет — контейнер не трогаем
+        doc["inbounds"][0]["settings"]["clients"] = kept
+        await self._write_and_restart(ssh, doc)
+
+    async def resume_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cid = (material.client_id or "").strip()
+        if not cid:
+            return
+        doc = await self._read_server_json(ssh)
+        clients = doc["inbounds"][0]["settings"].setdefault("clients", [])
+        if any(x.get("id") == cid for x in clients):
+            return  # уже на месте — no-op
+        clients.append({"id": cid} if self.spec.xray_network == "xhttp" else {"id": cid, "flow": c.XRAY_DEFAULT_FLOW})
+        await self._write_and_restart(ssh, doc)
+
     async def set_reality(self, ssh: SshClient, *, short_id: str, sni: str) -> ServerMaterial:
         """Переписать realitySettings (shortIds/serverNames/dest) живого server.json + рестарт контейнера.
 

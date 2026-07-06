@@ -134,6 +134,36 @@ class OpenVpnProvisioner:
         )
         await base.remove_client_row(ssh, self.spec, cn)
 
+    # ---- suspend / resume (лимит трафика, Этап 3b) ----
+    #
+    # CRL-revoke необратим (нельзя вернуть тот же серт → юзеру пришлось бы перевставлять конфиг).
+    # Вместо этого — обратимый per-client `disable` через client-config-dir: suspend пишет ccd/<CN>
+    # с `disable`, resume удаляет файл. Серт цел, конфиг пользователя не меняется. `disable` вступает
+    # в силу на СЛЕДУЮЩЕМ коннекте клиента (активную долгую сессию не рвём, чтобы не трогать остальных).
+
+    _CCD_DIR = "/opt/amnezia/openvpn/ccd"
+
+    async def _ensure_ccd(self, ssh: SshClient) -> None:
+        """Идемпотентно включить client-config-dir в server.conf (рестарт только при первом включении)."""
+        cont = self.spec.container
+        conf = await ssh.read_container_text(cont, self.spec.server_config_path)
+        if "client-config-dir" not in conf:
+            new_conf = conf.rstrip("\n") + f"\nclient-config-dir {self._CCD_DIR}\n"
+            await ssh.upload_to_container(cont, new_conf, self.spec.server_config_path, append=False)
+            await ssh.run(f"sudo docker exec {cont} mkdir -p {self._CCD_DIR}")
+            await ssh.run(f"sudo docker restart {cont}")
+        else:
+            await ssh.run(f"sudo docker exec {cont} mkdir -p {self._CCD_DIR}")
+
+    async def suspend_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cn = self._check_cn(material.client_id)
+        await self._ensure_ccd(ssh)
+        await ssh.upload_to_container(self.spec.container, "disable\n", f"{self._CCD_DIR}/{cn}", append=False)
+
+    async def resume_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cn = self._check_cn(material.client_id)
+        await ssh.run(f"sudo docker exec {self.spec.container} rm -f {self._CCD_DIR}/{cn} 2>/dev/null || true")
+
     async def list_clients(self, ssh: SshClient) -> list[dict]:
         return await base.read_clients_table(ssh, self.spec)
 

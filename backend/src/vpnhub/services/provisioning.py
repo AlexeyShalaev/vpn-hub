@@ -430,3 +430,65 @@ class ProvisioningService:
     async def reconcile_users(self, user_ids: list[str]) -> None:
         for uid in {u for u in user_ids if u}:
             await self.reconcile_user(uid)
+
+    # ---- suspend / resume по лимиту трафика (Этап 3b) ---------------------------
+
+    def material_from_config(self, c: m.DeviceConfig) -> ClientMaterial:
+        """Восстановить клиентский материал из DeviceConfig (с расшифровкой секрета)."""
+        priv = decrypt_secret(self.settings.secret_key, c.client_secret_encrypted) if c.client_secret_encrypted else ""
+        return ClientMaterial(
+            client_id=c.client_id or "",
+            client_private_key=priv,
+            client_public_key=c.client_public_key or "",
+            client_ip=c.client_ip or "",
+        )
+
+    async def _apply_client_state(self, refs: list[tuple[str, str, ClientMaterial]], *, suspend: bool) -> set[str]:
+        """suspend/resume клиентов на серверах (best-effort, одна SSH-сессия на сервер).
+
+        refs = [(server_id, proto_label, material)]. Возвращает множество client_id, для которых
+        операция реально применилась (SSH прошёл) — вызывающий по нему обновляет статус в БД.
+        """
+        by_server: dict[str, list[tuple[str, ClientMaterial]]] = defaultdict(list)
+        for server_id, proto_label, mat in refs:
+            if mat.client_id:
+                by_server[server_id].append((proto_label, mat))
+        done: set[str] = set()
+        for server_id, items in by_server.items():
+            async with self.uow.query() as tx:
+                server = await tx.servers.get(server_id)
+                if not server:
+                    continue
+                creds = self.creds(server)
+                jobs = []  # (provisioner, material)
+                for proto_label, mat in items:
+                    spec = pc.spec_by_label(proto_label)
+                    if not spec:
+                        continue
+                    sp = await self._get_sp(tx, server_id, spec.id)
+                    if sp and sp.installed and sp.material_encrypted:
+                        jobs.append((self.loaded_provisioner(sp), mat))
+            if not jobs:
+                continue
+            try:
+                async with SshClient(creds) as ssh:
+                    for prov_obj, mat in jobs:
+                        try:
+                            if suspend:
+                                await prov_obj.suspend_client(ssh, mat)
+                            else:
+                                await prov_obj.resume_client(ssh, mat)
+                            done.add(mat.client_id)
+                        except Exception as e:  # один сбойный клиент не роняет остальных
+                            op = "suspend" if suspend else "resume"
+                            log.warning(f"{op} client failed", server=server_id, client=mat.client_id, error=str(e))
+            except SshError as e:
+                op = "suspend" if suspend else "resume"
+                log.warning(f"{op}: ssh unavailable", server=server_id, error=str(e))
+        return done
+
+    async def suspend_configs(self, refs: list[tuple[str, str, ClientMaterial]]) -> set[str]:
+        return await self._apply_client_state(refs, suspend=True)
+
+    async def resume_configs(self, refs: list[tuple[str, str, ClientMaterial]]) -> set[str]:
+        return await self._apply_client_state(refs, suspend=False)

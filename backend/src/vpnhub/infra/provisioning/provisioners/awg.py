@@ -89,6 +89,33 @@ class AwgProvisioner:
         await self._syncconf(ssh)
         await base.remove_client_row(ssh, self.spec, client_id)
 
+    # ---- suspend / resume (лимит трафика, Этап 3b) ----
+    #
+    # ПИР НЕ ТРОГАЕМ: удаление [Peer] освободило бы IP-слот (ipalloc берёт последний AllowedIPs+1 —
+    # порядок важен) и на resume мог бы возникнуть конфликт по IP. Вместо этого режем трафик клиента
+    # на хосте через iptables DROP его /32 в обе стороны (FORWARD). Материал и конфиг остаются целыми,
+    # resume снимает правило — клиент продолжает работать тем же конфигом.
+
+    @staticmethod
+    def _fw_rules(client_ip: str) -> list[str]:
+        return [f"FORWARD -s {client_ip}/32 -j DROP", f"FORWARD -d {client_ip}/32 -j DROP"]
+
+    async def suspend_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        ip = (material.client_ip or "").strip()
+        if not ip:
+            return
+        for rule in self._fw_rules(ip):
+            # идемпотентно: добавить, только если такого правила ещё нет
+            await ssh.run(f"sudo iptables -C {rule} 2>/dev/null || sudo iptables -I {rule}")
+
+    async def resume_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        ip = (material.client_ip or "").strip()
+        if not ip:
+            return
+        for rule in self._fw_rules(ip):
+            # снять правило, пока оно есть (на случай дублей — в цикле); отсутствие правила не ошибка
+            await ssh.run(f"while sudo iptables -C {rule} 2>/dev/null; do sudo iptables -D {rule}; done; true")
+
     async def set_params(self, ssh: SshClient, new_params: AwgParams) -> None:
         """Переписать obfuscation-строки в живом [Interface] awg0.conf и применить (syncconf).
 
