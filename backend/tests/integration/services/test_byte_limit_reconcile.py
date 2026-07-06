@@ -16,6 +16,7 @@ from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.base import ClientMaterial
 from vpnhub.services.limits import period_start
 from vpnhub.services.sync import SyncService
+from vpnhub.services.sync_logic import ProtocolObservation
 
 pytestmark = pytest.mark.integration
 
@@ -89,6 +90,37 @@ async def test__reconcile__resumes_when_under_limit_after_reset(session_maker, u
     async with uow.query() as tx:
         cfg = await tx.session.get(m.DeviceConfig, cfg_id)
         assert cfg.status == "active"
+
+
+async def test__sync_apply__does_not_clobber_suspended(session_maker, uow, settings) -> None:
+    """Полный проход _apply НЕ трогает suspended-конфиг, даже если клиента нет в живом листинге сервера
+    (для xray/hysteria suspend убирает клиента → иначе presence-реконсиляция пометила бы revoked и
+    resume уже не случился бы). Активный конфиг с отсутствующим клиентом при этом штатно → revoked.
+    """
+    xray_label = pc.spec_by_id("xray").label
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79006660001")
+        srv = await make_server(s, owner_id=owner.id, name="srv-clob")
+        dev = await make_device(s, user_id=owner.id)
+        susp = await make_device_config(
+            s, device_id=dev.id, server_id=srv.id, vpn_type="amnezia", proto=xray_label,
+            status="suspended", client_id="UUID-A",
+        )  # fmt: skip
+        act = await make_device_config(
+            s, device_id=dev.id, server_id=srv.id, vpn_type="amnezia", proto=xray_label,
+            status="active", client_id="UUID-B",
+        )  # fmt: skip
+        srv_id, susp_id, act_id = srv.id, susp.id, act.id
+    # xray наблюдается, но НИ ОДНОГО клиента в живом наборе (suspend убрал UUID-A; UUID-B тоже «пропал»)
+    obs = {
+        "xray": ProtocolObservation(
+            proto_id="xray", present=True, running=True, readable_clients=True, client_ids=set()
+        )
+    }
+    await SyncService(uow, settings)._apply(srv_id, set(), obs, {}, {}, {})
+    async with uow.query() as tx:
+        assert (await tx.session.get(m.DeviceConfig, susp_id)).status == "suspended"  # защищён от clobber
+        assert (await tx.session.get(m.DeviceConfig, act_id)).status == "revoked"  # обычная реконсиляция цела
 
 
 async def test__reconcile__no_limit__does_nothing(session_maker, uow, settings) -> None:

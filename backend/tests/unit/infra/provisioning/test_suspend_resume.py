@@ -65,6 +65,8 @@ async def test__awg_suspend_resume__firewall_by_client_ip() -> None:
     ssh = RecSsh()
     await prov.suspend_client(ssh, mat)
     joined = "\n".join(ssh.cmds)
+    # правила ставятся ВНУТРИ netns контейнера (иначе на хосте не видно awg0/10.8.x.x → не режет)
+    assert "docker exec" in joined and "iptables" in joined
     assert "-I FORWARD -s 10.8.1.5/32 -j DROP" in joined
     assert "-I FORWARD -d 10.8.1.5/32 -j DROP" in joined
     assert "-C FORWARD -s 10.8.1.5/32 -j DROP" in joined  # идемпотентная проверка перед вставкой

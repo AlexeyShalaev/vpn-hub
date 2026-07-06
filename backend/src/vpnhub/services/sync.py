@@ -365,6 +365,12 @@ class SyncService:
                 spec = pc.spec_by_label(c.proto or "")
                 if not spec:
                     continue
+                # НЕ трогаем намеренно приостановленные по лимиту трафика (Этап 3b): для xray/hysteria
+                # suspend убирает клиента из живого листинга сервера, и presence-реконсиляция иначе
+                # пометила бы конфиг revoked (слот освобождён, resume уже не случится). Статусом
+                # suspended управляет только _reconcile_byte_limits.
+                if c.status == "suspended":
+                    continue
                 new = desired_config_status(ConfigRow(c.id, spec.id, c.client_id or ""), observations)
                 if new and c.status != new:
                     c.status = new

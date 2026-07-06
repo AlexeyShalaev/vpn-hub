@@ -466,7 +466,10 @@ class ConfigService:
                 and c.vpn_type == spec.vendor
                 and c.proto == spec.label
                 and c.client_id
-                and c.status == "active"  # отозванный (revoked) переиздаём заново
+                # отозванный (revoked) переиздаём заново; приостановленный по лимиту (suspended)
+                # ПЕРЕИСПОЛЬЗУЕМ — иначе перевыдача создала бы дубль, а старого серверного клиента
+                # (пир+DROP awg / data-limit outline / disable openvpn) осиротила бы (Этап 3b).
+                and c.status in ("active", "suspended")
             ):
                 return c
         return None
