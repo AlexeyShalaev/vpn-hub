@@ -45,6 +45,11 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M11 18h2" />
     </>
   ),
+  monitoring: (
+    <>
+      <path d="M3 12h4l2 6 4-14 2 8h6" />
+    </>
+  ),
   // ---- иконки платформ устройств (имя = platform-ключ, см. Device.platform) ----
   ios: (
     <>

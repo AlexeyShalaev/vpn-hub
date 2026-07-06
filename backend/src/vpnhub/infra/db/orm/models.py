@@ -247,6 +247,9 @@ class TrafficSample(BaseTable):
     rx_delta: Mapped[int] = mapped_column(BigInteger, default=0)  # прирост от прошлого сэмпла
     tx_delta: Mapped[int] = mapped_column(BigInteger, default=0)
     last_handshake: Mapped[float | None] = mapped_column(nullable=True)  # epoch; None — рукопожатий не было
+    # активна ли сессия сейчас (из stats движка: xray statsUserOnline / hysteria /online). None —
+    # неизвестно из движка (wg — онлайн вычисляется по свежести last_handshake на чтении).
+    online: Mapped[bool | None] = mapped_column(nullable=True)
 
     __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
 

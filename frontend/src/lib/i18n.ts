@@ -31,6 +31,7 @@ const ru = {
   "nav.system": "Система",
   "nav.profile": "Профиль",
   "nav.admin": "Администрирование",
+  "nav.monitoring": "Мониторинг",
 
   // общие кнопки / действия
   "common.save": "Сохранить",
@@ -191,6 +192,7 @@ const en = {
   "nav.system": "System",
   "nav.profile": "Profile",
   "nav.admin": "Administration",
+  "nav.monitoring": "Monitoring",
 
   "common.save": "Save",
   "common.cancel": "Cancel",

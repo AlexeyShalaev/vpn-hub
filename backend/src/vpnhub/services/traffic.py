@@ -1,13 +1,18 @@
-"""Дашборд трафика и подключений (owner): сбор статистики по SSH + агрегация для UI.
+"""Супер-мониторинг клиентов (owner): per-client трафик+онлайн по ВСЕМ протоколам.
 
 Сбор врезан в sync-тик (SSH-сессия уже открыта, материал загружен) и строго best-effort:
 любой сбой глотается на стороне SyncService и НЕ влияет на решения sync (никаких ложных revoke).
-MVP собирает только wireguard-протоколы (awg/awg_legacy) через `{bin} show {iface} dump`.
-Прочие kind (xray/hysteria2/outline) возвращают пусто — точки расширения помечены TODO.
+Диспетч по `spec.kind` (см. `TrafficCollector.collect`):
+- wireguard (awg/awg_legacy): `{bin} show {iface} dump` (rx/tx кумулятивно, online — свежесть handshake);
+- xray (kind=="xray"): `xray api statsquery -reset=false` → per-uuid uplink/downlink/online;
+- hysteria2: trafficStats API `/traffic`+`/online` → per-authid rx/tx/online;
+- openvpn/outline: пока пусто (см. tasks/17-client-monitoring.md).
+Идентификатор движка = наш `device_configs.client_id` (pubkey / uuid / authid).
 
 Хранение — таблица дельта-сэмплов `traffic_samples` (одна строка на клиента-протокол на тик).
-Дельта считается от прошлого сэмпла; при рестарте счётчиков wg (curr<prev) дельта = curr.
-Онлайн-статус — из свежести `last_handshake` (`traffic_online_window_seconds`).
+Дельта считается от прошлого сэмпла; при рестарте счётчиков (curr<prev) дельта = curr.
+Онлайн-статус: для wg — свежесть `last_handshake` (`traffic_online_window_seconds`); для
+xray/hysteria2 — поле `online` из stats движка (у них handshake нет).
 """
 
 from __future__ import annotations
@@ -24,6 +29,9 @@ from vpnhub.api.config import Settings
 from vpnhub.core.errors import NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
+from vpnhub.infra.provisioning.provisioners.hysteria2 import _STATS_LISTEN, HysteriaProvisioner
+from vpnhub.infra.provisioning.provisioners.xray import XRAY_STATS_PORT
+from vpnhub.infra.trafficstats import parse_hysteria_traffic, parse_xray_stats
 from vpnhub.infra.uow import Uow
 
 log = structlog.get_logger(__name__)
@@ -33,14 +41,96 @@ _PERIODS: dict[str, int] = {"1h": 3600, "24h": 86400, "7d": 7 * 86400}
 _DEFAULT_PERIOD = "24h"
 
 
+def _group_by_server(samples: list[m.TrafficSample]) -> dict[str, list[m.TrafficSample]]:
+    """Разложить сэмплы по server_id, сохраняя порядок (для аккуратной агрегации per-server)."""
+    out: dict[str, list[m.TrafficSample]] = {}
+    for s in samples:
+        out.setdefault(s.server_id, []).append(s)
+    return out
+
+
+def _aggregate_clients(
+    samples: list[m.TrafficSample], names: dict[str, tuple[str, str]], now: float, online_window: int
+) -> list[dict]:
+    """Свернуть сэмплы в per-(proto,client) агрегаты: суммарный трафик, онлайн, скорость.
+
+    Чистая (без IO) — общая для per-server `overview` и глобального `global_overview`.
+    - rxTotal/txTotal — сумма дельт за окно (потрачено за период);
+    - rxBytes/txBytes — последний кумулятив;
+    - online — `online`-флаг из последнего сэмпла (xray/hysteria) ИЛИ свежесть handshake (wg);
+    - rxSpeed/txSpeed — байт/сек из последней дельты (delta / интервал между двумя последними сэмплами);
+    - lastSeen — max(at по свежему трафику/handshake) для сортировки «последний онлайн».
+    `samples` предполагаются в порядке возрастания `at`.
+    """
+    clients: dict[tuple[str, str | None], dict] = {}
+    prev_at: dict[tuple[str, str | None], float] = {}
+    for s in samples:
+        key = (s.proto, s.client_id)
+        agg = clients.get(key)
+        if agg is None:
+            dev, usr = names.get(s.device_config_id or "", ("", ""))
+            agg = {
+                "proto": s.proto,
+                "clientId": s.client_id,
+                "deviceName": dev,
+                "userName": usr,
+                "external": s.device_config_id is None,
+                "rxTotal": 0,
+                "txTotal": 0,
+                "rxBytes": s.rx_bytes,
+                "txBytes": s.tx_bytes,
+                "lastHandshake": s.last_handshake,
+                "onlineFlag": s.online,
+                "rxSpeed": 0.0,
+                "txSpeed": 0.0,
+                "lastSeen": None,
+                "online": False,
+            }
+            clients[key] = agg
+        agg["rxTotal"] += s.rx_delta
+        agg["txTotal"] += s.tx_delta
+        agg["rxBytes"] = s.rx_bytes
+        agg["txBytes"] = s.tx_bytes
+        agg["onlineFlag"] = s.online
+        lh = agg["lastHandshake"]
+        if s.last_handshake is not None and (lh is None or s.last_handshake > lh):
+            agg["lastHandshake"] = s.last_handshake
+        # скорость — по интервалу между двумя последними сэмплами этого клиента
+        pa = prev_at.get(key)
+        interval = (s.at - pa) if pa is not None else 0.0
+        if interval > 0:
+            agg["rxSpeed"] = s.rx_delta / interval
+            agg["txSpeed"] = s.tx_delta / interval
+        prev_at[key] = s.at
+        # lastSeen — свежесть контакта: handshake (wg) или at при активной сессии/трафике
+        seen_at = s.last_handshake
+        if s.online or s.rx_delta or s.tx_delta:
+            seen_at = s.at if seen_at is None else max(seen_at, s.at)
+        if seen_at is not None and (agg["lastSeen"] is None or seen_at > agg["lastSeen"]):
+            agg["lastSeen"] = seen_at
+
+    for agg in clients.values():
+        flag = agg.pop("onlineFlag")
+        if flag is not None:  # stats-протоколы (xray/hysteria2) — доверяем движку
+            agg["online"] = bool(flag)
+        else:  # wg — по свежести handshake
+            lh = agg["lastHandshake"]
+            agg["online"] = lh is not None and (now - lh) < online_window
+        if not agg["online"]:  # скорость показываем только у активных
+            agg["rxSpeed"] = 0.0
+            agg["txSpeed"] = 0.0
+    return list(clients.values())
+
+
 @dataclass(frozen=True)
 class PeerStat:
-    """Сырой замер по одному пиру (из `wg show dump`)."""
+    """Сырой замер по одному клиенту (wg-dump / xray statsquery / hysteria trafficStats)."""
 
-    client_id: str  # pubkey (wg/awg)
-    rx: int  # кумулятивно принято, байт
-    tx: int  # кумулятивно отдано, байт
-    last_handshake: float | None  # epoch; None — рукопожатий ещё не было (dump отдаёт 0)
+    client_id: str  # pubkey (wg/awg) | uuid (xray) | authid (hysteria2)
+    rx: int  # кумулятивно принято (клиент→сервер, upload), байт
+    tx: int  # кумулятивно отдано (сервер→клиент, download), байт
+    last_handshake: float | None  # epoch; None — рукопожатий не было / протокол без handshake (xray/hysteria)
+    online: bool | None = None  # активна ли сессия сейчас (из stats движка); None — определять по handshake
 
 
 def parse_wg_dump(text: str) -> list[PeerStat]:
@@ -73,21 +163,67 @@ def parse_wg_dump(text: str) -> list[PeerStat]:
 
 
 class TrafficCollector:
-    """Читает статистику пиров по уже открытому SSH-каналу (для одного протокола)."""
+    """Читает per-client статистику по уже открытому SSH-каналу (диспетч по kind протокола)."""
 
     @staticmethod
     async def collect(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
-        """Собрать PeerStat для протокола `spec`. Только wireguard; иначе — пусто.
+        """Собрать PeerStat для протокола `spec` (best-effort; сбой/выкл. stats → пусто, не ошибка).
 
-        wireguard: `{spec.bin} show {spec.interface} dump` внутри контейнера.
-        TODO(xray): xray api statsquery (--server=...) → per-uuid uplink/downlink.
-        TODO(hysteria2): Hysteria2 traffic stats API (trafficStats.listen).
-        TODO(outline): GET <apiUrl>/metrics/transfer → bytesTransferredByUserId.
+        - wireguard (awg/awg_legacy): `{spec.bin} show {spec.interface} dump` (rx/tx кумулятивно,
+          online — по свежести handshake в overview);
+        - xray (VLESS+Reality/XHTTP): `xray api statsquery -reset=false` → per-uuid uplink/downlink/online
+          (кумулятив, счётчики НЕ сбрасываются — дельты считает record());
+        - hysteria2: trafficStats API `/traffic`+`/online` (кумулятив, без ?clear=1);
+        - openvpn/outline: пока пусто (см. tasks/17-client-monitoring.md).
         """
-        if spec.kind != "wireguard":
+        if spec.kind == "wireguard":
+            res = await ssh.container_exec(spec.container, f"{spec.bin} show {spec.interface} dump")
+            return parse_wg_dump(res.stdout)
+        if spec.kind == "xray":
+            return await TrafficCollector._collect_xray(ssh, spec)
+        if spec.kind == "hysteria2":
+            return await TrafficCollector._collect_hysteria(ssh, spec)
+        return []
+
+    @staticmethod
+    async def _collect_xray(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
+        """Per-uuid трафик+онлайн через Xray Stats API. `-reset=false` → счётчики кумулятивны.
+
+        stats не включён / бинарь недоступен → statsquery падает/пусто → пусто (не ошибка).
+        """
+        cmd = (
+            f"sudo docker exec {spec.container} xray api statsquery "
+            f"--server=127.0.0.1:{XRAY_STATS_PORT} -reset=false -pattern 'user>>>' 2>/dev/null"
+        )
+        res = await ssh.run(cmd)
+        if res.exit_status != 0:
             return []
-        res = await ssh.container_exec(spec.container, f"{spec.bin} show {spec.interface} dump")
-        return parse_wg_dump(res.stdout)
+        return [
+            PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
+            for c in parse_xray_stats(res.output)
+        ]
+
+    @staticmethod
+    async def _collect_hysteria(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
+        """Per-authid трафик (/traffic) + онлайн (/online) через Hysteria2 trafficStats API.
+
+        Секрет читаем из config.yaml (`_read_stats_secret`); без него (stats не включён) → пусто.
+        `/traffic` БЕЗ ?clear=1 → счётчики кумулятивны (дельты считает record()).
+        """
+        prov = HysteriaProvisioner(spec)
+        secret = await prov._read_stats_secret(ssh)
+        if not secret:
+            return []
+        base = f'sudo docker exec {spec.container} curl -s -H "Authorization: {secret}" http://{_STATS_LISTEN}'
+        traffic = await ssh.run(f"{base}/traffic 2>/dev/null")
+        online = await ssh.run(f"{base}/online 2>/dev/null")
+        if traffic.exit_status != 0:
+            return []
+        online_text = online.output if online.exit_status == 0 else None
+        return [
+            PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
+            for c in parse_hysteria_traffic(traffic.output, online_text)
+        ]
 
 
 class TrafficService:
@@ -125,6 +261,7 @@ class TrafficService:
                         rx_delta=rx_delta,
                         tx_delta=tx_delta,
                         last_handshake=st.last_handshake,
+                        online=st.online,
                     )
                 )
             await tx.session.flush()
@@ -195,47 +332,80 @@ class TrafficService:
             )
             names = await self._names(tx, samples)
 
-        # агрегация per (proto, client)
-        clients: dict[tuple[str, str | None], dict] = {}
-        series: list[dict] = []
-        for s in samples:
-            key = (s.proto, s.client_id)
-            agg = clients.get(key)
-            if agg is None:
-                dev, usr = names.get(s.device_config_id or "", ("", ""))
-                agg = {
-                    "proto": s.proto,
-                    "clientId": s.client_id,
-                    "deviceName": dev,
-                    "userName": usr,
-                    "external": s.device_config_id is None,
-                    "rxTotal": 0,
-                    "txTotal": 0,
-                    "rxBytes": s.rx_bytes,
-                    "txBytes": s.tx_bytes,
-                    "lastHandshake": s.last_handshake,
-                    "online": False,
-                }
-                clients[key] = agg
-            agg["rxTotal"] += s.rx_delta
-            agg["txTotal"] += s.tx_delta
-            agg["rxBytes"] = s.rx_bytes
-            agg["txBytes"] = s.tx_bytes
-            lh = agg["lastHandshake"]
-            if s.last_handshake is not None and (lh is None or s.last_handshake > lh):
-                agg["lastHandshake"] = s.last_handshake
-            series.append({"at": s.at, "proto": s.proto, "clientId": s.client_id, "rx": s.rx_delta, "tx": s.tx_delta})
-
-        for agg in clients.values():
-            lh = agg["lastHandshake"]
-            agg["online"] = lh is not None and (now - lh) < online_window
-
+        clients = _aggregate_clients(samples, names, now, online_window)
+        series = [
+            {"at": s.at, "proto": s.proto, "clientId": s.client_id, "rx": s.rx_delta, "tx": s.tx_delta} for s in samples
+        ]
         return {
             "serverId": sid,
             "period": period if period in _PERIODS else _DEFAULT_PERIOD,
             "onlineWindowSeconds": online_window,
-            "clients": sorted(clients.values(), key=lambda c: c["rxTotal"] + c["txTotal"], reverse=True),
+            "clients": sorted(clients, key=lambda c: c["rxTotal"] + c["txTotal"], reverse=True),
             "series": series,
+        }
+
+    async def global_overview(self, owner_id: str, period: str = _DEFAULT_PERIOD) -> dict:
+        """Глобальный супер-мониторинг: агрегаты по клиентам ВСЕХ серверов владельца.
+
+        Одна выборка сэмплов по всем серверам владельца за период → per-(server,proto,client) агрегаты
+        (имя пользователя/устройства, протокол, сервер, онлайн, скачал/отдал, текущая скорость,
+        последний онлайн) + сводка (онлайн-клиентов, суммарный трафик, число серверов).
+        """
+        window = _PERIODS.get(period, _PERIODS[_DEFAULT_PERIOD])
+        now = time.time()
+        since = now - window
+        online_window = self.settings.traffic_online_window_seconds
+        async with self.uow.query() as tx:
+            server_rows = list(
+                (
+                    await tx.session.execute(
+                        select(m.Server.id, m.Server.name).where(m.Server.owner_user_id == owner_id)
+                    )
+                ).all()
+            )
+            server_names: dict[str, str] = {row[0]: row[1] for row in server_rows}
+            samples: list[m.TrafficSample] = []
+            if server_names:
+                samples = list(
+                    (
+                        await tx.session.execute(
+                            select(m.TrafficSample)
+                            .where(
+                                m.TrafficSample.server_id.in_(list(server_names)),
+                                m.TrafficSample.at >= since,
+                            )
+                            .order_by(m.TrafficSample.at.asc())
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            names = await self._names(tx, samples)
+
+        # агрегируем отдельно по каждому серверу (client_id уникален в рамках сервера-протокола),
+        # затем сшиваем в единый список с колонкой «сервер».
+        clients: list[dict] = []
+        for sid, sid_samples in _group_by_server(samples).items():
+            for agg in _aggregate_clients(sid_samples, names, now, online_window):
+                agg["serverId"] = sid
+                agg["serverName"] = server_names.get(sid, "")
+                clients.append(agg)
+        clients.sort(key=lambda c: c["rxTotal"] + c["txTotal"], reverse=True)
+
+        online_now = sum(1 for c in clients if c["online"])
+        rx_total = sum(c["rxTotal"] for c in clients)
+        tx_total = sum(c["txTotal"] for c in clients)
+        return {
+            "period": period if period in _PERIODS else _DEFAULT_PERIOD,
+            "onlineWindowSeconds": online_window,
+            "summary": {
+                "clientsTotal": len(clients),
+                "clientsOnline": online_now,
+                "serversTotal": len(server_names),
+                "rxTotal": rx_total,
+                "txTotal": tx_total,
+            },
+            "clients": clients,
         }
 
     async def _names(self, tx: Any, samples: list[m.TrafficSample]) -> dict[str, tuple[str, str]]:

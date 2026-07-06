@@ -296,6 +296,46 @@ export interface ServerMetrics {
   samples: ServerMetricSample[]; // история (мини-графики), в хронологическом порядке
 }
 
+// супер-мониторинг клиентов: per-client трафик+онлайн по всем протоколам/серверам
+export interface MonitoringClient {
+  proto: string; // id протокола (awg | xray | hysteria2 | ...)
+  clientId: string | null; // pubkey/uuid/authid движка
+  userName: string; // имя пользователя (пусто для external)
+  deviceName: string; // имя устройства (пусто для external)
+  external: boolean; // клиент без нашего DeviceConfig (заведён вне панели)
+  online: boolean; // активна ли сессия прямо сейчас
+  rxTotal: number; // upload (клиент→сервер) за период, байт
+  txTotal: number; // download (сервер→клиент) за период, байт
+  rxBytes: number; // последний кумулятив upload
+  txBytes: number; // последний кумулятив download
+  rxSpeed: number; // текущая скорость upload, байт/сек (0 у офлайн)
+  txSpeed: number; // текущая скорость download, байт/сек
+  lastSeen: number | null; // epoch последнего онлайна/трафика (null — не видели)
+  serverId?: string; // заполнено в глобальном мониторинге
+  serverName?: string;
+}
+export interface MonitoringSummary {
+  clientsTotal: number;
+  clientsOnline: number;
+  serversTotal: number;
+  rxTotal: number; // суммарный upload за период
+  txTotal: number; // суммарный download за период
+}
+export interface Monitoring {
+  period: "1h" | "24h" | "7d";
+  onlineWindowSeconds: number;
+  summary: MonitoringSummary;
+  clients: MonitoringClient[];
+}
+// per-server overview (тот же endpoint, что и раньше, но с online/speed на клиентах)
+export interface ServerTraffic {
+  serverId: string;
+  period: "1h" | "24h" | "7d";
+  onlineWindowSeconds: number;
+  clients: MonitoringClient[];
+  series: { at: number; proto: string; clientId: string | null; rx: number; tx: number }[];
+}
+
 // admin-дашборд здоровья инстанса (не путать с owner-трафиком)
 export interface MetricPoint {
   at: number; // epoch seconds

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
-import type { Protocol, Server, ServerMetricSample, Vpn, VpnType } from "../lib/types";
+import type { MonitoringClient, Protocol, Server, ServerMetricSample, Vpn, VpnType } from "../lib/types";
 import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } from "../lib/types";
 import { vpnLogo } from "../lib/vpnLogos";
 import { useNav } from "../nav";
@@ -196,6 +196,117 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+const PROTO_TRAFFIC_LABEL: Record<string, string> = {
+  awg: "AmneziaWG",
+  awg_legacy: "AWG Legacy",
+  xray: "Xray",
+  xray_xhttp: "Xray XHTTP",
+  hysteria2: "Hysteria2",
+  openvpn: "OpenVPN",
+  outline: "Outline",
+};
+const clientLabel = (c: MonitoringClient): string =>
+  c.userName || c.deviceName
+    ? [c.userName, c.deviceName].filter(Boolean).join(" · ")
+    : c.external
+      ? "Внешний клиент"
+      : (c.clientId ?? "—");
+const fmtSpeed = (bps: number): string => (bps > 0 ? `${fmtBytes(bps)}/с` : "—");
+
+// Карточка «Клиенты сервера»: per-client трафик+онлайн этого сервера (переиспользует global
+// overview через per-server endpoint /servers/{id}/traffic). Онлайн — точка, трафик — за 24ч.
+function ServerClientsCard({ serverId, online }: { serverId: string; online: boolean }) {
+  const tq = useQuery({
+    queryKey: ["serverTraffic", serverId],
+    queryFn: () => q.serverTraffic(serverId, "24h"),
+    enabled: !!serverId,
+    refetchInterval: 60000,
+  });
+  const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
+  const clients: MonitoringClient[] = [...(tq.data?.clients ?? [])].sort(
+    (a, b) => Number(b.online) - Number(a.online) || b.rxTotal + b.txTotal - (a.rxTotal + a.txTotal),
+  );
+  const th: React.CSSProperties = {
+    textAlign: "left",
+    padding: "7px 9px",
+    fontSize: 11.5,
+    color: "var(--text-3)",
+    whiteSpace: "nowrap",
+    borderBottom: "1px solid var(--border)",
+  };
+  const td: React.CSSProperties = { padding: "8px 9px", fontSize: 13, borderBottom: "1px solid var(--border)" };
+  const num: React.CSSProperties = {
+    ...td,
+    textAlign: "right",
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div className="card stack">
+      <div className="muted-3" style={label}>
+        Клиенты сервера · трафик за 24ч
+      </div>
+      {tq.isLoading ? (
+        <Spinner />
+      ) : clients.length === 0 ? (
+        <p className="muted" style={{ fontSize: 13 }}>
+          {online
+            ? "Данных о клиентах ещё нет — статистика собирается в фоне. Для Xray/Hysteria2 включите точную статистику выше."
+            : "Сервер офлайн — статистика клиентов не собирается."}
+        </p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={th}>Клиент</th>
+                <th style={th}>Протокол</th>
+                <th style={{ ...th, textAlign: "center" }}>Онлайн</th>
+                <th style={{ ...th, textAlign: "right" }}>Скачал</th>
+                <th style={{ ...th, textAlign: "right" }}>Отдал</th>
+                <th style={{ ...th, textAlign: "right" }}>Скорость ↓/↑</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map((c) => (
+                <tr key={`${c.proto}:${c.clientId}`}>
+                  <td style={td}>
+                    <div style={{ fontWeight: 600 }}>{clientLabel(c)}</div>
+                    {c.external && (
+                      <div className="muted-3" style={{ fontSize: 11 }}>
+                        вне панели
+                      </div>
+                    )}
+                  </td>
+                  <td style={td}>
+                    <span className="badge">{PROTO_TRAFFIC_LABEL[c.proto] ?? c.proto}</span>
+                  </td>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    <span
+                      title={c.online ? "онлайн" : "офлайн"}
+                      style={{
+                        display: "inline-block",
+                        width: 9,
+                        height: 9,
+                        borderRadius: "50%",
+                        background: c.online ? "#22c55e" : "var(--border-strong, #9ca3af)",
+                      }}
+                    />
+                  </td>
+                  <td style={num}>{fmtBytes(c.txTotal)}</td>
+                  <td style={num}>{fmtBytes(c.rxTotal)}</td>
+                  <td style={num}>{c.online ? `${fmtSpeed(c.txSpeed)} / ${fmtSpeed(c.rxSpeed)}` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -906,6 +1017,8 @@ export function ServerDetailScreen() {
       </div>
 
       <ServerMetricsCard serverId={serverId} online={online} />
+
+      <ServerClientsCard serverId={serverId} online={online} />
 
       <ChainSection server={server} />
 

@@ -1,8 +1,13 @@
-"""Юнит-тесты чистого парсера `wg show dump` (без SSH)."""
+"""Юнит-тесты чистого парсера `wg show dump` + диспетча TrafficCollector (fake SSH)."""
 
 from __future__ import annotations
 
-from vpnhub.services.traffic import parse_wg_dump
+from dataclasses import dataclass
+
+import pytest
+
+from vpnhub.infra.provisioning import constants as pc
+from vpnhub.services.traffic import TrafficCollector, parse_wg_dump
 
 # Реальный формат `wg show <iface> dump`: TSV, первая строка — интерфейс.
 # Пир: pubkey  psk  endpoint  allowed-ips  latest-handshake(epoch)  rx  tx  keepalive
@@ -33,3 +38,67 @@ def test__parse_wg_dump__empty_and_interface_only__return_empty() -> None:
 def test__parse_wg_dump__malformed_lines_are_skipped() -> None:
     text = "IFACE\tX\nPEERA\ttoo\tshort\nPEERB\tp\te\ta\tNOTINT\t1\t2\t0\n"
     assert parse_wg_dump(text) == []  # обе строки битые → пусто
+
+
+# --------------------------------------------------------------------------- collector dispatch
+
+
+@dataclass
+class _Res:
+    stdout: str = ""
+    stderr: str = ""
+    exit_status: int = 0
+
+    @property
+    def output(self) -> str:
+        return (self.stdout or "") + (self.stderr or "")
+
+
+class _FakeSsh:
+    """Отдаёт заготовленный вывод по подстроке команды (эмулирует stats-API каждого протокола)."""
+
+    async def run(self, cmd: str) -> _Res:
+        if "statsquery" in cmd:  # xray Stats API
+            return _Res(
+                stdout='{"stat":[{"name":"user>>>UU>>>traffic>>>uplink","value":"10"},'
+                '{"name":"user>>>UU>>>traffic>>>downlink","value":"20"},'
+                '{"name":"user>>>UU>>>online","value":"1"}]}'
+            )
+        if "trafficStats" in cmd:  # hysteria _read_stats_secret (awk по config.yaml)
+            return _Res(stdout="0123456789abcdef0123456789abcdef")
+        if "/traffic" in cmd:  # hysteria trafficStats GET /traffic
+            return _Res(stdout='{"AUTH":{"tx":50,"rx":5}}')
+        if "/online" in cmd:  # hysteria trafficStats GET /online
+            return _Res(stdout='{"AUTH":1}')
+        if "show" in cmd and "dump" in cmd:  # wg dump (через container_exec → run)
+            return _Res(stdout="IFACE\tX\nPEERA\tPSK\tep\tips\t1720180000\t111\t222\t0\n")
+        return _Res(stdout="")
+
+    async def container_exec(self, container: str, command: str, *, detach: bool = False) -> _Res:
+        return await self.run(f"docker exec {container} {command}")
+
+
+async def test__collect__wireguard_dispatch() -> None:
+    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("awg"))
+    assert len(stats) == 1
+    assert (stats[0].client_id, stats[0].rx, stats[0].tx) == ("PEERA", 111, 222)
+
+
+async def test__collect__xray_dispatch__per_uuid_with_online() -> None:
+    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("xray"))
+    assert len(stats) == 1
+    s = stats[0]
+    assert (s.client_id, s.rx, s.tx, s.online) == ("UU", 10, 20, True)
+    assert s.last_handshake is None  # у xray handshake нет
+
+
+async def test__collect__hysteria_dispatch__per_authid_with_online() -> None:
+    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("hysteria2"))
+    assert len(stats) == 1
+    s = stats[0]
+    assert (s.client_id, s.rx, s.tx, s.online) == ("AUTH", 5, 50, True)
+
+
+@pytest.mark.parametrize("proto", ["openvpn", "outline"])
+async def test__collect__unsupported_kinds__return_empty(proto: str) -> None:
+    assert await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id(proto)) == []

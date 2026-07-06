@@ -111,6 +111,16 @@ async def server_traffic(
     return await svc.overview(ident.id, sid, period)
 
 
+@router.get("/monitoring")
+async def monitoring(
+    period: str = "24h",
+    ident: Identity = Depends(require_user),
+    svc: TrafficService = Depends(service(TrafficService)),
+) -> dict:
+    # супер-мониторинг: per-client трафик+онлайн по ВСЕМ серверам владельца (агрегаты + сводка)
+    return await svc.global_overview(ident.id, period)
+
+
 @router.get("/servers/{sid}/metrics")
 async def server_metrics(
     sid: str,

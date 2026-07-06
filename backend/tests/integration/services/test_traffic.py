@@ -161,6 +161,102 @@ async def test__overview__unknown_period_falls_back_to_default(svc, session_make
 # --------------------------------------------------------------------------- purge
 
 
+# --------------------------------------------------------------------------- online-флаг (xray/hysteria)
+
+
+async def test__overview__online_from_stats_flag_overrides_handshake(svc, session_maker):
+    """Для xray/hysteria2 (last_handshake=None) онлайн берётся из stats-флага `online`, не из handshake."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110070")
+        srv = await make_server(s, owner_id=owner.id)
+
+    await svc.record(srv.id, "xray", [PeerStat(client_id="UUON", rx=1, tx=1, last_handshake=None, online=True)])
+    await svc.record(srv.id, "xray", [PeerStat(client_id="UUOFF", rx=1, tx=1, last_handshake=None, online=False)])
+
+    ov = await svc.overview(owner.id, srv.id)
+    by_client = {c["clientId"]: c for c in ov["clients"]}
+    assert by_client["UUON"]["online"] is True  # флаг движка, хотя handshake нет
+    assert by_client["UUOFF"]["online"] is False
+
+
+async def test__overview__reports_speed_for_active_client(svc, session_maker):
+    """Скорость (rxSpeed/txSpeed) считается из последней дельты по интервалу между сэмплами."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110071")
+        srv = await make_server(s, owner_id=owner.id)
+
+    now = time.time()
+    # два сэмпла с явными at: первый (prev) и второй через 10с с приростом 1000 байт rx
+    async with svc.uow.transaction() as tx:
+        tx.session.add(
+            m.TrafficSample(
+                server_id=srv.id, proto="xray", client_id="U", at=now - 10, rx_bytes=0, tx_bytes=0, online=True
+            )
+        )
+        tx.session.add(
+            m.TrafficSample(
+                server_id=srv.id,
+                proto="xray",
+                client_id="U",
+                at=now,
+                rx_bytes=1000,
+                tx_bytes=0,
+                rx_delta=1000,
+                tx_delta=0,
+                online=True,
+            )
+        )
+        await tx.session.flush()
+
+    ov = await svc.overview(owner.id, srv.id, period="1h")
+    row = ov["clients"][0]
+    assert row["rxSpeed"] == pytest.approx(100.0, rel=0.01)  # 1000 байт / 10 сек
+
+
+# --------------------------------------------------------------------------- global_overview
+
+
+async def test__global_overview__aggregates_across_servers_with_summary(svc, session_maker):
+    """Глобальный мониторинг сшивает клиентов всех серверов владельца + считает сводку."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110080", name="Владелец")
+        member = await make_user(s, phone="+79001110081", name="Аня")
+        srv1 = await make_server(s, owner_id=owner.id, name="DE-1")
+        srv2 = await make_server(s, owner_id=owner.id, name="NL-2")
+        dev = await make_device(s, user_id=member.id, name="Ноутбук")
+        await make_device_config(s, device_id=dev.id, server_id=srv1.id, vpn_type="amnezia", client_id="C1")
+
+    await svc.record(srv1.id, "xray", [PeerStat(client_id="C1", rx=100, tx=200, last_handshake=None, online=True)])
+    await svc.record(srv2.id, "hysteria2", [PeerStat(client_id="C2", rx=10, tx=20, last_handshake=None, online=False)])
+
+    ov = await svc.global_overview(owner.id)
+    assert ov["summary"]["serversTotal"] == 2
+    assert ov["summary"]["clientsTotal"] == 2
+    assert ov["summary"]["clientsOnline"] == 1  # только C1 онлайн
+    assert ov["summary"]["rxTotal"] == 110 and ov["summary"]["txTotal"] == 220
+
+    by_client = {c["clientId"]: c for c in ov["clients"]}
+    assert by_client["C1"]["serverName"] == "DE-1"
+    assert by_client["C1"]["userName"] == "Аня" and by_client["C1"]["deviceName"] == "Ноутбук"
+    assert by_client["C2"]["serverName"] == "NL-2" and by_client["C2"]["external"] is True
+
+
+async def test__global_overview__ignores_other_owners_servers(svc, session_maker):
+    """Чужие серверы/клиенты не попадают в глобальный мониторинг владельца."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110090")
+        stranger = await make_user(s, phone="+79001110091")
+        mine = await make_server(s, owner_id=owner.id, name="MINE")
+        theirs = await make_server(s, owner_id=stranger.id, name="THEIRS")
+
+    await svc.record(mine.id, "awg", [PeerStat(client_id="M", rx=1, tx=1, last_handshake=time.time())])
+    await svc.record(theirs.id, "awg", [PeerStat(client_id="T", rx=9, tx=9, last_handshake=time.time())])
+
+    ov = await svc.global_overview(owner.id)
+    assert {c["clientId"] for c in ov["clients"]} == {"M"}
+    assert ov["summary"]["serversTotal"] == 1
+
+
 async def test__purge_old__drops_only_stale_samples(svc, session_maker, uow):
     """purge_old удаляет сэмплы старше traffic_retention_days, свежие остаются."""
     async with seed(session_maker) as s:

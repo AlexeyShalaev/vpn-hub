@@ -11,11 +11,13 @@ import type {
   InvitePeek,
   Me,
   MetricsOverview,
+  Monitoring,
   Pool,
   Provider,
   Server,
   ServerAccess,
   ServerMetrics,
+  ServerTraffic,
   Session,
   SystemInfo,
   UpdateCheck,
@@ -110,6 +112,13 @@ export const listProviders = () => http.get<Provider[]>("/providers");
 
 // per-server ресурсы хоста (CPU/RAM/диск/load/uptime/TCP + онлайн-клиенты) — последние + история
 export const serverMetrics = (sid: string) => http.get<ServerMetrics>(`/servers/${sid}/metrics`);
+
+// per-server per-client трафик+онлайн (клиенты этого сервера: скачал/отдал/скорость/онлайн)
+export const serverTraffic = (sid: string, period = "24h") =>
+  http.get<ServerTraffic>(`/servers/${sid}/traffic?period=${encodeURIComponent(period)}`);
+
+// глобальный супер-мониторинг: per-client трафик+онлайн по ВСЕМ серверам владельца + сводка
+export const monitoring = (period = "24h") => http.get<Monitoring>(`/monitoring?period=${encodeURIComponent(period)}`);
 
 // включить точную онлайн-статистику (Xray Stats API / Hysteria2 trafficStats) — рестарт контейнеров
 export const enableServerStats = (sid: string) =>
