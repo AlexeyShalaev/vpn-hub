@@ -59,8 +59,17 @@ export interface Server {
   status: "online" | "offline" | "unknown";
   latency: string | null;
   lastCheck: string | null;
+  bandwidthQuota: number | null; // квота трафика тарифа за период (байт), null = безлимит
+  billingDay: number | null; // день сброса периода (1..31), null → 1-е число
   vpns: Vpn[];
   protocols: Protocol[];
+}
+
+export interface ServerUsage {
+  periodStart: number; // epoch начала текущего периода
+  quota: number | null; // квота сервера (байт), null = безлимит
+  serverUsed: number; // суммарно байт по серверу за период
+  users: { userId: string; name: string; used: number; limit: number | null }[];
 }
 
 export interface ChainLink {
@@ -86,6 +95,7 @@ export interface Member {
   status: "active" | "invited";
   phone?: string;
   maxDevices: number | null; // персональный override лимита устройств; null = наследовать
+  maxBytes: number | null; // персональный override лимита трафика (байт/период); null = наследовать
 }
 
 export interface Session {
@@ -110,6 +120,7 @@ export interface Group {
   name: string;
   token: string;
   maxDevices: number | null; // override лимита устройств для участников; null = глобальный дефолт
+  maxBytes: number | null; // override лимита трафика участников (байт/период); null = глобальный дефолт
   members: Member[];
   access: { pools: string[]; servers: Record<string, VpnType[]> };
 }
@@ -282,6 +293,7 @@ export interface SystemInfo {
   backupFrequency: string; // off|daily|weekly|monthly
   masterKeySet: boolean;
   defaultDevicesPerUser: number; // глобальный дефолт лимита устройств на пользователя
+  defaultUserBytes: number | null; // глобальный дефолт лимита трафика на пользователя (байт/период), null = без лимита
   backups: { id: string; at: string; size: string; kind: string }[];
   releases: { v: string; date: string; notes: string[] }[];
 }

@@ -34,6 +34,7 @@ from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
 from vpnhub.infra.provisioning.ssh import SshError
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services.limits import effective_byte_limit, period_start, period_usage
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
 log = structlog.get_logger(__name__)
@@ -630,6 +631,53 @@ class ServerService:
             await tx.session.flush()
             await tx.session.refresh(s)
             return server_to_dict(s, self._secret(s))
+
+    async def set_bandwidth_quota(
+        self, owner_id: str, sid: str, quota_bytes: int | None, billing_day: int | None
+    ) -> dict:
+        """Квота трафика тарифа за период + день сброса (только БД). None-квота = безлимит."""
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            s.bandwidth_quota_bytes = quota_bytes if (quota_bytes is not None and quota_bytes > 0) else None
+            s.billing_day = billing_day if (billing_day is not None and 1 <= billing_day <= 31) else None
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            return server_to_dict(s, self._secret(s))
+
+    async def usage(self, owner_id: str, sid: str) -> dict:
+        """Трафик сервера и пользователей за текущий биллинг-период (для карточки/модалки владельца)."""
+        async with self.uow.query() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            ps = period_start(time.time(), s.billing_day)
+            srx, stx = await period_usage(tx.session, sid, None, ps)
+            rows = (
+                await tx.session.execute(
+                    select(m.TrafficUsage.user_id, m.TrafficUsage.rx_bytes, m.TrafficUsage.tx_bytes, m.User.name)
+                    .join(m.User, m.User.id == m.TrafficUsage.user_id)
+                    .where(
+                        m.TrafficUsage.server_id == sid,
+                        m.TrafficUsage.user_id.isnot(None),
+                        m.TrafficUsage.period_start == ps,
+                    )
+                    .order_by((m.TrafficUsage.rx_bytes + m.TrafficUsage.tx_bytes).desc())
+                )
+            ).all()
+            users = []
+            for uid, rx, txb, name in rows:
+                users.append(
+                    {
+                        "userId": uid,
+                        "name": name,
+                        "used": int(rx) + int(txb),
+                        "limit": await effective_byte_limit(tx.session, uid),
+                    }
+                )
+            return {
+                "periodStart": ps,
+                "quota": s.bandwidth_quota_bytes,
+                "serverUsed": srx + stx,
+                "users": users,
+            }
 
     async def set_reality(
         self,

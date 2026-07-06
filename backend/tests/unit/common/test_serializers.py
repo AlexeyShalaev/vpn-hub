@@ -423,6 +423,7 @@ def test__member_to_dict__with_phone__maps_display_name_to_name() -> None:
         "status": "active",
         "phone": "+79001112233",
         "maxDevices": None,
+        "maxBytes": None,
     }
 
 
@@ -451,8 +452,17 @@ def test__group_to_dict__maps_members_and_access() -> None:
         "name": "Семья",
         "token": "grp-tok",
         "maxDevices": None,
+        "maxBytes": None,
         "members": [
-            {"id": "mb1", "name": "Папа", "role": "admin", "status": "active", "phone": "", "maxDevices": None}
+            {
+                "id": "mb1",
+                "name": "Папа",
+                "role": "admin",
+                "status": "active",
+                "phone": "",
+                "maxDevices": None,
+                "maxBytes": None,
+            }
         ],
         "access": {"pools": ["p1"], "servers": {"s1": ["amnezia", "openvpn"]}},
     }

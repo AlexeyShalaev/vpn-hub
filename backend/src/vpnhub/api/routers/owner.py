@@ -260,6 +260,27 @@ async def set_protocol_limit(
     return await svc.set_protocol_limit(ident.id, sid, proto, _pos_int(body, "maxClients"))
 
 
+@router.patch("/servers/{sid}/quota")
+async def set_bandwidth_quota(
+    sid: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    # body: { "quotaBytes": int|null (квота трафика тарифа), "billingDay": 1..31|null (день сброса) }
+    day = _pos_int(body, "billingDay")
+    return await svc.set_bandwidth_quota(ident.id, sid, _pos_int(body, "quotaBytes"), day)
+
+
+@router.get("/servers/{sid}/usage")
+async def server_usage(
+    sid: str,
+    ident: Identity = Depends(require_user),
+    svc: ServerService = Depends(service(ServerService)),
+) -> dict:
+    return await svc.usage(ident.id, sid)
+
+
 # ---------- multihop / chains (entry -> exit) ----------
 
 
@@ -415,6 +436,29 @@ async def set_member_limit(
 ) -> dict:
     # body: { "maxDevices": int | null } — персональный override лимита устройств участника
     return await svc.set_member_limit(ident.id, gid, mid, _pos_int(body, "maxDevices"))
+
+
+@router.patch("/groups/{gid}/byte-limit")
+async def set_group_bytes(
+    gid: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: GroupService = Depends(service(GroupService)),
+) -> dict:
+    # body: { "maxBytes": int | null } — override лимита трафика участников группы (null/0 → снять)
+    return await svc.set_group_bytes(ident.id, gid, _pos_int(body, "maxBytes"))
+
+
+@router.patch("/groups/{gid}/members/{mid}/byte-limit")
+async def set_member_bytes(
+    gid: str,
+    mid: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: GroupService = Depends(service(GroupService)),
+) -> dict:
+    # body: { "maxBytes": int | null } — персональный override лимита трафика участника
+    return await svc.set_member_bytes(ident.id, gid, mid, _pos_int(body, "maxBytes"))
 
 
 @router.post("/groups/{gid}/members")

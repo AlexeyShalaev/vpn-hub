@@ -7,6 +7,7 @@ import * as q from "../lib/queries";
 import type { Group, Member, Pool } from "../lib/types";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
+import { fmtBytes } from "./Monitoring";
 
 function plural(n: number, a: string, b: string, c: string): string {
   const n10 = n % 10;
@@ -15,6 +16,17 @@ function plural(n: number, a: string, b: string, c: string): string {
   if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return b;
   return c;
 }
+
+const GIB = 1024 ** 3;
+const intOrNull = (s: string): number | null => {
+  const n = Number.parseInt(s, 10);
+  return s.trim() === "" || !Number.isFinite(n) ? null : n;
+};
+const bytesToGb = (n: number | null): string => (n == null ? "" : String(+(n / GIB).toFixed(2)));
+const gbToBytes = (s: string): number | null => {
+  const g = Number.parseFloat(s.replace(",", "."));
+  return Number.isFinite(g) && g > 0 ? Math.round(g * GIB) : null;
+};
 
 // Эффективный доступ группы = серверы её пулов ∪ точечно выданные серверы.
 function effectiveServerCount(group: Group, pools: Pool[]): number {
@@ -49,8 +61,10 @@ export function GroupDetailScreen() {
   const [adding, setAdding] = useState(false);
   const [editingGroupLimit, setEditingGroupLimit] = useState(false);
   const [groupLimitVal, setGroupLimitVal] = useState("");
+  const [groupBytesVal, setGroupBytesVal] = useState("");
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [memberLimitVal, setMemberLimitVal] = useState("");
+  const [memberBytesVal, setMemberBytesVal] = useState("");
   const [form, setForm] = useState<{ name: string; role: "admin" | "member"; phone: string }>({
     name: "",
     role: "member",
@@ -102,21 +116,30 @@ export function GroupDetailScreen() {
     mutationFn: (memberId: string) => q.removeMember(groupId, memberId),
     onSuccess: () => invalidate(),
   });
+  // сохраняет ОБА лимита группы разом (устройства + трафик)
   const groupLimitMut = useMutation({
-    mutationFn: (n: number | null) => q.setGroupLimit(groupId, n),
+    mutationFn: async () => {
+      await q.setGroupLimit(groupId, intOrNull(groupLimitVal));
+      await q.setGroupBytes(groupId, gbToBytes(groupBytesVal));
+    },
     onSuccess: () => {
       invalidate();
       setEditingGroupLimit(false);
       toast("Сохранено");
     },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось сохранить"),
   });
   const memberLimitMut = useMutation({
-    mutationFn: ({ mid, n }: { mid: string; n: number | null }) => q.setMemberLimit(groupId, mid, n),
+    mutationFn: async (mid: string) => {
+      await q.setMemberLimit(groupId, mid, intOrNull(memberLimitVal));
+      await q.setMemberBytes(groupId, mid, gbToBytes(memberBytesVal));
+    },
     onSuccess: () => {
       invalidate();
       setEditingMember(null);
       toast("Сохранено");
     },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось сохранить"),
   });
 
   const group = groupQ.data;
@@ -257,7 +280,7 @@ export function GroupDetailScreen() {
         </div>
       </div>
 
-      {/* Лимит устройств группы */}
+      {/* Лимиты группы (устройства + трафик) */}
       <div className="card">
         <div className="rowflex" style={{ justifyContent: "space-between", gap: 12 }}>
           <div style={{ minWidth: 0 }}>
@@ -265,11 +288,12 @@ export function GroupDetailScreen() {
               className="muted"
               style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}
             >
-              Лимит устройств
+              Лимиты группы
             </div>
             <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 6 }}>
-              {group.maxDevices != null ? `${group.maxDevices} на участника` : "по умолчанию (глобальный лимит)"}
-              <span className="muted"> · персональный лимит участника — в его строке ниже</span>
+              Устройств: {group.maxDevices != null ? `${group.maxDevices} на участника` : "по умолчанию"} · Трафик:{" "}
+              {group.maxBytes != null ? `${fmtBytes(group.maxBytes)} / период на сервер` : "без лимита"}
+              <span className="muted"> · персональные лимиты — в строке участника ниже</span>
             </div>
           </div>
           <Btn
@@ -278,6 +302,7 @@ export function GroupDetailScreen() {
             style={{ flex: "none" }}
             onClick={() => {
               setGroupLimitVal(group.maxDevices?.toString() ?? "");
+              setGroupBytesVal(bytesToGb(group.maxBytes));
               setEditingGroupLimit(true);
             }}
           >
@@ -317,6 +342,7 @@ export function GroupDetailScreen() {
               onRemove={() => removeMut.mutate(m.id)}
               onEditLimit={() => {
                 setMemberLimitVal(m.maxDevices?.toString() ?? "");
+                setMemberBytesVal(bytesToGb(m.maxBytes));
                 setEditingMember(m);
               }}
             />
@@ -494,33 +520,25 @@ export function GroupDetailScreen() {
         </Modal>
       )}
 
-      {/* Лимит устройств группы */}
+      {/* Лимиты группы: устройства + трафик */}
       {editingGroupLimit && (
         <Modal
-          title="Лимит устройств группы"
+          title="Лимиты группы"
           onClose={() => setEditingGroupLimit(false)}
           footer={
             <>
               <Btn variant="default" block onClick={() => setEditingGroupLimit(false)}>
                 Отмена
               </Btn>
-              <Btn
-                variant="primary"
-                block
-                onClick={() => {
-                  const n = Number.parseInt(groupLimitVal, 10);
-                  groupLimitMut.mutate(groupLimitVal.trim() === "" || !Number.isFinite(n) ? null : n);
-                }}
-                disabled={groupLimitMut.isPending}
-              >
+              <Btn variant="primary" block onClick={() => groupLimitMut.mutate()} disabled={groupLimitMut.isPending}>
                 Сохранить
               </Btn>
             </>
           }
         >
           <p className="muted" style={{ marginBottom: 16, fontSize: 14 }}>
-            Сколько устройств может завести каждый участник группы. Пусто — наследовать глобальный лимит. Персональный
-            лимит участника (в его строке) перекрывает этот.
+            Лимиты для каждого участника группы. Пусто — наследовать глобальный дефолт. Персональный лимит участника (в
+            его строке) перекрывает эти.
           </p>
           <Field label="Устройств на участника">
             <input
@@ -533,13 +551,24 @@ export function GroupDetailScreen() {
               onChange={(e) => setGroupLimitVal(e.target.value)}
             />
           </Field>
+          <Field label="Трафик, ГБ за период (на сервер)">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step="0.1"
+              value={groupBytesVal}
+              placeholder="пусто — без лимита"
+              onChange={(e) => setGroupBytesVal(e.target.value)}
+            />
+          </Field>
         </Modal>
       )}
 
-      {/* Персональный лимит устройств участника */}
+      {/* Персональные лимиты участника: устройства + трафик */}
       {editingMember && (
         <Modal
-          title={`Лимит устройств · ${editingMember.name}`}
+          title={`Лимиты · ${editingMember.name}`}
           onClose={() => setEditingMember(null)}
           footer={
             <>
@@ -549,13 +578,7 @@ export function GroupDetailScreen() {
               <Btn
                 variant="primary"
                 block
-                onClick={() => {
-                  const n = Number.parseInt(memberLimitVal, 10);
-                  memberLimitMut.mutate({
-                    mid: editingMember.id,
-                    n: memberLimitVal.trim() === "" || !Number.isFinite(n) ? null : n,
-                  });
-                }}
+                onClick={() => editingMember && memberLimitMut.mutate(editingMember.id)}
                 disabled={memberLimitMut.isPending}
               >
                 Сохранить
@@ -564,7 +587,7 @@ export function GroupDetailScreen() {
           }
         >
           <p className="muted" style={{ marginBottom: 16, fontSize: 14 }}>
-            Персональный лимит устройств для «{editingMember.name}». Пусто — наследовать лимит группы или глобальный.
+            Персональные лимиты для «{editingMember.name}». Пусто — наследовать лимит группы или глобальный.
           </p>
           <Field label="Устройств">
             <input
@@ -575,6 +598,17 @@ export function GroupDetailScreen() {
               placeholder="пусто — как у группы"
               autoFocus
               onChange={(e) => setMemberLimitVal(e.target.value)}
+            />
+          </Field>
+          <Field label="Трафик, ГБ за период (на сервер)">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step="0.1"
+              value={memberBytesVal}
+              placeholder="пусто — как у группы"
+              onChange={(e) => setMemberBytesVal(e.target.value)}
             />
           </Field>
         </Modal>
@@ -613,13 +647,15 @@ function MemberRow({
           {member.status === "invited" && <span className="badge warn">приглашён</span>}
         </div>
       </div>
-      <Btn
-        variant="default"
-        sm
-        onClick={onEditLimit}
-        title={member.maxDevices != null ? "Персональный лимит устройств" : "Задать лимит устройств"}
-      >
-        {member.maxDevices != null ? `${member.maxDevices} уст.` : "лимит"}
+      <Btn variant="default" sm onClick={onEditLimit} title="Персональные лимиты (устройства + трафик)">
+        {member.maxDevices != null || member.maxBytes != null
+          ? [
+              member.maxDevices != null ? `${member.maxDevices} уст.` : null,
+              member.maxBytes != null ? fmtBytes(member.maxBytes) : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : "лимиты"}
       </Btn>
       <Btn variant="default" sm onClick={onToggleRole} title="Сменить роль">
         {member.role === "admin" ? "админ" : "участник"}

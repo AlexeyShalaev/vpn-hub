@@ -43,6 +43,7 @@ from vpnhub.infra.trafficstats import (
     parse_xray_stats,
 )
 from vpnhub.infra.uow import Uow
+from vpnhub.services.limits import add_period_usage, period_start
 
 log = structlog.get_logger(__name__)
 
@@ -356,6 +357,13 @@ class TrafficService:
         async with self.uow.transaction() as tx:
             prev = await self._last_cumulative(tx, server_id, proto, client_ids)
             dc_by_client = await self._device_config_ids(tx, server_id, client_ids)
+            user_by_client = await self._user_ids(tx, server_id, client_ids)
+            billing_day = (
+                await tx.session.execute(select(m.Server.billing_day).where(m.Server.id == server_id))
+            ).scalar_one_or_none()
+            ps = period_start(now, billing_day)
+            # накопитель за период: None-ключ — суммарный трафик сервера (вкл. external), user_id — пер-user
+            by_user: dict[str | None, list[int]] = {}
             for st in stats:
                 prev_rx, prev_tx = prev.get(st.client_id, (0, 0))
                 rx_delta = st.rx - prev_rx if st.rx >= prev_rx else st.rx
@@ -376,8 +384,28 @@ class TrafficService:
                         ext_name=st.name,
                     )
                 )
+                agg = by_user.setdefault(None, [0, 0])  # суммарно по серверу
+                agg[0] += rx_delta
+                agg[1] += tx_delta
+                uid = user_by_client.get(st.client_id or "")
+                if uid:
+                    u = by_user.setdefault(uid, [0, 0])
+                    u[0] += rx_delta
+                    u[1] += tx_delta
+            await add_period_usage(tx.session, server_id, ps, {k: (v[0], v[1]) for k, v in by_user.items()}, now)
             await tx.session.flush()
         return len(stats)
+
+    async def _user_ids(self, tx: Any, server_id: str, client_ids: list[str]) -> dict[str, str]:
+        """client_id (pubkey/uuid) → user_id владельца устройства (для пер-user учёта трафика)."""
+        rows = (
+            await tx.session.execute(
+                select(m.DeviceConfig.client_id, m.Device.user_id)
+                .join(m.Device, m.Device.id == m.DeviceConfig.device_id)
+                .where(m.DeviceConfig.server_id == server_id, m.DeviceConfig.client_id.in_(client_ids))
+            )
+        ).all()
+        return {cid: uid for cid, uid in rows if cid and uid}
 
     async def _last_cumulative(
         self, tx: Any, server_id: str, proto: str, client_ids: list[str]

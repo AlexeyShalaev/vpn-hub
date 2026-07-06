@@ -24,7 +24,14 @@ from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
 from vpnhub.services import audit_types
 from vpnhub.services.access import effective_access
-from vpnhub.services.limits import over_limit, used_clients
+from vpnhub.services.limits import (
+    effective_byte_limit,
+    fmt_bytes,
+    over_limit,
+    period_start,
+    period_usage,
+    used_clients,
+)
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
 # протоколы Amnezia, которые объединяются в один vpn:// (multi-container).
@@ -222,6 +229,19 @@ class ConfigService:
                         f"Достигнут лимит конфигов на «{spec.label}» этого сервера "
                         f"({used}/{sp.max_clients}). Владелец может увеличить лимит."
                     )
+            # лимит трафика per (user, server) за биллинг-период: блок выдачи НОВОГО конфига при превышении
+            # (уже выданные конфиги отсекаются отдельно — Этап 3b; здесь только мягкий блок новых)
+            if existing is None:
+                byte_limit = await effective_byte_limit(tx.session, user_id)
+                if byte_limit is not None:
+                    ps = period_start(time.time(), s.billing_day)
+                    urx, utx = await period_usage(tx.session, server_id, user_id, ps)
+                    if urx + utx >= byte_limit:
+                        raise BadRequest(
+                            f"Достигнут лимит трафика на «{server_name}» за период "
+                            f"({fmt_bytes(urx + utx)} / {fmt_bytes(byte_limit)}). "
+                            "Доступ восстановится после сброса периода."
+                        )
 
         # установленные amnezia-протоколы, что склеиваются в ОДИН vpn:// (awg/awg_legacy/xray).
         # UI выдаёт их одной кнопкой «все сразу»; xray_xhttp и прочие вендоры сюда не входят.

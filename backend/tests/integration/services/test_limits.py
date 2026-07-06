@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from tests.factories.orm import (
@@ -18,9 +20,15 @@ from vpnhub.infra.provisioning import constants as pc
 from vpnhub.services.limits import (
     DEFAULT_DEVICES_PER_USER,
     SETTING_DEFAULT_DEVICES,
+    SETTING_DEFAULT_USER_BYTES,
+    add_period_usage,
+    effective_byte_limit,
     effective_device_limit,
+    fmt_bytes,
     global_device_limit,
     over_limit,
+    period_start,
+    period_usage,
     used_clients,
     used_devices,
 )
@@ -70,8 +78,17 @@ async def test__used_clients__no_configs__only_external(session_maker, uow) -> N
 # ---- Этап 2: лимит устройств на пользователя ----
 
 
-async def _member(s, group_id: str, user_id: str, *, max_devices=None, status="active") -> None:
-    s.add(m.GroupMember(group_id=group_id, user_id=user_id, display_name="m", status=status, max_devices=max_devices))
+async def _member(s, group_id: str, user_id: str, *, max_devices=None, max_bytes=None, status="active") -> None:
+    s.add(
+        m.GroupMember(
+            group_id=group_id,
+            user_id=user_id,
+            display_name="m",
+            status=status,
+            max_devices=max_devices,
+            max_bytes=max_bytes,
+        )
+    )
     await s.flush()
 
 
@@ -154,3 +171,86 @@ async def test__used_devices__counts_user_devices(session_maker, uow) -> None:
         await make_device(s, user_id=other.id, name="x")  # чужое устройство не считается
     async with uow.query() as tx:
         assert await used_devices(tx.session, u.id) == 2
+
+
+# ---- Этап 3: байт-лимиты, период биллинга, накопитель ----
+
+
+def test__fmt_bytes() -> None:
+    assert fmt_bytes(0) == "0 Б"
+    assert fmt_bytes(512) == "512 Б"
+    assert fmt_bytes(1536) == "1.5 КБ"
+    assert fmt_bytes(5 * 1024**3) == "5.0 ГБ"
+    assert fmt_bytes(3 * 1024**4) == "3.0 ТБ"
+
+
+def test__period_start__billing_day_anchor() -> None:
+    """Период начинается в billing_day текущего месяца, если день уже наступил, иначе — в прошлом."""
+    now = time.mktime((2026, 3, 15, 12, 0, 0, 0, 0, -1))  # 15 марта
+    # день сброса 10 ≤ 15 → период с 10 марта
+    assert period_start(now, 10) == time.mktime((2026, 3, 10, 0, 0, 0, 0, 0, -1))
+    # день сброса 20 > 15 → период с 20 февраля
+    assert period_start(now, 20) == time.mktime((2026, 2, 20, 0, 0, 0, 0, 0, -1))
+    # None → 1-е число
+    assert period_start(now, None) == time.mktime((2026, 3, 1, 0, 0, 0, 0, 0, -1))
+
+
+def test__period_start__clamps_day_to_month_length() -> None:
+    """День 31 клампится к длине месяца (февраль → 28/29)."""
+    now = time.mktime((2026, 2, 15, 12, 0, 0, 0, 0, -1))  # 15 фев 2026 (28 дней)
+    # день 31 в феврале → якорь 28; 15 < 28 → период с 31 января
+    assert period_start(now, 31) == time.mktime((2026, 1, 31, 0, 0, 0, 0, 0, -1))
+
+
+async def test__global_user_bytes__default_unlimited_and_setting(session_maker, uow) -> None:
+    from vpnhub.services.limits import global_user_bytes
+
+    async with uow.query() as tx:
+        assert await global_user_bytes(tx.session) is None  # по умолчанию без лимита
+    async with seed(session_maker) as s:
+        s.add(m.Setting(key=SETTING_DEFAULT_USER_BYTES, value=str(10 * 1024**3)))
+        await s.flush()
+    async with uow.query() as tx:
+        assert await global_user_bytes(tx.session) == 10 * 1024**3
+    async with seed(session_maker) as s:
+        (await s.get(m.Setting, SETTING_DEFAULT_USER_BYTES)).value = "0"  # 0 = без лимита
+        await s.flush()
+    async with uow.query() as tx:
+        assert await global_user_bytes(tx.session) is None
+
+
+async def test__effective_byte_limit__hierarchy(session_maker, uow) -> None:
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79004440001")
+        no_grp = await make_user(s, phone="+79004440002")
+        grp_only = await make_user(s, phone="+79004440003")
+        member_over = await make_user(s, phone="+79004440004")
+        multi = await make_user(s, phone="+79004440005")
+        g1 = await make_group(s, owner_id=owner.id, name="G1", token="grp-b-1")
+        g1.max_bytes = 5 * 1024**3
+        g2 = await make_group(s, owner_id=owner.id, name="G2", token="grp-b-2")  # без байт-лимита
+        await _member(s, g1.id, grp_only.id)  # наследует лимит группы
+        await _member(s, g1.id, member_over.id, max_bytes=20 * 1024**3)  # персональный перебивает
+        await _member(s, g1.id, multi.id)  # G1: 5 ГБ
+        await _member(s, g2.id, multi.id)  # G2: без лимита (None) → игнорируется, не обнуляет
+    async with uow.query() as tx:
+        assert await effective_byte_limit(tx.session, no_grp.id) is None  # без групп → глобал (None)
+        assert await effective_byte_limit(tx.session, grp_only.id) == 5 * 1024**3
+        assert await effective_byte_limit(tx.session, member_over.id) == 20 * 1024**3
+        assert await effective_byte_limit(tx.session, multi.id) == 5 * 1024**3  # явный 5ГБ, None не void
+
+
+async def test__period_usage__accumulates_server_total_and_per_user(session_maker, uow) -> None:
+    """add_period_usage: None-ключ = суммарно по серверу, user_id = пер-user; инкремент складывается."""
+    async with seed(session_maker) as s:
+        u = await make_user(s, phone="+79004440010")
+        srv = await make_server(s, owner_id=u.id, name="srv-b")
+    ps = 1_700_000_000.0
+    async with uow.transaction() as tx:
+        await add_period_usage(tx.session, srv.id, ps, {None: (100, 200), u.id: (30, 70)}, now=ps)
+    async with uow.transaction() as tx:
+        await add_period_usage(tx.session, srv.id, ps, {None: (10, 20), u.id: (1, 2)}, now=ps)
+    async with uow.query() as tx:
+        assert await period_usage(tx.session, srv.id, None, ps) == (110, 220)  # сервер суммарно
+        assert await period_usage(tx.session, srv.id, u.id, ps) == (31, 72)  # пер-user
+        assert await period_usage(tx.session, srv.id, u.id, ps + 1) == (0, 0)  # другой период — пусто

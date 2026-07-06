@@ -19,6 +19,7 @@ import type {
   ServerAccess,
   ServerMetrics,
   ServerTraffic,
+  ServerUsage,
   Session,
   SystemInfo,
   UpdateCheck,
@@ -106,6 +107,11 @@ export const setReality = (
 // мягкий лимит числа конфигов на протоколе (owner): maxClients=null/0 → снять лимит
 export const setProtocolLimit = (id: string, proto: string, maxClients: number | null) =>
   http.patch<Server>(`/servers/${id}/protocols/${proto}/limit`, { maxClients });
+// квота трафика тарифа + день сброса периода (owner): quotaBytes=null/0 → безлимит
+export const setBandwidthQuota = (id: string, quotaBytes: number | null, billingDay: number | null) =>
+  http.patch<Server>(`/servers/${id}/quota`, { quotaBytes, billingDay });
+// трафик сервера и пользователей за текущий период (owner)
+export const serverUsage = (id: string) => http.get<ServerUsage>(`/servers/${id}/usage`);
 
 // мультихоп: цепочки, где этот сервер — вход (entry); трафик выходит через exit-сервер (Xray outbound)
 export const listChains = (sid: string) => http.get<ChainLink[]>(`/servers/${sid}/chains`);
@@ -160,6 +166,10 @@ export const setGroupLimit = (gid: string, maxDevices: number | null) =>
   http.patch<Group>(`/groups/${gid}/limit`, { maxDevices });
 export const setMemberLimit = (gid: string, mid: string, maxDevices: number | null) =>
   http.patch<Group>(`/groups/${gid}/members/${mid}/limit`, { maxDevices });
+export const setGroupBytes = (gid: string, maxBytes: number | null) =>
+  http.patch<Group>(`/groups/${gid}/byte-limit`, { maxBytes });
+export const setMemberBytes = (gid: string, mid: string, maxBytes: number | null) =>
+  http.patch<Group>(`/groups/${gid}/members/${mid}/byte-limit`, { maxBytes });
 export const toggleGroupPool = (gid: string, poolId: string) =>
   http.put<Group>(`/groups/${gid}/access/pools/${poolId}`);
 export const toggleGroupServer = (gid: string, serverId: string) =>
@@ -220,6 +230,8 @@ export const adminSetBackupSettings = (b: { frequency?: string; key?: string }) 
   http.put<{ ok: boolean }>("/admin/system/backup-settings", b);
 export const adminSetDeviceLimit = (defaultDevicesPerUser: number) =>
   http.put<{ ok: boolean }>("/admin/system/device-limit", { defaultDevicesPerUser });
+export const adminSetUserByteLimit = (defaultUserBytes: number | null) =>
+  http.put<{ ok: boolean }>("/admin/system/user-byte-limit", { defaultUserBytes });
 
 // admin: providers catalog (YAML-backed)
 export const adminCreateProvider = (b: Record<string, unknown>) => http.post<Provider>("/admin/providers", b);

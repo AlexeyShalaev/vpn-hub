@@ -64,6 +64,10 @@ class Server(BaseTable, DatetimeColumnsMixin):
     status: Mapped[str] = mapped_column(String(16), default="unknown")  # online|offline|unknown
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_check_at: Mapped[float | None] = mapped_column(nullable=True)  # epoch seconds
+    # Байт-бюджет (квота трафика тарифа) на биллинг-период, NULL = без квоты (безлимитный тариф).
+    bandwidth_quota_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # День сброса биллинг-периода (1..31); NULL → считать с 1-го числа месяца.
+    billing_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     vpns: Mapped[list[ServerVpn]] = relationship(back_populates="server", cascade="all, delete-orphan", lazy="selectin")
     protocols: Mapped[list[ServerProtocol]] = relationship(
@@ -165,6 +169,8 @@ class Group(BaseTable, DatetimeColumnsMixin):
     token: Mapped[str] = mapped_column(String(64), unique=True)
     # override глобального лимита устройств на участника этой группы; NULL = наследовать глобал
     max_devices: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # override лимита байт per (участник, сервер) за период; NULL = наследовать глобал (без лимита)
+    max_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     members: Mapped[list[GroupMember]] = relationship(
         back_populates="group", cascade="all, delete-orphan", lazy="selectin"
@@ -182,6 +188,8 @@ class GroupMember(BaseTable):
     status: Mapped[str] = mapped_column(String(16), default="active")  # active|invited
     # персональный override лимита устройств; NULL = наследовать лимит группы/глобал
     max_devices: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # персональный override лимита байт per (участник, сервер) за период; NULL = наследовать группу/глобал
+    max_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     group: Mapped[Group] = relationship(back_populates="members")
 
@@ -263,6 +271,31 @@ class TrafficSample(BaseTable):
     ext_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
+
+
+class TrafficUsage(BaseTable):
+    """Персистентный накопитель трафика за биллинг-период (переживает purge сырых сэмплов).
+
+    Инкрементится в TrafficService.record из тех же дельт, что и traffic_samples. Две роли строк:
+    - `user_id` задан — трафик конкретного пользователя на сервере (для пер-user лимита);
+    - `user_id IS NULL` — суммарный трафик сервера за период (все клиенты + external), для квоты тарифа.
+    `period_start` — epoch начала текущего периода сервера (зависит от `Server.billing_day`); смена
+    периода = новая строка (эффективный сброс счётчика). Уникум по (server, user, period).
+    """
+
+    __tablename__ = "traffic_usage"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    server_id: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # NULL = агрегат сервера
+    period_start: Mapped[float] = mapped_column()  # epoch начала биллинг-периода
+    rx_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    tx_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[float] = mapped_column(default=0.0)  # epoch последнего инкремента
+
+    __table_args__ = (
+        UniqueConstraint("server_id", "user_id", "period_start", name="traffic_usage_uq"),
+        Index("traffic_usage_scope_idx", "server_id", "user_id", "period_start"),
+    )
 
 
 class MetricSample(BaseTable):

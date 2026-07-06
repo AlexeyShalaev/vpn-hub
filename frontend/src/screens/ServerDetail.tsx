@@ -325,6 +325,166 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
   );
 }
 
+const GIB = 1024 ** 3;
+// байты → ГБ-строка для инпута (пусто, если null); ГБ-строка → байты
+const bytesToGb = (n: number | null): string => (n == null ? "" : String(+(n / GIB).toFixed(2)));
+const gbToBytes = (s: string): number | null => {
+  const g = Number.parseFloat(s.replace(",", "."));
+  return Number.isFinite(g) && g > 0 ? Math.round(g * GIB) : null;
+};
+
+// Карточка «Трафик и квота»: квота трафика тарифа + день сброса периода (настройка владельца) и
+// фактическое использование за текущий период — суммарно по серверу и по пользователям (топ-жоры).
+// Пер-user превышение честно отсекается на Этапе 3b; здесь — учёт, индикатор и предупреждения.
+function ServerTrafficQuotaCard({ server }: { server: Server }) {
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const uq = useQuery({
+    queryKey: ["serverUsage", server.id],
+    queryFn: () => q.serverUsage(server.id),
+    enabled: !!server.id,
+    refetchInterval: 60000,
+  });
+  const [editing, setEditing] = useState(false);
+  const [quotaGb, setQuotaGb] = useState("");
+  const [billingDay, setBillingDay] = useState("");
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      q.setBandwidthQuota(server.id, gbToBytes(quotaGb), billingDay ? Number.parseInt(billingDay, 10) : null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["server", server.id] });
+      qc.invalidateQueries({ queryKey: ["serverUsage", server.id] });
+      setEditing(false);
+      toast("Квота сохранена");
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось сохранить квоту"),
+  });
+
+  const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
+  const usage = uq.data;
+  const quota = server.bandwidthQuota;
+  const used = usage?.serverUsed ?? 0;
+  const quotaPct = quota && quota > 0 ? Math.round((used / quota) * 100) : null;
+  const quotaColor =
+    quotaPct == null ? "var(--text-2)" : quotaPct >= 100 ? "var(--danger)" : quotaPct >= 80 ? "#d97706" : "var(--ok)";
+  const dayLabel = server.billingDay ? `${server.billingDay}-е число` : "1-е число (по умолчанию)";
+
+  const openEdit = () => {
+    setQuotaGb(bytesToGb(server.bandwidthQuota));
+    setBillingDay(server.billingDay ? String(server.billingDay) : "");
+    setEditing(true);
+  };
+
+  return (
+    <div className="card stack">
+      <div className="rowflex" style={{ justifyContent: "space-between", gap: 12 }}>
+        <div className="muted-3" style={label}>
+          Трафик и квота · текущий период
+        </div>
+        <Btn sm onClick={openEdit}>
+          <Icon name="edit" size={15} />
+          Квота
+        </Btn>
+      </div>
+
+      <div className="rowflex" style={{ gap: 14, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 160 }}>
+          <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 3 }}>
+            Использовано сервером
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: quotaColor }}>
+            {fmtBytes(used)}
+            {quota ? (
+              <span className="muted-3" style={{ fontSize: 13, fontWeight: 500 }}>
+                {" "}
+                / {fmtBytes(quota)}
+              </span>
+            ) : null}
+          </div>
+          <div className="muted-3" style={{ fontSize: 11.5, marginTop: 2 }}>
+            {quota ? `${quotaPct}% квоты тарифа` : "квота не задана (безлимит)"} · сброс: {dayLabel}
+          </div>
+        </div>
+      </div>
+      {quota ? (
+        <div style={{ height: 7, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+          <div style={{ width: `${Math.min(100, quotaPct ?? 0)}%`, height: "100%", background: quotaColor }} />
+        </div>
+      ) : null}
+
+      {/* Топ по трафику среди пользователей за период (+ индикатор пер-user лимита) */}
+      {usage && usage.users.length > 0 && (
+        <div className="stack" style={{ gap: 4 }}>
+          <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
+            Пользователи за период
+          </div>
+          {usage.users.slice(0, 8).map((u) => {
+            const over = u.limit != null && u.used >= u.limit;
+            const near = u.limit != null && !over && u.used >= u.limit * 0.8;
+            const col = over ? "var(--danger)" : near ? "#d97706" : "var(--text-2)";
+            return (
+              <div key={u.userId} className="rowflex" style={{ justifyContent: "space-between", gap: 8, fontSize: 13 }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</span>
+                <span style={{ color: col, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flex: "none" }}>
+                  {fmtBytes(u.used)}
+                  {u.limit != null ? ` / ${fmtBytes(u.limit)}` : ""}
+                  {over ? " · лимит" : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <Modal
+          title="Квота трафика сервера"
+          onClose={() => setEditing(false)}
+          footer={
+            <>
+              <Btn variant="ghost" block onClick={() => setEditing(false)}>
+                Отмена
+              </Btn>
+              <Btn variant="primary" block disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                Сохранить
+              </Btn>
+            </>
+          }
+        >
+          <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+            Квота трафика вашего тарифа за период (панель предупредит при приближении). Пусто — безлимитный тариф. День
+            сброса — обычно день оплаты VPS; пусто — 1-е число месяца.
+          </p>
+          <Field label="Квота, ГБ за период">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step="0.1"
+              value={quotaGb}
+              placeholder="пусто — безлимит"
+              autoFocus
+              onChange={(e) => setQuotaGb(e.target.value)}
+            />
+          </Field>
+          <Field label="День сброса периода (1–31)">
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={31}
+              value={billingDay}
+              placeholder="пусто — 1-е число"
+              onChange={(e) => setBillingDay(e.target.value)}
+            />
+          </Field>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // Секция «Цепочка (мультихоп)»: трафик клиентов этого (entry) сервера выходит в интернет через
 // другой (exit) сервер. Реализация — Xray outbound chaining: entry становится vless-клиентом exit.
 function ChainSection({ server }: { server: Server }) {
@@ -1030,6 +1190,8 @@ export function ServerDetailScreen() {
       </div>
 
       <ServerMetricsCard serverId={serverId} online={online} />
+
+      <ServerTrafficQuotaCard server={server} />
 
       <ServerClientsCard serverId={serverId} online={online} />
 

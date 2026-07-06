@@ -197,10 +197,15 @@ export function SystemScreen() {
   );
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [devLimit, setDevLimit] = useState("");
+  const [userBytesGb, setUserBytesGb] = useState("");
   useEffect(() => {
     const n = sysQ.data?.defaultDevicesPerUser;
     if (n != null) setDevLimit(String(n));
   }, [sysQ.data?.defaultDevicesPerUser]);
+  useEffect(() => {
+    const b = sysQ.data?.defaultUserBytes;
+    setUserBytesGb(b != null && b > 0 ? String(+(b / 1024 ** 3).toFixed(2)) : "");
+  }, [sysQ.data?.defaultUserBytes]);
 
   const upgradeMut = useMutation({
     mutationFn: q.adminUpgrade,
@@ -276,6 +281,15 @@ export function SystemScreen() {
     mutationFn: (n: number) => q.adminSetDeviceLimit(n),
     onSuccess: () => {
       toast("Лимит устройств сохранён");
+      qc.invalidateQueries({ queryKey: ["adminSystem"] });
+    },
+    onError: toastErr,
+  });
+
+  const userBytesMut = useMutation({
+    mutationFn: (bytes: number | null) => q.adminSetUserByteLimit(bytes),
+    onSuccess: () => {
+      toast("Лимит трафика сохранён");
       qc.invalidateQueries({ queryKey: ["adminSystem"] });
     },
     onError: toastErr,
@@ -477,7 +491,7 @@ export function SystemScreen() {
         </div>
       </div>
 
-      {/* Лимит устройств на пользователя (глобальный дефолт) */}
+      {/* Лимиты на пользователя по умолчанию (глобальный дефолт) */}
       <div className="card">
         <div
           style={{
@@ -488,37 +502,63 @@ export function SystemScreen() {
             marginBottom: 12,
           }}
         >
-          Лимит устройств на пользователя
+          Лимиты на пользователя по умолчанию
         </div>
         <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
-          Глобальный дефолт: сколько устройств может завести пользователь. Владелец может переопределить его для группы
-          или конкретного участника.
+          Глобальные дефолты: сколько устройств и трафика (за период на сервер) доступно пользователю. Владелец может
+          переопределить их для группы или конкретного участника.
         </p>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-            <span className="muted">Устройств по умолчанию</span>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              style={{ width: 140 }}
-              value={devLimit}
-              onChange={(e) => setDevLimit(e.target.value)}
-            />
-          </label>
-          <Btn
-            onClick={() => {
-              const n = Number.parseInt(devLimit, 10);
-              if (!Number.isFinite(n) || n < 1) {
-                toast("Лимит должен быть не меньше 1");
-                return;
-              }
-              devLimitMut.mutate(n);
-            }}
-            disabled={devLimitMut.isPending}
-          >
-            Сохранить
-          </Btn>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+              <span className="muted">Устройств</span>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                style={{ width: 120 }}
+                value={devLimit}
+                onChange={(e) => setDevLimit(e.target.value)}
+              />
+            </label>
+            <Btn
+              onClick={() => {
+                const n = Number.parseInt(devLimit, 10);
+                if (!Number.isFinite(n) || n < 1) {
+                  toast("Лимит должен быть не меньше 1");
+                  return;
+                }
+                devLimitMut.mutate(n);
+              }}
+              disabled={devLimitMut.isPending}
+            >
+              Сохранить
+            </Btn>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+              <span className="muted">Трафик, ГБ за период</span>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step="0.1"
+                style={{ width: 140 }}
+                value={userBytesGb}
+                placeholder="пусто — без лимита"
+                onChange={(e) => setUserBytesGb(e.target.value)}
+              />
+            </label>
+            <Btn
+              onClick={() => {
+                const g = Number.parseFloat(userBytesGb.replace(",", "."));
+                userBytesMut.mutate(Number.isFinite(g) && g > 0 ? Math.round(g * 1024 ** 3) : null);
+              }}
+              disabled={userBytesMut.isPending}
+            >
+              Сохранить
+            </Btn>
+          </div>
         </div>
       </div>
 

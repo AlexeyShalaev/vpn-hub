@@ -19,7 +19,12 @@ from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
 from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed
 from vpnhub.services.backups import BackupService
-from vpnhub.services.limits import SETTING_DEFAULT_DEVICES, global_device_limit
+from vpnhub.services.limits import (
+    SETTING_DEFAULT_DEVICES,
+    SETTING_DEFAULT_USER_BYTES,
+    global_device_limit,
+    global_user_bytes,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -113,6 +118,7 @@ class AdminService:
         backup_key_set = await self.backups.key_set()
         async with self.uow.query() as tx:
             default_devices = await global_device_limit(tx.session)
+            default_user_bytes = await global_user_bytes(tx.session)
         s = self.settings
         cache = await self._update_cache()
         latest = cache.get("latest") or s.version
@@ -153,6 +159,7 @@ class AdminService:
             "backupFrequency": backup_frequency,
             "masterKeySet": backup_key_set,
             "defaultDevicesPerUser": default_devices,
+            "defaultUserBytes": default_user_bytes,
             "releases": releases,
         }
 
@@ -162,6 +169,11 @@ class AdminService:
             raise BadRequest("Лимит устройств должен быть не меньше 1")
         async with self.uow.transaction() as tx:
             await tx.settings.set_value(SETTING_DEFAULT_DEVICES, str(int(n)))
+
+    async def set_default_user_bytes(self, n: int | None) -> None:
+        """Глобальный дефолт лимита трафика на пользователя за период; None/≤0 = без лимита."""
+        async with self.uow.transaction() as tx:
+            await tx.settings.set_value(SETTING_DEFAULT_USER_BYTES, str(int(n)) if (n and n > 0) else "0")
 
     async def _update_cache(self) -> dict:
         async with self.uow.query() as tx:

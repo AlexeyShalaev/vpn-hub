@@ -138,6 +138,19 @@ async def set_device_limit(
     return {"ok": True}
 
 
+@router.put("/system/user-byte-limit")
+async def set_user_byte_limit(
+    body: dict[str, Any] = Body(default={}),
+    _: Identity = Depends(require_admin),
+    svc: AdminService = Depends(service(AdminService)),
+) -> dict:
+    # body: { "defaultUserBytes": int | null } — глобальный дефолт трафика на пользователя (null/0 = без лимита)
+    raw = body.get("defaultUserBytes") if isinstance(body, dict) else None
+    n = int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw > 0 else None
+    await svc.set_default_user_bytes(n)
+    return {"ok": True}
+
+
 # ---------- providers (каталог VPS) ----------
 
 

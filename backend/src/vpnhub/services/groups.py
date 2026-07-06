@@ -92,6 +92,27 @@ class GroupService:
             await tx.session.refresh(g)
             return await self._ser(tx, g)
 
+    async def set_group_bytes(self, owner_id: str, gid: str, max_bytes: int | None) -> dict:
+        """Override лимита трафика (байт per user/сервер за период) для участников группы (None/≤0 — снять)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            g.max_bytes = max_bytes if (max_bytes is not None and max_bytes > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
+    async def set_member_bytes(self, owner_id: str, gid: str, mid: str, max_bytes: int | None) -> dict:
+        """Персональный override лимита трафика участника (None/≤0 — снять, наследовать группу/глобал)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            mb = next((x for x in g.members if x.id == mid), None)
+            if mb is None:
+                raise NotFound("Участник не найден")
+            mb.max_bytes = max_bytes if (max_bytes is not None and max_bytes > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
     async def delete(self, owner_id: str, gid: str) -> None:
         async with self.uow.transaction() as tx:
             g = await self._owned(tx, owner_id, gid)
