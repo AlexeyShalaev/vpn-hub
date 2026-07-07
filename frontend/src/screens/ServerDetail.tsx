@@ -1021,6 +1021,16 @@ export function ServerDetailScreen() {
           </button>
         ))}
       </div>
+      <label className="detail-tab-select">
+        <span>Раздел</span>
+        <select className="input" value={activeTab} onChange={(e) => setActiveTab(e.target.value as ServerDetailTab)}>
+          {tabs.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {activeTab === "connection" && (
         <div className="stack" role="tabpanel" id="server-tabpanel-connection" aria-labelledby="server-tab-connection">

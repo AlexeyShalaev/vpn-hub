@@ -314,6 +314,9 @@ a {
   outline: none;
   box-shadow: 0 0 0 3px var(--ring);
 }
+.detail-tab-select {
+  display: none;
+}
 
 /* buttons */
 .btn {
@@ -683,6 +686,19 @@ a {
   }
   .bottom-nav button.active {
     color: var(--text);
+  }
+  .detail-tabs {
+    display: none;
+  }
+  .detail-tab-select {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .detail-tab-select span {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-2);
   }
   .modal {
     max-width: 100%;
