@@ -61,6 +61,7 @@ export interface Server {
   lastCheck: string | null;
   bandwidthQuota: number | null; // квота трафика тарифа за период (байт), null = безлимит
   billingDay: number | null; // день сброса периода (1..31), null → 1-е число
+  providerMetadata?: Record<string, unknown>; // провайдерская метадата: тариф, external id и т.п.
   vpns: Vpn[];
   protocols: Protocol[];
 }

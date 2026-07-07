@@ -41,6 +41,21 @@ IP-адрес сервера: 203.0.113.10
     expect(r.location).toBe("Париж");
   });
 
+  it("парсит тарифный план из письма FirstByte без локации в коде", () => {
+    const r = parseServerInfo(`Информация о cервере
+Тарифный план: MSK-highmem-KVM-SSD-2
+Дата открытия: 2026-07-04
+Доменное имя: vm4457114.firstbyte.club
+IP-адрес сервера: 185.195.26.162
+Пользователь: root
+Пароль: redacted`);
+    expect(r.providerId).toBe("firstbyte");
+    expect(r.tariff).toBe("MSK-highmem-KVM-SSD-2");
+    expect(r.location).toBe("Москва");
+    expect(r.ip).toBe("185.195.26.162");
+    expect(r.sshUser).toBe("root");
+  });
+
   it("не берёт локацию из тарифа без кода ДЦ", () => {
     const r = parseServerInfo("Тарифный план: KVM-SSD-1\nIP: 1.2.3.4 firstbyte");
     expect(r.location).toBeUndefined();

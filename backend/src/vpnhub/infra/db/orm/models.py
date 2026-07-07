@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_foundation_kit import BaseTable, DatetimeColumnsMixin
 
@@ -68,6 +70,8 @@ class Server(BaseTable, DatetimeColumnsMixin):
     bandwidth_quota_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # День сброса биллинг-периода (1..31); NULL → считать с 1-го числа месяца.
     billing_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Провайдерская метадата: исходный тариф из письма/панели, id внешней услуги и т.п.
+    provider_metadata: Mapped[dict[str, Any]] = mapped_column(JSON().with_variant(JSONB, "postgresql"), default=dict)
 
     vpns: Mapped[list[ServerVpn]] = relationship(back_populates="server", cascade="all, delete-orphan", lazy="selectin")
     protocols: Mapped[list[ServerProtocol]] = relationship(

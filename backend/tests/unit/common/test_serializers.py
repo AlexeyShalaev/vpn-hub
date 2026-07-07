@@ -352,6 +352,17 @@ def test__server_to_dict__with_secret__uses_provided_value() -> None:
     assert result["secret"] == "s3cr3t"
 
 
+def test__server_to_dict__provider_metadata__mapped_to_camelcase() -> None:
+    """Провайдерская метадата отдаётся как providerMetadata."""
+    # Arrange
+    srv = _make_server()
+    srv.provider_metadata = {"providerPlan": "MSK-highmem-KVM-SSD-2"}
+    # Act
+    result = s.server_to_dict(srv)
+    # Assert
+    assert result["providerMetadata"] == {"providerPlan": "MSK-highmem-KVM-SSD-2"}
+
+
 def test__server_to_dict__vpns__sorted_by_type() -> None:
     """Вложенные vpns сортируются по type (alphabetically)."""
     # Arrange

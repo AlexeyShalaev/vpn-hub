@@ -10,6 +10,7 @@ import asyncio
 import builtins
 import json
 import time
+from typing import Any, cast
 
 import structlog
 from sqlalchemy import delete as sa_delete
@@ -48,6 +49,20 @@ def _parse_port(raw: str | None, default: int = 22) -> int:
     except ValueError:
         return default
     return port if 1 <= port <= 65535 else default
+
+
+def _provider_metadata(raw: object) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise BadRequest("Метаданные провайдера должны быть JSON-объектом")
+    try:
+        dumped = json.dumps(raw, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Метаданные провайдера должны быть валидным JSON") from exc
+    if len(dumped) > 8192:
+        raise BadRequest("Метаданные провайдера слишком большие")
+    return cast("dict[str, Any]", json.loads(dumped))
 
 
 def _apply_probe(s: m.Server, r: ProbeResult) -> None:
@@ -105,6 +120,7 @@ class ServerService:
                 ssh_auth=data.get("auth") or "key",
                 ssh_secret_encrypted=encrypt_secret(self.settings.secret_key, data.get("secret") or ""),
                 location=location,
+                provider_metadata=_provider_metadata(data.get("providerMetadata")),
                 status="unknown",
             )
             tx.servers.add(s)
@@ -139,6 +155,8 @@ class ServerService:
             ]:
                 if key in data and data[key] is not None:
                     setattr(s, field, str(data[key]))
+            if "providerMetadata" in data:
+                s.provider_metadata = _provider_metadata(data.get("providerMetadata"))
             if data.get("secret"):
                 s.ssh_secret_encrypted = encrypt_secret(self.settings.secret_key, data["secret"])
             await tx.session.flush()

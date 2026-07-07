@@ -15,6 +15,7 @@ interface FormState {
   providerCustom: boolean;
   ip: string;
   location: string;
+  providerPlan: string;
   sshUser: string;
   sshPort: string;
   auth: "key" | "password";
@@ -36,6 +37,7 @@ const EMPTY: FormState = {
   providerCustom: false,
   ip: "",
   location: "",
+  providerPlan: "",
   sshUser: "root",
   sshPort: "22",
   auth: "key",
@@ -118,6 +120,21 @@ function planOptionKey(p: ProviderPlan): string {
   return `${p.id}::${p.region}::${p.name}`;
 }
 
+function providerPlanLabel(p: ProviderPlan): string {
+  return p.name.split(" · ")[0]?.trim() || p.name;
+}
+
+function withProviderPlan(
+  metadata: Record<string, unknown> | undefined,
+  providerPlan: string,
+): Record<string, unknown> {
+  const next = { ...(metadata ?? {}) };
+  const plan = providerPlan.trim();
+  if (plan) next.providerPlan = plan;
+  else delete next.providerPlan;
+  return next;
+}
+
 function bytesToGb(n: number | null): string {
   return n == null ? "" : String(+(n / GIB).toFixed(2));
 }
@@ -184,6 +201,7 @@ export function ServerFormScreen() {
       providerCustom: !!s.provider && !known(s.provider),
       ip: s.ip,
       location: s.location,
+      providerPlan: typeof s.providerMetadata?.providerPlan === "string" ? s.providerMetadata.providerPlan : "",
       sshUser: s.sshUser,
       sshPort: s.sshPort,
       auth: s.auth,
@@ -276,7 +294,7 @@ export function ServerFormScreen() {
     setPlanId(id);
     const plan = plans.find((p) => planOptionKey(p) === id);
     if (!plan) return;
-    set("location", plan.region);
+    setForm((f) => ({ ...f, location: plan.region, providerPlan: providerPlanLabel(plan) }));
     setBilling((b) => ({
       ...b,
       priceAmount: String(plan.price),
@@ -329,6 +347,7 @@ export function ServerFormScreen() {
       else if (info.hostname) n.ip = info.hostname;
       if (info.sshUser) n.sshUser = info.sshUser;
       if (info.sshPort) n.sshPort = info.sshPort;
+      if (info.tariff) n.providerPlan = info.tariff;
       if (info.password) {
         n.secret = info.password;
         n.auth = "password";
@@ -351,6 +370,7 @@ export function ServerFormScreen() {
     if (parsed.password) chips.push("Пароль: ••••••");
     if (parsed.sshPort) chips.push(`Порт: ${parsed.sshPort}`);
     if (parsed.location) chips.push(`Локация: ${parsed.location}`);
+    if (parsed.tariff) chips.push(`Тариф: ${parsed.tariff}`);
     return chips;
   }, [parsed, providers]);
 
@@ -403,6 +423,7 @@ export function ServerFormScreen() {
       provider: form.provider || "Другой",
       ip: form.ip,
       location: form.location.trim(),
+      providerMetadata: withProviderPlan(serverQ.data?.providerMetadata, form.providerPlan),
       sshUser: form.sshUser || "root",
       sshPort: form.sshPort || "22",
       auth: form.auth,
@@ -712,6 +733,15 @@ export function ServerFormScreen() {
               Составляется из локации и провайдера — можно изменить.
             </p>
           )}
+        </Field>
+
+        <Field label="Тариф провайдера">
+          <input
+            className="input"
+            value={form.providerPlan}
+            onChange={(e) => set("providerPlan", e.target.value)}
+            placeholder="например, MSK-highmem-KVM-SSD-2"
+          />
         </Field>
 
         {/* IP */}
