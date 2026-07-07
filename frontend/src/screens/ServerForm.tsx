@@ -5,7 +5,7 @@ import { ApiError } from "../lib/api";
 import type { ParsedServerInfo } from "../lib/credentialParse";
 import { hasUsefulInfo, parseServerInfo } from "../lib/credentialParse";
 import * as q from "../lib/queries";
-import type { Provider, Server } from "../lib/types";
+import type { Provider, ProviderPlan, Server } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
 
@@ -21,6 +21,15 @@ interface FormState {
   secret: string;
 }
 
+interface BillingState {
+  priceAmount: string;
+  priceCurrency: string;
+  pricePeriod: string;
+  priceAnchorDay: string;
+  trafficQuotaGb: string;
+  trafficBillingDay: string;
+}
+
 const EMPTY: FormState = {
   name: "",
   provider: "",
@@ -32,6 +41,19 @@ const EMPTY: FormState = {
   auth: "key",
   secret: "",
 };
+
+const EMPTY_BILLING: BillingState = {
+  priceAmount: "",
+  priceCurrency: "RUB",
+  pricePeriod: "month",
+  priceAnchorDay: "",
+  trafficQuotaGb: "",
+  trafficBillingDay: "",
+};
+
+const GIB = 1024 ** 3;
+const CURRENCIES = ["RUB", "USD", "EUR", "KZT", "UAH", "GBP"];
+const PRICE_PERIODS = ["minute", "day", "month"];
 
 // Популярные локации VPN-серверов. Пользователь может выбрать из списка
 // или ввести любое своё значение — поле-датлист принимает и то, и другое.
@@ -74,6 +96,49 @@ function suggestName(location: string, provider: string): string {
   return prov ? `${loc} [${prov}]` : loc;
 }
 
+const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
+
+function isFirstByteProvider(p: Provider | null): boolean {
+  return (p?.id ?? "").toLowerCase() === "firstbyte" || (p?.name ?? "").trim().toLowerCase() === "firstbyte";
+}
+
+function fmtTraffic(tb: number | null): string {
+  return tb == null ? "безлимит" : `${tb} ТБ`;
+}
+
+function fmtPrice(p: ProviderPlan): string {
+  return `${p.price.toLocaleString("ru-RU")} ${p.currency}/${PRICE_PERIOD_LABEL[p.period] ?? p.period}`;
+}
+
+function planSpecs(p: ProviderPlan): string {
+  return `${p.cpu}vCPU/${p.ramGb}ГБ RAM · ${p.diskGb}ГБ ${p.diskType} · ${p.portMbps} Мбит · ${fmtTraffic(p.trafficTb)}`;
+}
+
+function planOptionKey(p: ProviderPlan): string {
+  return `${p.id}::${p.region}::${p.name}`;
+}
+
+function bytesToGb(n: number | null): string {
+  return n == null ? "" : String(+(n / GIB).toFixed(2));
+}
+
+function gbToBytes(s: string): number | null {
+  const gb = Number.parseFloat(s.replace(",", "."));
+  return Number.isFinite(gb) && gb > 0 ? Math.round(gb * GIB) : null;
+}
+
+function nullableNumber(s: string): number | null {
+  if (!s.trim()) return null;
+  const n = Number.parseFloat(s.replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function nullableDay(s: string): number | null {
+  if (!s.trim()) return null;
+  const n = Number.parseInt(s, 10);
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? n : null;
+}
+
 export function ServerFormScreen() {
   const params = useNav((s) => s.params);
   const go = useNav((s) => s.go);
@@ -89,6 +154,11 @@ export function ServerFormScreen() {
     queryFn: () => q.getServer(serverId!),
     enabled: !!serverId,
   });
+  const priceQ = useQuery({
+    queryKey: ["serverPrice", serverId],
+    queryFn: () => q.getServerPrice(serverId!),
+    enabled: !!serverId,
+  });
 
   const providers: Provider[] = providersQ.data ?? [];
   const known = useMemo(() => (name: string) => providers.some((p) => p.name === name), [providers]);
@@ -98,6 +168,8 @@ export function ServerFormScreen() {
     return EMPTY;
   });
   const [loaded, setLoaded] = useState(!serverId);
+  const [priceLoaded, setPriceLoaded] = useState(!serverId);
+  const [billing, setBilling] = useState<BillingState>(EMPTY_BILLING);
   // Пользователь правил название вручную → перестаём автоподставлять его.
   const [nameTouched, setNameTouched] = useState(false);
 
@@ -117,8 +189,26 @@ export function ServerFormScreen() {
       auth: s.auth,
       secret: s.secret,
     });
+    setBilling((b) => ({
+      ...b,
+      trafficQuotaGb: bytesToGb(s.bandwidthQuota),
+      trafficBillingDay: s.billingDay ? String(s.billingDay) : "",
+    }));
     setLoaded(true);
   }, [serverId, loaded, serverQ.data, known]);
+
+  useEffect(() => {
+    if (!serverId || priceLoaded || !priceQ.isSuccess) return;
+    const price = priceQ.data.price;
+    setBilling((b) => ({
+      ...b,
+      priceAmount: price ? String(price.amount) : "",
+      priceCurrency: price?.currency ?? b.priceCurrency,
+      pricePeriod: price?.period ?? b.pricePeriod,
+      priceAnchorDay: price?.anchorDay ? String(price.anchorDay) : "",
+    }));
+    setPriceLoaded(true);
+  }, [serverId, priceLoaded, priceQ.isSuccess, priceQ.data]);
 
   // Автоподстановка названия из локации и провайдера, пока пользователь
   // не тронул поле вручную (только при создании — существующий сервер не трогаем).
@@ -136,6 +226,79 @@ export function ServerFormScreen() {
   function onNameChange(val: string) {
     set("name", val);
     setNameTouched(val.trim() !== "");
+  }
+
+  const selProvider = useMemo(() => {
+    if (form.providerCustom) return null;
+    return providers.find((p) => p.name === form.provider) ?? null;
+  }, [providers, form.provider, form.providerCustom]);
+  const firstByteSelected = isFirstByteProvider(selProvider);
+
+  const [planRegion, setPlanRegion] = useState("");
+  const [planId, setPlanId] = useState("");
+
+  // FirstByte: динамические тарифы с сайта. Страна/тариф — необязательная подсказка
+  // для автозаполнения локации, цены и квоты трафика; SSH/IP остаются ручными.
+  const plansQ = useQuery({
+    queryKey: ["providerPlans", selProvider?.id],
+    queryFn: () => q.providerPlans(selProvider?.id ?? ""),
+    enabled: firstByteSelected,
+  });
+  const plans = plansQ.data ?? [];
+  const planRegions = useMemo(
+    () => [...new Set(plans.map((p) => p.region).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru")),
+    [plans],
+  );
+  const filteredPlans = useMemo(
+    () => (planRegion ? plans.filter((p) => p.region === planRegion) : []),
+    [plans, planRegion],
+  );
+  const selPlan = useMemo(() => plans.find((p) => planOptionKey(p) === planId) ?? null, [plans, planId]);
+
+  useEffect(() => {
+    setPlanRegion("");
+    setPlanId("");
+  }, [selProvider?.id]);
+
+  useEffect(() => {
+    if (planRegion || !form.location.trim() || planRegions.length === 0) return;
+    const match = planRegions.find((r) => r.localeCompare(form.location.trim(), "ru", { sensitivity: "accent" }) === 0);
+    if (match) setPlanRegion(match);
+  }, [planRegion, planRegions, form.location]);
+
+  function onPlanRegionChange(region: string) {
+    setPlanRegion(region);
+    setPlanId("");
+    if (region) set("location", region);
+  }
+
+  function onPlanChange(id: string) {
+    setPlanId(id);
+    const plan = plans.find((p) => planOptionKey(p) === id);
+    if (!plan) return;
+    set("location", plan.region);
+    setBilling((b) => ({
+      ...b,
+      priceAmount: String(plan.price),
+      priceCurrency: plan.currency,
+      pricePeriod: plan.period,
+      priceAnchorDay: "",
+      trafficQuotaGb: plan.trafficTb ? String(+(plan.trafficTb * 1024).toFixed(2)) : "",
+    }));
+  }
+
+  async function applyBillingToServer(targetServerId: string) {
+    await q.setServerPrice(targetServerId, {
+      amount: nullableNumber(billing.priceAmount),
+      currency: billing.priceCurrency,
+      period: billing.pricePeriod,
+      anchorDay: nullableDay(billing.priceAnchorDay),
+    });
+    await q.setBandwidthQuota(
+      targetServerId,
+      gbToBytes(billing.trafficQuotaGb),
+      nullableDay(billing.trafficBillingDay),
+    );
   }
 
   // Умное автозаполнение: пользователь вставляет письмо провайдера,
@@ -196,20 +359,16 @@ export function ServerFormScreen() {
     onSuccess: async (res) => {
       qc.invalidateQueries({ queryKey: ["servers"] });
       qc.invalidateQueries({ queryKey: ["server", res.id] });
-      // при создании из плана провайдера — подтягиваем цену (финучёт) и квоту трафика (best-effort)
-      if (!serverId && selPlan) {
-        try {
-          await q.setServerPrice(res.id, {
-            amount: selPlan.price,
-            currency: selPlan.currency,
-            period: selPlan.period,
-            anchorDay: null,
-          });
-          const quota = selPlan.trafficTb ? Math.round(selPlan.trafficTb * 1024 ** 4) : null;
-          await q.setBandwidthQuota(res.id, quota, null);
-        } catch {
-          // не критично — цену/квоту можно задать на странице сервера
-        }
+      try {
+        await applyBillingToServer(res.id);
+        qc.invalidateQueries({ queryKey: ["server", res.id] });
+        qc.invalidateQueries({ queryKey: ["serverPrice", res.id] });
+        qc.invalidateQueries({ queryKey: ["serverCost", res.id] });
+        qc.invalidateQueries({ queryKey: ["serverUsage", res.id] });
+      } catch {
+        toast("Сервер сохранён, но цену/квоту не удалось применить");
+        go("server", { serverId: res.id });
+        return;
       }
       toast("Сервер сохранён");
       go("server", { serverId: res.id });
@@ -224,6 +383,21 @@ export function ServerFormScreen() {
       toast("Заполните название, IP и локацию");
       return;
     }
+    if (billing.priceAmount.trim() && nullableNumber(billing.priceAmount) == null) {
+      toast("Проверьте стоимость сервера");
+      return;
+    }
+    if (billing.trafficQuotaGb.trim() && gbToBytes(billing.trafficQuotaGb) == null) {
+      toast("Проверьте квоту трафика");
+      return;
+    }
+    if (
+      (billing.priceAnchorDay.trim() && nullableDay(billing.priceAnchorDay) == null) ||
+      (billing.trafficBillingDay.trim() && nullableDay(billing.trafficBillingDay) == null)
+    ) {
+      toast("День периода должен быть от 1 до 31");
+      return;
+    }
     save.mutate({
       name: form.name,
       provider: form.provider || "Другой",
@@ -236,26 +410,11 @@ export function ServerFormScreen() {
     });
   }
 
-  const selProvider = useMemo(() => {
-    if (form.providerCustom) return null;
-    return providers.find((p) => p.name === form.provider) ?? null;
-  }, [providers, form.provider, form.providerCustom]);
-
-  // тарифные планы выбранного провайдера (для автозаполнения цены + квоты трафика при создании)
-  const plansQ = useQuery({
-    queryKey: ["providerPlans", selProvider?.id],
-    queryFn: () => q.providerPlans(selProvider?.id ?? ""),
-    enabled: !!selProvider?.id && !serverId,
-  });
-  const plans = plansQ.data ?? [];
-  const [planId, setPlanId] = useState("");
-  const selPlan = useMemo(() => plans.find((p) => p.id === planId) ?? null, [plans, planId]);
-
   const loginLabel = form.auth === "key" ? "SSH пользователь" : "Логин";
   const secretLabel = form.auth === "key" ? "SSH-ключ" : "Пароль";
   const secretPlaceholder = form.auth === "key" ? "путь к ключу или вставьте ключ" : "пароль для пользователя";
 
-  if (serverId && (serverQ.isLoading || !loaded)) {
+  if (serverId && (serverQ.isLoading || priceQ.isLoading || !loaded)) {
     return (
       <div style={{ maxWidth: 620, margin: "0 auto", width: "100%" }}>
         <ScreenHeader title="Редактировать сервер" onBack={() => go("server", { serverId })} />
@@ -372,28 +531,79 @@ export function ServerFormScreen() {
                 ))}
               </div>
 
-              {/* Тарифы провайдера: выбор плана подтянет цену (финучёт) и квоту трафика после создания */}
-              {!serverId && plans.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {firstByteSelected && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
-                    Тариф — подтянет цену и квоту трафика
+                    Тариф FirstByte для автозаполнения
                   </span>
-                  <select className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
-                    <option value="">— выбрать тариф (необязательно) —</option>
-                    {plans.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} — {p.price} {p.currency}/мес · {p.cpu}vCPU/{p.ramGb}ГБ · {p.diskGb}ГБ ·{" "}
-                        {p.trafficTb ? `${p.trafficTb} ТБ` : "безлимит"}
-                        {p.available === false ? " · недоступен к заказу" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {selPlan && (
-                    <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-                      {selPlan.region} · порт {selPlan.portMbps} Мбит · после создания: цена {selPlan.price}{" "}
-                      {selPlan.currency}/мес{selPlan.trafficTb ? `, квота ${selPlan.trafficTb} ТБ` : ""}
-                      {selPlan.available === false ? " · на сайте недоступен к заказу" : ""}
+                  {plansQ.isLoading ? (
+                    <div className="rowflex" style={{ gap: 8, color: "var(--text-3)", fontSize: 12.5 }}>
+                      <Spinner />
+                      Загружаем страны и тарифы…
+                    </div>
+                  ) : plansQ.isError ? (
+                    <span style={{ fontSize: 12.5, color: "var(--danger)" }}>
+                      Не удалось загрузить тарифы FirstByte.
                     </span>
+                  ) : plans.length === 0 ? (
+                    <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>Тарифы FirstByte не найдены.</span>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                          gap: 10,
+                        }}
+                      >
+                        <Field label="Страна">
+                          <select
+                            className="input"
+                            value={planRegion}
+                            onChange={(e) => onPlanRegionChange(e.target.value)}
+                          >
+                            <option value="">— выбрать —</option>
+                            {planRegions.map((r) => (
+                              <option key={r} value={r}>
+                                {r} · {plans.filter((p) => p.region === r).length}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Тариф">
+                          <select
+                            className="input"
+                            value={planId}
+                            disabled={!planRegion || filteredPlans.length === 0}
+                            onChange={(e) => onPlanChange(e.target.value)}
+                          >
+                            <option value="">— выбрать тариф —</option>
+                            {filteredPlans.map((p) => (
+                              <option key={planOptionKey(p)} value={planOptionKey(p)}>
+                                {p.name} — {fmtPrice(p)} · {planSpecs(p)}
+                                {p.available === false ? " · недоступен к заказу" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                      {selPlan && (
+                        <div
+                          style={{
+                            border: "1px solid var(--border)",
+                            borderRadius: 11,
+                            background: "var(--surface)",
+                            padding: "10px 12px",
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{selPlan.name}</div>
+                          <div className="muted-3" style={{ fontSize: 12, marginTop: 3 }}>
+                            {fmtPrice(selPlan)} · {planSpecs(selPlan)}
+                            {selPlan.available === false ? " · недоступен к заказу" : ""}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -513,6 +723,91 @@ export function ServerFormScreen() {
             placeholder="203.0.113.10"
           />
         </Field>
+
+        <div className="stack" style={{ gap: 12 }}>
+          <div
+            className="muted-3"
+            style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
+          >
+            Стоимость и трафик
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+            <Field label="Стоимость">
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step="0.01"
+                value={billing.priceAmount}
+                placeholder="пусто — бесплатно"
+                onChange={(e) => setBilling((b) => ({ ...b, priceAmount: e.target.value }))}
+              />
+            </Field>
+            <Field label="Валюта">
+              <select
+                className="input"
+                value={billing.priceCurrency}
+                onChange={(e) => setBilling((b) => ({ ...b, priceCurrency: e.target.value }))}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="День оплаты">
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={31}
+                value={billing.priceAnchorDay}
+                placeholder="необязательно"
+                onChange={(e) => setBilling((b) => ({ ...b, priceAnchorDay: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <Field label="Период оплаты">
+            <div style={{ display: "flex", gap: 8 }}>
+              {PRICE_PERIODS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`chip${billing.pricePeriod === p ? " selected" : ""}`}
+                  style={{ flex: 1, height: 40, justifyContent: "center", cursor: "pointer", fontSize: 13.5 }}
+                  onClick={() => setBilling((b) => ({ ...b, pricePeriod: p }))}
+                >
+                  {p === "minute" ? "Минута" : p === "day" ? "Сутки" : "Месяц"}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            <Field label="Квота трафика, ГБ">
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step="0.1"
+                value={billing.trafficQuotaGb}
+                placeholder="пусто — безлимит"
+                onChange={(e) => setBilling((b) => ({ ...b, trafficQuotaGb: e.target.value }))}
+              />
+            </Field>
+            <Field label="День сброса трафика">
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={31}
+                value={billing.trafficBillingDay}
+                placeholder="пусто — 1-е число"
+                onChange={(e) => setBilling((b) => ({ ...b, trafficBillingDay: e.target.value }))}
+              />
+            </Field>
+          </div>
+        </div>
 
         <div style={{ height: 1, background: "var(--border)" }} />
 
