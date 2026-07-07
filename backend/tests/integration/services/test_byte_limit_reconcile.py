@@ -123,6 +123,44 @@ async def test__sync_apply__does_not_clobber_suspended(session_maker, uow, setti
         assert (await tx.session.get(m.DeviceConfig, act_id)).status == "revoked"  # обычная реконсиляция цела
 
 
+async def test__reconcile__ignores_manual_paused(session_maker, uow, settings) -> None:
+    """Ручная пауза (status="paused") не трогается авто-реконсиляцией лимита даже при превышении:
+    реконсиляция работает только со статусами active/suspended, поэтому ручная пауза с ней не воюет.
+    """
+    async with seed(session_maker) as s:
+        srv_id, cfg_id = await _setup(
+            s, phone="+79005550004", token="grp-paused", limit_bytes=_GB, used_bytes=5 * _GB, status="paused"
+        )
+    fake = _FakeProv()
+    await SyncService(uow, settings)._reconcile_byte_limits(srv_id, fake)
+
+    assert not fake.suspended and not fake.resumed  # paused не суспендится и не резюмится авто
+    async with uow.query() as tx:
+        assert (await tx.session.get(m.DeviceConfig, cfg_id)).status == "paused"  # ручная пауза цела
+
+
+async def test__sync_apply__does_not_clobber_paused(session_maker, uow, settings) -> None:
+    """Полный проход _apply не перетирает ручную паузу (paused), как и авто-suspended."""
+    xray_label = pc.spec_by_id("xray").label
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79006660002")
+        srv = await make_server(s, owner_id=owner.id, name="srv-paused")
+        dev = await make_device(s, user_id=owner.id)
+        cfg = await make_device_config(
+            s, device_id=dev.id, server_id=srv.id, vpn_type="amnezia", proto=xray_label,
+            status="paused", client_id="UUID-P",
+        )  # fmt: skip
+        srv_id, cfg_id = srv.id, cfg.id
+    obs = {
+        "xray": ProtocolObservation(
+            proto_id="xray", present=True, running=True, readable_clients=True, client_ids=set()
+        )
+    }
+    await SyncService(uow, settings)._apply(srv_id, set(), obs, {}, {}, {})
+    async with uow.query() as tx:
+        assert (await tx.session.get(m.DeviceConfig, cfg_id)).status == "paused"  # ручная пауза защищена
+
+
 async def test__reconcile__no_limit__does_nothing(session_maker, uow, settings) -> None:
     # без байт-лимита (group.max_bytes=0 → None) активный конфиг не трогаем даже при большом трафике
     async with seed(session_maker) as s:

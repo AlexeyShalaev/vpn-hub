@@ -57,6 +57,16 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
     },
     onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
   });
+  // ручная пауза/старт доступа по конфигу (тот же suspend/resume-механизм, статус → paused/active)
+  const pauseMut = useMutation({
+    mutationFn: (v: { cid: string; pause: boolean }) =>
+      v.pause ? q.pauseServerClient(serverId, v.cid) : q.resumeServerClient(serverId, v.cid),
+    onSuccess: (_r, v) => {
+      invalidate();
+      toast(v.pause ? "Конфиг приостановлен" : "Конфиг возобновлён");
+    },
+    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+  });
 
   if (isLoading || !data) {
     return (
@@ -197,10 +207,27 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                           </div>
                           <div className="muted-3" style={{ fontSize: 12 }}>
                             {c.device} · {c.proto}
-                            {c.status !== "active" ? " · отозван" : ""}
+                            {c.status === "paused"
+                              ? " · на паузе"
+                              : c.status === "suspended"
+                                ? " · лимит трафика"
+                                : c.status === "revoked"
+                                  ? " · отозван"
+                                  : ""}
                           </div>
                         </div>
                         <div className="rowflex" style={{ flexWrap: "nowrap" }}>
+                          {c.status !== "revoked" && (
+                            <Btn
+                              variant="ghost"
+                              sm
+                              disabled={pauseMut.isPending}
+                              title={c.status === "active" ? "Приостановить конфиг" : "Возобновить конфиг"}
+                              onClick={() => pauseMut.mutate({ cid: c.id, pause: c.status === "active" })}
+                            >
+                              <Icon name={c.status === "active" ? "stop" : "play"} size={15} />
+                            </Btn>
+                          )}
                           <Btn
                             variant="ghost"
                             sm

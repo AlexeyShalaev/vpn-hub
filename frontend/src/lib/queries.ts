@@ -142,6 +142,11 @@ export const renameServerClient = (sid: string, cid: string, name: string) =>
   http.patch<{ ok: boolean }>(`/servers/${sid}/clients/${cid}`, { name });
 export const revokeServerClient = (sid: string, cid: string) =>
   http.del<{ ok: boolean }>(`/servers/${sid}/clients/${cid}`);
+// ручная пауза/старт доступа по конфигу (cid = config_id); статус → paused/active
+export const pauseServerClient = (sid: string, cid: string) =>
+  http.post<{ ok: boolean; status: string }>(`/servers/${sid}/clients/${cid}/pause`);
+export const resumeServerClient = (sid: string, cid: string) =>
+  http.post<{ ok: boolean; status: string }>(`/servers/${sid}/clients/${cid}/resume`);
 export const vpnAdvanced = (sid: string, vtype: string) => http.get<VpnAdvanced>(`/servers/${sid}/vpns/${vtype}`);
 export const vpnExternal = (sid: string, vtype: string) =>
   http.get<VpnExternal>(`/servers/${sid}/vpns/${vtype}/external`);

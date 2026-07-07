@@ -2,13 +2,14 @@
 // серверам и протоколам. Данные — GET /monitoring (TrafficService.global_overview), собранные
 // в sync-тике по SSH (wg dump / xray statsquery / hysteria trafficStats). Сводка сверху +
 // фильтр по серверу/протоколу + сортировка. Поллинг как у остального owner-UI.
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LineChart } from "../components/chart";
 import { Btn, Empty, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { MonitoringClient } from "../lib/types";
+import { useStore } from "../store";
 
 const PERIODS = ["1h", "24h", "7d"] as const;
 type Period = (typeof PERIODS)[number];
@@ -320,6 +321,8 @@ export function MonitoringScreen() {
   const [sort, setSort] = useState<SortKey>("traffic");
   const [selected, setSelected] = useState<MonitoringClient | null>(null);
 
+  const qc = useQueryClient();
+  const toast = useStore((s) => s.toast);
   const mq = useQuery({
     queryKey: ["monitoring", period],
     queryFn: () => q.monitoring(period),
@@ -328,6 +331,16 @@ export function MonitoringScreen() {
     // экран пустым до следующего 30с-тика («мониторинг раз через раз»). Здесь чиним точечно:
     retry: 2,
     refetchOnWindowFocus: true,
+  });
+  // ручная пауза/старт конфига прямо из мониторинга (тот же suspend/resume, статус paused/active)
+  const pauseMut = useMutation({
+    mutationFn: (v: { sid: string; cid: string; pause: boolean }) =>
+      v.pause ? q.pauseServerClient(v.sid, v.cid) : q.resumeServerClient(v.sid, v.cid),
+    onSuccess: (_r, v) => {
+      qc.invalidateQueries({ queryKey: ["monitoring"] });
+      toast(v.pause ? "Конфиг приостановлен" : "Конфиг возобновлён");
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Ошибка"),
   });
 
   const clients = mq.data?.clients ?? [];
@@ -499,6 +512,7 @@ export function MonitoringScreen() {
                   <th style={{ ...th, textAlign: "right" }}>Отдал</th>
                   <th style={{ ...th, textAlign: "right" }}>Скорость ↓/↑</th>
                   <th style={{ ...th, textAlign: "right" }}>Активность</th>
+                  <th style={{ ...th, textAlign: "center" }} />
                 </tr>
               </thead>
               <tbody>
@@ -528,6 +542,25 @@ export function MonitoringScreen() {
                     <td style={num}>{fmtBytes(c.rxTotal)}</td>
                     <td style={num}>{c.online ? `${fmtSpeed(c.txSpeed)} / ${fmtSpeed(c.rxSpeed)}` : "—"}</td>
                     <td style={{ ...num, color: "var(--text-3)" }}>{c.online ? "сейчас" : fmtAgo(c.lastSeen)}</td>
+                    <td style={{ ...td, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                      {!c.external && c.configId && c.serverId && c.status !== "revoked" && (
+                        <Btn
+                          variant="ghost"
+                          sm
+                          disabled={pauseMut.isPending}
+                          title={c.status === "active" ? "Приостановить конфиг" : "Возобновить конфиг"}
+                          onClick={() =>
+                            pauseMut.mutate({
+                              sid: c.serverId as string,
+                              cid: c.configId as string,
+                              pause: c.status === "active",
+                            })
+                          }
+                        >
+                          <Icon name={c.status === "active" ? "stop" : "play"} size={14} />
+                        </Btn>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

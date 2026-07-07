@@ -289,3 +289,45 @@ class ServerAccessService:
                 ),
             )
         return {"ok": True}
+
+    async def set_paused(self, owner_id: str, sid: str, config_id: str, *, pause: bool) -> dict:
+        """Ручная пауза/старт доступа по конфигу (владелец). Использует тот же suspend/resume-механизм,
+        что и лимит трафика (Этап 3b), но помечает конфиг статусом "paused" — авто-реконсиляция лимита
+        (status IN active/suspended) его НЕ трогает, поэтому ручная пауза не воюет с лимитом.
+        """
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.query() as tx:
+            await self._owned(tx, owner_id, sid)
+            cfg = await tx.session.get(m.DeviceConfig, config_id)
+            if not cfg or cfg.server_id != sid:
+                raise NotFound("Конфиг не найден")
+            if cfg.vpn_type not in PROVISIONED_VENDORS or not cfg.client_id:
+                raise BadRequest("Этот конфиг нельзя приостановить")
+            ref = (sid, cfg.proto or "", prov.material_from_config(cfg))
+            cfg_id, client_id = cfg.id, cfg.client_id
+
+        # применяем на сервере ПЕРЕД сменой статуса: если сервер недоступен — статус не меняем
+        done = await (prov.suspend_configs([ref]) if pause else prov.resume_configs([ref]))
+        if client_id not in done:
+            raise BadRequest("Сервер недоступен — не удалось изменить состояние конфига")
+
+        new_status = "paused" if pause else "active"
+        async with self.uow.transaction() as tx:
+            obj = await tx.session.get(m.DeviceConfig, cfg_id)
+            if obj is not None:
+                obj.status = new_status
+            owner = await tx.users.get(owner_id)
+            tx.audit.add_event(
+                at=time.time(),
+                actor_kind="admin" if owner and await tx.admins.is_admin(owner_id) else "user",
+                actor_id=owner_id,
+                actor_name=owner.name if owner else "",
+                type_=audit_types.ACCESS_REVOKE,
+                target_kind="server",
+                target_id=sid,
+                owner_user_id=owner_id,
+                meta_json=json.dumps(
+                    {"action": "pause" if pause else "resume", "configId": cfg_id}, ensure_ascii=False
+                ),
+            )
+        return {"ok": True, "status": new_status}

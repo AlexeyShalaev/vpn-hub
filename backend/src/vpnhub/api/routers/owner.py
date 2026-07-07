@@ -205,6 +205,27 @@ async def revoke_server_client(
     return await svc.revoke_client(ident.id, sid, cid)
 
 
+@router.post("/servers/{sid}/clients/{cid}/pause")
+async def pause_server_client(
+    sid: str,
+    cid: str,
+    ident: Identity = Depends(require_user),
+    svc: ServerAccessService = Depends(service(ServerAccessService)),
+) -> dict:
+    # ручная пауза доступа по конфигу (cid = config_id); статус → "paused"
+    return await svc.set_paused(ident.id, sid, cid, pause=True)
+
+
+@router.post("/servers/{sid}/clients/{cid}/resume")
+async def resume_server_client(
+    sid: str,
+    cid: str,
+    ident: Identity = Depends(require_user),
+    svc: ServerAccessService = Depends(service(ServerAccessService)),
+) -> dict:
+    return await svc.set_paused(ident.id, sid, cid, pause=False)
+
+
 @router.post("/servers/{sid}/vpns/{vtype}/{op}")
 async def vpn_op(
     sid: str,

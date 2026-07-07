@@ -329,6 +329,8 @@ export interface ServerMetrics {
 
 // супер-мониторинг клиентов: per-client трафик+онлайн по всем протоколам/серверам
 export interface MonitoringClient {
+  configId?: string | null; // DeviceConfig.id — для ручной паузы/старта (null у external)
+  status?: string; // active | paused | suspended | revoked
   proto: string; // id протокола (awg | xray | hysteria2 | ...)
   clientId: string | null; // pubkey/uuid/authid движка
   userName: string; // имя пользователя (пусто для external)

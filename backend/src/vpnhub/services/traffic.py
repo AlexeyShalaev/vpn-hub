@@ -61,7 +61,7 @@ def _group_by_server(samples: list[m.TrafficSample]) -> dict[str, list[m.Traffic
 
 
 def _aggregate_clients(
-    samples: list[m.TrafficSample], names: dict[str, tuple[str, str]], now: float, online_window: int
+    samples: list[m.TrafficSample], names: dict[str, tuple[str, str, str]], now: float, online_window: int
 ) -> list[dict]:
     """Свернуть сэмплы в per-(proto,client) агрегаты: суммарный трафик, онлайн, скорость.
 
@@ -79,10 +79,12 @@ def _aggregate_clients(
         key = (s.proto, s.client_id)
         agg = clients.get(key)
         if agg is None:
-            dev, usr = names.get(s.device_config_id or "", ("", ""))
+            dev, usr, cfg_status = names.get(s.device_config_id or "", ("", "", "active"))
             agg = {
                 "proto": s.proto,
                 "clientId": s.client_id,
+                "configId": s.device_config_id,  # для ручной паузы/старта из мониторинга (null у external)
+                "status": cfg_status,  # active | paused | suspended | revoked
                 "deviceName": dev,
                 "userName": usr,
                 "external": s.device_config_id is None,
@@ -548,8 +550,8 @@ class TrafficService:
             "clients": clients,
         }
 
-    async def _names(self, tx: Any, samples: list[m.TrafficSample]) -> dict[str, tuple[str, str]]:
-        """DeviceConfig.id → (имя устройства, имя пользователя) для нон-external клиентов."""
+    async def _names(self, tx: Any, samples: list[m.TrafficSample]) -> dict[str, tuple[str, str, str]]:
+        """DeviceConfig.id → (имя устройства, имя пользователя, статус конфига) для нон-external клиентов."""
         dc_ids = {s.device_config_id for s in samples if s.device_config_id}
         if not dc_ids:
             return {}
@@ -563,9 +565,9 @@ class TrafficService:
                 )
             ).all()
         )
-        out: dict[str, tuple[str, str]] = {}
+        out: dict[str, tuple[str, str, str]] = {}
         for cfg, dev, usr in rows:
-            out[cfg.id] = (dev.name if dev else "", usr.name if usr else "")
+            out[cfg.id] = (dev.name if dev else "", usr.name if usr else "", cfg.status)
         return out
 
     async def purge_old(self) -> int:
