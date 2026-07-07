@@ -12,6 +12,11 @@ from vpnhub.infra.provider_plans import TIB, discover_firstbyte_plan_urls, parse
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _clear_provider_plan_cache() -> None:
+    provider_plans.clear_provider_plan_cache()
+
+
 FIRSTBYTE_TABLE = """
 <html><body>
 <a href="/vps-vds/japan/">Japan</a>
@@ -111,6 +116,45 @@ async def test__plans_for__firstbyte_fetches_dynamic_catalog(monkeypatch: pytest
     monkeypatch.setattr(provider_plans, "fetch_firstbyte_plans", fake_fetch)
 
     assert await provider_plans.plans_for("FirstByte") == [{"id": "fb-live"}]
+
+
+async def test__plans_for__firstbyte_caches_dynamic_catalog_and_returns_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_fetch() -> list[dict[str, Any]]:
+        nonlocal calls
+        calls += 1
+        return [{"id": "fb-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_firstbyte_plans", fake_fetch)
+
+    first = await provider_plans.plans_for("firstbyte")
+    first[0]["id"] = "mutated"
+
+    assert await provider_plans.plans_for("FirstByte") == [{"id": "fb-live"}]
+    assert calls == 1
+
+
+async def test__plans_for__firstbyte_returns_stale_cache_when_refresh_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_fetch() -> list[dict[str, Any]]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [{"id": "fb-live"}]
+        raise RuntimeError("site is down")
+
+    monkeypatch.setattr(provider_plans, "fetch_firstbyte_plans", fake_fetch)
+    monkeypatch.setattr(provider_plans, "_PROVIDER_PLANS_CACHE_TTL_S", 0)
+
+    assert await provider_plans.plans_for("firstbyte") == [{"id": "fb-live"}]
+    assert await provider_plans.plans_for("firstbyte") == [{"id": "fb-live"}]
+    assert calls == 2
 
 
 async def test__plans_for__unknown_empty() -> None:

@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import re
 import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
 
@@ -29,6 +31,7 @@ _FIRSTBYTE_BASE = "https://firstbyte.ru"
 _FIRSTBYTE_SITEMAP = f"{_FIRSTBYTE_BASE}/sitemap.xml"
 _FIRSTBYTE_TIMEOUT = 5.0
 _FIRSTBYTE_MAX_PAGES = 36
+_PROVIDER_PLANS_CACHE_TTL_S = 30 * 60
 _USER_AGENT = "vpnhub-provider-plans/0.1 (+https://github.com/AlexeyShalaev/vpn-hub)"
 
 # Seed-страницы из текущего меню FirstByte + страницы, которые пользователь явно попросил учесть.
@@ -54,6 +57,18 @@ _FIRSTBYTE_SEEDS: tuple[str, ...] = (
 
 _LOC_RE = re.compile(r"<loc>\s*(?:<!\[CDATA\[)?(.+?)(?:\]\]>)?\s*</loc>", re.IGNORECASE | re.DOTALL)
 _SPACE_RE = re.compile(r"[\s\u00a0]+")
+_PlanFetcher = Callable[[], Awaitable[list[dict[str, Any]]]]
+
+
+@dataclass(frozen=True)
+class _PlansCacheEntry:
+    plans: tuple[dict[str, Any], ...]
+    expires_at: float
+
+
+_PLANS_CACHE: dict[str, _PlansCacheEntry] = {}
+_PLANS_REFRESH_LOCKS: dict[str, asyncio.Lock] = {}
+_PLANS_LOCK = asyncio.Lock()
 
 
 class _PlanHtmlParser(HTMLParser):
@@ -393,6 +408,62 @@ def parse_firstbyte_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
     return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), str(p["id"])))
 
 
+def clear_provider_plan_cache(provider_id: str | None = None) -> None:
+    """Очистить in-memory кэш тарифов (используется тестами и будущей ручной инвалидацией)."""
+    if provider_id is None:
+        _PLANS_CACHE.clear()
+        return
+    _PLANS_CACHE.pop(provider_id.strip().lower(), None)
+
+
+def _clone_plans(plans: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(p) for p in plans]
+
+
+def _extend_stale_cache(provider_id: str, cached: _PlansCacheEntry) -> list[dict[str, Any]]:
+    entry = _PlansCacheEntry(cached.plans, time.monotonic() + _PROVIDER_PLANS_CACHE_TTL_S)
+    _PLANS_CACHE[provider_id] = entry
+    return _clone_plans(entry.plans)
+
+
+async def _refresh_lock(provider_id: str) -> asyncio.Lock:
+    async with _PLANS_LOCK:
+        return _PLANS_REFRESH_LOCKS.setdefault(provider_id, asyncio.Lock())
+
+
+async def _cached_provider_plans(provider_id: str, fetcher: _PlanFetcher) -> list[dict[str, Any]]:
+    """TTL-кэш в памяти процесса, чтобы UI не парсил сайт провайдера на каждый запрос."""
+    key = provider_id.strip().lower()
+    now = time.monotonic()
+    cached = _PLANS_CACHE.get(key)
+    if cached and cached.expires_at > now:
+        return _clone_plans(cached.plans)
+
+    async with await _refresh_lock(key):
+        now = time.monotonic()
+        cached = _PLANS_CACHE.get(key)
+        if cached and cached.expires_at > now:
+            return _clone_plans(cached.plans)
+
+        try:
+            fresh = await fetcher()
+        except Exception as exc:
+            if cached:
+                log.warning("provider_plans_cache_stale", provider=key, error=str(exc))
+                return _extend_stale_cache(key, cached)
+            raise
+
+        if not fresh:
+            if cached:
+                log.warning("provider_plans_cache_stale_empty", provider=key)
+                return _extend_stale_cache(key, cached)
+            return []
+
+        entry = _PlansCacheEntry(tuple(_clone_plans(fresh)), time.monotonic() + _PROVIDER_PLANS_CACHE_TTL_S)
+        _PLANS_CACHE[key] = entry
+        return _clone_plans(entry.plans)
+
+
 async def fetch_firstbyte_plans(timeout: float = _FIRSTBYTE_TIMEOUT) -> list[dict[str, Any]]:
     """Скачать сайт FirstByte и вернуть текущие тарифы."""
     seeds, sitemap = await asyncio.gather(_fetch_many(_FIRSTBYTE_SEEDS, timeout), _fetch_sitemap(timeout))
@@ -405,7 +476,7 @@ async def plans_for(provider_id: str) -> list[dict[str, Any]]:
     """Планы провайдера по его id (пустой список, если каталога нет/сайт недоступен)."""
     if (provider_id or "").strip().lower() != "firstbyte":
         return []
-    return await fetch_firstbyte_plans()
+    return await _cached_provider_plans("firstbyte", fetch_firstbyte_plans)
 
 
 def plan_bandwidth_bytes(plan: dict) -> int | None:
