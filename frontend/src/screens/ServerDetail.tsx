@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
@@ -13,6 +13,7 @@ import { ServerAccessSections } from "./ServerAccess";
 import { VpnAdvancedModal } from "./VpnAdvanced";
 
 const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
+type ServerDetailTab = "connection" | "protocols" | "monitoring" | "billing" | "access" | "multihop";
 
 // установлен ли на сервере запущенный tcp-Reality Xray (условие мультихопа для entry/exit)
 const hasRunningXray = (s: Server): boolean =>
@@ -797,6 +798,7 @@ export function ServerDetailScreen() {
     proto: string;
     label: string;
   } | null>(null);
+  const [activeTab, setActiveTab] = useState<ServerDetailTab>("connection");
 
   const serverQ = useQuery({
     queryKey: ["server", serverId],
@@ -923,6 +925,13 @@ export function ServerDetailScreen() {
     onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить сервер"),
   });
 
+  useEffect(() => {
+    const server = serverQ.data;
+    if (activeTab === "multihop" && server && !hasRunningXray(server)) {
+      setActiveTab("protocols");
+    }
+  }, [activeTab, serverQ.data]);
+
   if (serverQ.isLoading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
@@ -949,6 +958,16 @@ export function ServerDetailScreen() {
     server.vpns.find((v) => v.type === t) ?? { type: t, installed: false, running: false, port: "" };
   const protosByVendor = (t: VpnType): Protocol[] => (server.protocols ?? []).filter((p) => p.vendor === t);
   const syncing = syncMut.isPending;
+  const tabs: { id: ServerDetailTab; label: string; icon: string }[] = [
+    { id: "connection", label: "Подключение", icon: "link" },
+    { id: "protocols", label: "Протоколы", icon: "servers" },
+    { id: "monitoring", label: "Мониторинг", icon: "monitoring" },
+    { id: "billing", label: "Трафик и стоимость", icon: "file" },
+    { id: "access", label: "Клиенты и конфиги", icon: "users" },
+  ];
+  if (hasRunningXray(server)) {
+    tabs.push({ id: "multihop", label: "Мультихоп", icon: "refresh" });
+  }
 
   return (
     <div className="stack">
@@ -996,379 +1015,432 @@ export function ServerDetailScreen() {
         </div>
       </div>
 
-      {/* SSH */}
-      <div className="card stack">
-        <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-          <div
-            className="muted-3"
-            style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
+      <div className="detail-tabs" role="tablist" aria-label="Разделы сервера">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`server-tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`server-tabpanel-${tab.id}`}
+            className={`detail-tab${activeTab === tab.id ? " active" : ""}`}
+            onClick={() => setActiveTab(tab.id)}
           >
-            Подключение SSH
-          </div>
-          <Btn
-            sm
-            onClick={() =>
-              setMigrateForm({
-                ip: "",
-                sshUser: server.sshUser,
-                sshPort: server.sshPort,
-                auth: server.auth,
-                secret: "",
-              })
-            }
-          >
-            <Icon name="refresh" size={15} />
-            Мигрировать на новый VPS
-          </Btn>
-        </div>
-        <div className="grid">
-          <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
-            <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
-              IP-адрес
-            </div>
-            <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-              <span className="mono" style={{ fontSize: 13.5 }}>
-                {server.ip}
-              </span>
-              <Btn variant="ghost" sm onClick={() => copyText(server.ip, toast, "IP скопирован")}>
-                <Icon name="copy" size={15} />
-              </Btn>
-            </div>
-          </div>
-
-          <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
-            <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
-              Пользователь · порт
-            </div>
-            <span className="mono" style={{ fontSize: 13.5 }}>
-              {server.sshUser} : {server.sshPort}
-            </span>
-          </div>
-
-          <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
-            <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
-              {authLabel}
-            </div>
-            <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-              <span className="mono" style={{ fontSize: 13.5, minWidth: 0, wordBreak: "break-all" }}>
-                {secretShown}
-              </span>
-              <Btn variant="ghost" sm onClick={() => setReveal((r) => !r)}>
-                <Icon name="eye" size={15} />
-                {reveal ? "Скрыть" : "Показать"}
-              </Btn>
-            </div>
-          </div>
-        </div>
+            <Icon name={tab.icon} size={16} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* VPN ПО */}
-      <div className="card stack">
-        <div
-          className="muted-3"
-          style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
-        >
-          VPN ПО на сервере
-        </div>
-        <div className="stack" style={{ gap: 10 }}>
-          {VPN_TYPES.map((type) => {
-            const v = vpnByType(type);
-            const protos = protosByVendor(type);
-            const catalog = VENDOR_PROTOCOLS[type]; // все протоколы вендора (для выбора/докачки)
-            const notInstalled = catalog.filter((pr) => !protos.find((x) => x.proto === pr.id)?.installed);
-            const installing = protos.some((p) => p.state === "installing");
-            const errored = protos.find((p) => p.state === "error");
-            const rem = errored?.remediation ?? null;
-            const busy =
-              (opMut.isPending && opMut.variables?.type === type) ||
-              (fixMut.isPending && fixMut.variables?.type === type);
-            const runLabel = installing
-              ? "устанавливается…"
-              : !v.installed
-                ? "не установлен"
-                : v.running
-                  ? "работает"
-                  : "остановлен";
-            const runClass = installing ? "neutral" : v.installed && v.running ? "ok" : "neutral";
-            return (
+      {activeTab === "connection" && (
+        <div className="stack" role="tabpanel" id="server-tabpanel-connection" aria-labelledby="server-tab-connection">
+          {/* SSH */}
+          <div className="card stack">
+            <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
               <div
-                key={type}
-                className="stack"
-                style={{
-                  border: `1px solid ${errored ? "var(--danger)" : "var(--border)"}`,
-                  borderRadius: 13,
-                  padding: 13,
-                  gap: 12,
-                }}
+                className="muted-3"
+                style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
               >
-                {/* Шапка: иконка + имя вендора + агрегатный статус (клик — расширенные настройки) */}
-                <div className="rowflex" style={{ gap: 12, flexWrap: "nowrap", alignItems: "flex-start" }}>
-                  <div
-                    style={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: 10,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flex: "none",
-                      background: "var(--surface-2)",
-                      color: `var(--${type})`,
-                    }}
-                  >
-                    {vpnLogo(type, theme) ? (
-                      <img
-                        src={vpnLogo(type, theme)}
-                        alt={VPN_LABEL[type]}
-                        width={26}
-                        height={26}
-                        style={{ objectFit: "contain", display: "block" }}
-                      />
-                    ) : (
-                      <Icon name={VPN_ICON[type]} size={20} />
-                    )}
-                  </div>
-                  <div
-                    style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
-                    onClick={v.installed ? () => setAdvancedVpn(type) : undefined}
-                  >
-                    <div className="rowflex" style={{ gap: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 15 }}>{VPN_LABEL[type]}</span>
-                      <span className={`badge ${runClass}`}>{runLabel}</span>
-                      {v.installed && (
-                        <span className="muted-3" style={{ display: "inline-flex" }} title="Расширенные настройки">
-                          <Icon name="chevron" size={14} />
-                        </span>
-                      )}
-                    </div>
-                    <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
-                      {VPN_DESC[type]}
-                    </div>
-                  </div>
+                Подключение SSH
+              </div>
+              <Btn
+                sm
+                onClick={() =>
+                  setMigrateForm({
+                    ip: "",
+                    sshUser: server.sshUser,
+                    sshPort: server.sshPort,
+                    auth: server.auth,
+                    secret: "",
+                  })
+                }
+              >
+                <Icon name="refresh" size={15} />
+                Мигрировать на новый VPS
+              </Btn>
+            </div>
+            <div className="grid">
+              <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
+                <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
+                  IP-адрес
                 </div>
-
-                {/* Протоколы: ровный список со статус-точкой и пер-протокольными действиями */}
-                {(v.installed || installing) && (
-                  <div
-                    className="stack"
-                    style={{ gap: 2, borderTop: "1px solid var(--border)", paddingTop: 10 }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div
-                      className="muted-3"
-                      style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}
-                    >
-                      Протоколы
-                    </div>
-                    {catalog.map((pr) => {
-                      const p = protos.find((x) => x.proto === pr.id);
-                      const st = p?.state ?? "absent";
-                      const inst = p?.installed ?? false;
-                      const running = p?.running ?? false;
-                      const ext = p?.externalClients ?? 0;
-                      // у установленного показываем работает/остановлен, иначе — состояние установки
-                      const stateText = inst ? (running ? "работает" : "остановлен") : (PROTO_STATE_LABEL[st] ?? st);
-                      const dotColor =
-                        st === "installing"
-                          ? "var(--warn)"
-                          : inst && running
-                            ? "var(--ok)"
-                            : inst
-                              ? "var(--warn)"
-                              : "var(--border-strong)";
-                      return (
-                        <div
-                          key={pr.id}
-                          className="rowflex"
-                          style={{
-                            justifyContent: "space-between",
-                            gap: 8,
-                            flexWrap: "nowrap",
-                            minHeight: 34,
-                            opacity: inst || st === "installing" ? 1 : 0.55,
-                          }}
-                        >
-                          <span className="rowflex" style={{ gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
-                            <span
-                              style={{
-                                width: 7,
-                                height: 7,
-                                borderRadius: 999,
-                                flex: "none",
-                                background: dotColor,
-                              }}
-                            />
-                            <span
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 600,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {pr.label}
-                            </span>
-                            <span className="muted-3" style={{ fontSize: 11.5, whiteSpace: "nowrap", flex: "none" }}>
-                              {stateText}
-                              {ext > 0 ? ` · +${ext} внешн.` : ""}
-                            </span>
-                            {p?.updateAvailable && (
-                              <span
-                                className="badge warn"
-                                title={`Доступно обновление: ${p.imageVersion ?? "?"} → ${p.latestVersion ?? "?"}`}
-                                style={{ flex: "none" }}
-                              >
-                                обновление
-                              </span>
-                            )}
-                          </span>
-                          {inst && (
-                            <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6, flex: "none" }}>
-                              {p?.updateAvailable && (
-                                <Btn
-                                  variant="primary"
-                                  sm
-                                  disabled={!online || updateProtoMut.isPending}
-                                  title={`Обновить до ${p.latestVersion ?? ""}`}
-                                  onClick={() => updateProtoMut.mutate({ proto: pr.id, label: pr.label })}
-                                >
-                                  Обновить
-                                </Btn>
-                              )}
-                              <Btn
-                                sm
-                                disabled={!online || protoOpMut.isPending}
-                                onClick={() =>
-                                  protoOpMut.mutate({ proto: pr.id, label: pr.label, op: running ? "stop" : "start" })
-                                }
-                              >
-                                {running ? "Стоп" : "Запустить"}
-                              </Btn>
-                              <Btn
-                                variant="ghost"
-                                sm
-                                title={`Удалить протокол ${pr.label}`}
-                                disabled={removeProtoMut.isPending}
-                                onClick={() => setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })}
-                              >
-                                <Icon name="trash" size={13} />
-                              </Btn>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Диагностика ошибки установки/сбоя протокола */}
-                {errored && (
-                  <div onClick={(e) => e.stopPropagation()}>
-                    {rem ? (
-                      <div className="stack" style={{ gap: 3 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)" }}>{rem.title}</div>
-                        <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
-                          {rem.explanation}
-                        </div>
-                        {rem.manualSteps.length > 0 && (
-                          <ol
-                            className="muted-3"
-                            style={{ fontSize: 11.5, margin: "2px 0 0", paddingLeft: 16, lineHeight: 1.5 }}
-                          >
-                            {rem.manualSteps.map((step, i) => (
-                              <li key={i} style={{ wordBreak: "break-word" }}>
-                                {step}
-                              </li>
-                            ))}
-                          </ol>
-                        )}
-                      </div>
-                    ) : (
-                      errored.error && (
-                        <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
-                          Ошибка: {errored.error}
-                        </div>
-                      )
-                    )}
-                  </div>
-                )}
-
-                {/* Действия по вендору: докачать / остановить всё / удалить ПО целиком */}
-                <div
-                  className="rowflex"
-                  style={{ gap: 8, borderTop: "1px solid var(--border)", paddingTop: 11 }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {installing ? (
-                    <span className="rowflex" style={{ gap: 8 }}>
-                      <Spinner />
-                      <span className="muted-3" style={{ fontSize: 12.5 }}>
-                        Устанавливается…
-                      </span>
-                    </span>
-                  ) : busy ? (
-                    <Spinner />
-                  ) : (
-                    <>
-                      {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
-                      {rem?.canAutoFix && (
-                        <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
-                          {rem.fixLabel ?? "Исправить"}
-                        </Btn>
-                      )}
-                      {notInstalled.length > 0 && (
-                        <Btn
-                          variant={v.installed || rem?.canAutoFix ? "ghost" : "primary"}
-                          sm
-                          onClick={() => {
-                            setCheckedProtos(new Set(notInstalled.map((p) => p.id)));
-                            setAddProtoVendor(type);
-                          }}
-                        >
-                          {v.installed ? "+ Протоколы" : "Установить"}
-                        </Btn>
-                      )}
-                      {v.installed && (
-                        <Btn
-                          sm
-                          disabled={!online}
-                          onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
-                        >
-                          {v.running ? "Остановить всё" : "Запустить всё"}
-                        </Btn>
-                      )}
-                      {v.installed && (
-                        <Btn
-                          variant="ghost"
-                          sm
-                          title={`Удалить ${VPN_LABEL[type]} целиком`}
-                          style={{ marginLeft: "auto" }}
-                          onClick={() => setConfirmRemoveVpn(type)}
-                        >
-                          <Icon name="trash" size={15} />
-                        </Btn>
-                      )}
-                    </>
-                  )}
+                <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+                  <span className="mono" style={{ fontSize: 13.5 }}>
+                    {server.ip}
+                  </span>
+                  <Btn variant="ghost" sm onClick={() => copyText(server.ip, toast, "IP скопирован")}>
+                    <Icon name="copy" size={15} />
+                  </Btn>
                 </div>
               </div>
-            );
-          })}
+
+              <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
+                <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
+                  Пользователь · порт
+                </div>
+                <span className="mono" style={{ fontSize: 13.5 }}>
+                  {server.sshUser} : {server.sshPort}
+                </span>
+              </div>
+
+              <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
+                <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
+                  {authLabel}
+                </div>
+                <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+                  <span className="mono" style={{ fontSize: 13.5, minWidth: 0, wordBreak: "break-all" }}>
+                    {secretShown}
+                  </span>
+                  <Btn variant="ghost" sm onClick={() => setReveal((r) => !r)}>
+                    <Icon name="eye" size={15} />
+                    {reveal ? "Скрыть" : "Показать"}
+                  </Btn>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      <ServerMetricsCard serverId={serverId} online={online} />
+      {activeTab === "protocols" && (
+        <div className="stack" role="tabpanel" id="server-tabpanel-protocols" aria-labelledby="server-tab-protocols">
+          {/* VPN ПО */}
+          <div className="card stack">
+            <div
+              className="muted-3"
+              style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
+            >
+              VPN ПО на сервере
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              {VPN_TYPES.map((type) => {
+                const v = vpnByType(type);
+                const protos = protosByVendor(type);
+                const catalog = VENDOR_PROTOCOLS[type]; // все протоколы вендора (для выбора/докачки)
+                const notInstalled = catalog.filter((pr) => !protos.find((x) => x.proto === pr.id)?.installed);
+                const installing = protos.some((p) => p.state === "installing");
+                const errored = protos.find((p) => p.state === "error");
+                const rem = errored?.remediation ?? null;
+                const busy =
+                  (opMut.isPending && opMut.variables?.type === type) ||
+                  (fixMut.isPending && fixMut.variables?.type === type);
+                const runLabel = installing
+                  ? "устанавливается…"
+                  : !v.installed
+                    ? "не установлен"
+                    : v.running
+                      ? "работает"
+                      : "остановлен";
+                const runClass = installing ? "neutral" : v.installed && v.running ? "ok" : "neutral";
+                return (
+                  <div
+                    key={type}
+                    className="stack"
+                    style={{
+                      border: `1px solid ${errored ? "var(--danger)" : "var(--border)"}`,
+                      borderRadius: 13,
+                      padding: 13,
+                      gap: 12,
+                    }}
+                  >
+                    {/* Шапка: иконка + имя вендора + агрегатный статус (клик — расширенные настройки) */}
+                    <div className="rowflex" style={{ gap: 12, flexWrap: "nowrap", alignItems: "flex-start" }}>
+                      <div
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: 10,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flex: "none",
+                          background: "var(--surface-2)",
+                          color: `var(--${type})`,
+                        }}
+                      >
+                        {vpnLogo(type, theme) ? (
+                          <img
+                            src={vpnLogo(type, theme)}
+                            alt={VPN_LABEL[type]}
+                            width={26}
+                            height={26}
+                            style={{ objectFit: "contain", display: "block" }}
+                          />
+                        ) : (
+                          <Icon name={VPN_ICON[type]} size={20} />
+                        )}
+                      </div>
+                      <div
+                        style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
+                        onClick={v.installed ? () => setAdvancedVpn(type) : undefined}
+                      >
+                        <div className="rowflex" style={{ gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: 15 }}>{VPN_LABEL[type]}</span>
+                          <span className={`badge ${runClass}`}>{runLabel}</span>
+                          {v.installed && (
+                            <span className="muted-3" style={{ display: "inline-flex" }} title="Расширенные настройки">
+                              <Icon name="chevron" size={14} />
+                            </span>
+                          )}
+                        </div>
+                        <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
+                          {VPN_DESC[type]}
+                        </div>
+                      </div>
+                    </div>
 
-      <ServerTrafficQuotaCard server={server} />
+                    {/* Протоколы: ровный список со статус-точкой и пер-протокольными действиями */}
+                    {(v.installed || installing) && (
+                      <div
+                        className="stack"
+                        style={{ gap: 2, borderTop: "1px solid var(--border)", paddingTop: 10 }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div
+                          className="muted-3"
+                          style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}
+                        >
+                          Протоколы
+                        </div>
+                        {catalog.map((pr) => {
+                          const p = protos.find((x) => x.proto === pr.id);
+                          const st = p?.state ?? "absent";
+                          const inst = p?.installed ?? false;
+                          const running = p?.running ?? false;
+                          const ext = p?.externalClients ?? 0;
+                          // у установленного показываем работает/остановлен, иначе — состояние установки
+                          const stateText = inst
+                            ? running
+                              ? "работает"
+                              : "остановлен"
+                            : (PROTO_STATE_LABEL[st] ?? st);
+                          const dotColor =
+                            st === "installing"
+                              ? "var(--warn)"
+                              : inst && running
+                                ? "var(--ok)"
+                                : inst
+                                  ? "var(--warn)"
+                                  : "var(--border-strong)";
+                          return (
+                            <div
+                              key={pr.id}
+                              className="rowflex"
+                              style={{
+                                justifyContent: "space-between",
+                                gap: 8,
+                                flexWrap: "nowrap",
+                                minHeight: 34,
+                                opacity: inst || st === "installing" ? 1 : 0.55,
+                              }}
+                            >
+                              <span className="rowflex" style={{ gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
+                                <span
+                                  style={{
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: 999,
+                                    flex: "none",
+                                    background: dotColor,
+                                  }}
+                                />
+                                <span
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {pr.label}
+                                </span>
+                                <span
+                                  className="muted-3"
+                                  style={{ fontSize: 11.5, whiteSpace: "nowrap", flex: "none" }}
+                                >
+                                  {stateText}
+                                  {ext > 0 ? ` · +${ext} внешн.` : ""}
+                                </span>
+                                {p?.updateAvailable && (
+                                  <span
+                                    className="badge warn"
+                                    title={`Доступно обновление: ${p.imageVersion ?? "?"} → ${p.latestVersion ?? "?"}`}
+                                    style={{ flex: "none" }}
+                                  >
+                                    обновление
+                                  </span>
+                                )}
+                              </span>
+                              {inst && (
+                                <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6, flex: "none" }}>
+                                  {p?.updateAvailable && (
+                                    <Btn
+                                      variant="primary"
+                                      sm
+                                      disabled={!online || updateProtoMut.isPending}
+                                      title={`Обновить до ${p.latestVersion ?? ""}`}
+                                      onClick={() => updateProtoMut.mutate({ proto: pr.id, label: pr.label })}
+                                    >
+                                      Обновить
+                                    </Btn>
+                                  )}
+                                  <Btn
+                                    sm
+                                    disabled={!online || protoOpMut.isPending}
+                                    onClick={() =>
+                                      protoOpMut.mutate({
+                                        proto: pr.id,
+                                        label: pr.label,
+                                        op: running ? "stop" : "start",
+                                      })
+                                    }
+                                  >
+                                    {running ? "Стоп" : "Запустить"}
+                                  </Btn>
+                                  <Btn
+                                    variant="ghost"
+                                    sm
+                                    title={`Удалить протокол ${pr.label}`}
+                                    disabled={removeProtoMut.isPending}
+                                    onClick={() =>
+                                      setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })
+                                    }
+                                  >
+                                    <Icon name="trash" size={13} />
+                                  </Btn>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-      <ServerCostCard serverId={serverId} />
+                    {/* Диагностика ошибки установки/сбоя протокола */}
+                    {errored && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        {rem ? (
+                          <div className="stack" style={{ gap: 3 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)" }}>{rem.title}</div>
+                            <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                              {rem.explanation}
+                            </div>
+                            {rem.manualSteps.length > 0 && (
+                              <ol
+                                className="muted-3"
+                                style={{ fontSize: 11.5, margin: "2px 0 0", paddingLeft: 16, lineHeight: 1.5 }}
+                              >
+                                {rem.manualSteps.map((step, i) => (
+                                  <li key={i} style={{ wordBreak: "break-word" }}>
+                                    {step}
+                                  </li>
+                                ))}
+                              </ol>
+                            )}
+                          </div>
+                        ) : (
+                          errored.error && (
+                            <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                              Ошибка: {errored.error}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
 
-      <ServerClientsCard serverId={serverId} online={online} />
+                    {/* Действия по вендору: докачать / остановить всё / удалить ПО целиком */}
+                    <div
+                      className="rowflex"
+                      style={{ gap: 8, borderTop: "1px solid var(--border)", paddingTop: 11 }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {installing ? (
+                        <span className="rowflex" style={{ gap: 8 }}>
+                          <Spinner />
+                          <span className="muted-3" style={{ fontSize: 12.5 }}>
+                            Устанавливается…
+                          </span>
+                        </span>
+                      ) : busy ? (
+                        <Spinner />
+                      ) : (
+                        <>
+                          {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
+                          {rem?.canAutoFix && (
+                            <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
+                              {rem.fixLabel ?? "Исправить"}
+                            </Btn>
+                          )}
+                          {notInstalled.length > 0 && (
+                            <Btn
+                              variant={v.installed || rem?.canAutoFix ? "ghost" : "primary"}
+                              sm
+                              onClick={() => {
+                                setCheckedProtos(new Set(notInstalled.map((p) => p.id)));
+                                setAddProtoVendor(type);
+                              }}
+                            >
+                              {v.installed ? "+ Протоколы" : "Установить"}
+                            </Btn>
+                          )}
+                          {v.installed && (
+                            <Btn
+                              sm
+                              disabled={!online}
+                              onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
+                            >
+                              {v.running ? "Остановить всё" : "Запустить всё"}
+                            </Btn>
+                          )}
+                          {v.installed && (
+                            <Btn
+                              variant="ghost"
+                              sm
+                              title={`Удалить ${VPN_LABEL[type]} целиком`}
+                              style={{ marginLeft: "auto" }}
+                              onClick={() => setConfirmRemoveVpn(type)}
+                            >
+                              <Icon name="trash" size={15} />
+                            </Btn>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
-      <ChainSection server={server} />
+      {activeTab === "monitoring" && (
+        <div className="stack" role="tabpanel" id="server-tabpanel-monitoring" aria-labelledby="server-tab-monitoring">
+          <ServerMetricsCard serverId={serverId} online={online} />
+          <ServerClientsCard serverId={serverId} online={online} />
+        </div>
+      )}
 
-      <ServerAccessSections serverId={serverId} />
+      {activeTab === "billing" && (
+        <div className="stack" role="tabpanel" id="server-tabpanel-billing" aria-labelledby="server-tab-billing">
+          <ServerTrafficQuotaCard server={server} />
+          <ServerCostCard serverId={serverId} />
+        </div>
+      )}
+
+      {activeTab === "access" && (
+        <div className="stack" role="tabpanel" id="server-tabpanel-access" aria-labelledby="server-tab-access">
+          <ServerAccessSections serverId={serverId} />
+        </div>
+      )}
+
+      {activeTab === "multihop" && hasRunningXray(server) && (
+        <div className="stack" role="tabpanel" id="server-tabpanel-multihop" aria-labelledby="server-tab-multihop">
+          <ChainSection server={server} />
+        </div>
+      )}
 
       {advancedVpn && <VpnAdvancedModal serverId={serverId} vtype={advancedVpn} onClose={() => setAdvancedVpn(null)} />}
 
