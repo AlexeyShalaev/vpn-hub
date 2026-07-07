@@ -65,6 +65,34 @@ export interface Server {
   protocols: Protocol[];
 }
 
+export interface ServerPrice {
+  amount: number; // цена в единицах валюты за период
+  currency: string; // RUB | USD | EUR | ...
+  period: "minute" | "day" | "month";
+  anchorDay: number | null; // день обновления (для month)
+  since: number; // epoch начала действия текущей цены
+}
+
+export interface CostByCurrency {
+  currency: string;
+  amount: number;
+}
+
+export interface ServerCost {
+  serverId: string;
+  start: number;
+  end: number;
+  price: ServerPrice | null;
+  byCurrency: CostByCurrency[]; // accrual-расход за период, раздельно по валютам
+}
+
+export interface CostReport {
+  start: number;
+  end: number;
+  totals: CostByCurrency[];
+  servers: { serverId: string; name: string; price: ServerPrice | null; byCurrency: CostByCurrency[] }[];
+}
+
 export interface ServerUsage {
   periodStart: number; // epoch начала текущего периода
   quota: number | null; // квота сервера (байт), null = безлимит

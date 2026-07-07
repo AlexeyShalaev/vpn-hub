@@ -89,6 +89,14 @@ export function HomeScreen() {
     queryFn: () => q.listEvents(eventsParams),
     refetchInterval: 30000,
   });
+  // сводный расход на серверы за 30 дней (accrual, раздельно по валютам)
+  const { data: cost } = useQuery({
+    queryKey: ["financeCost"],
+    queryFn: q.financeCost,
+    refetchInterval: 60000,
+    retry: 2,
+  });
+  const costTotals = cost?.totals ?? [];
 
   const online = (servers ?? []).filter((s) => s.status === "online").length;
   const offline = (servers ?? []).filter((s) => s.status === "offline").length;
@@ -126,6 +134,24 @@ export function HomeScreen() {
             <div style={{ display: "flex", gap: 24 }}>
               <Metric big={String(groupCount)} label={t("home.groupsCount", { groups: groupCount })} />
               <Metric big={String(memberCount)} label={t("home.membersCount", { members: memberCount })} />
+            </div>
+          )}
+        </SummaryCard>
+
+        <SummaryCard icon="servers" title="Расходы на серверы" go="servers">
+          {costTotals.length === 0 ? (
+            <div className="muted" style={{ fontSize: 13 }}>
+              Задайте цену серверов на их страницах — здесь появится расход за 30 дней.
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+              {costTotals.map((c) => (
+                <Metric
+                  key={c.currency}
+                  big={`${c.amount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ${c.currency}`}
+                  label="за 30 дней"
+                />
+              ))}
             </div>
           )}
         </SummaryCard>

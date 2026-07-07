@@ -487,6 +487,173 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
   );
 }
 
+const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
+const CURRENCIES = ["RUB", "USD", "EUR", "KZT", "UAH", "GBP"];
+const fmtMoney = (a: number, cur: string): string =>
+  `${a.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${cur}`;
+
+// Карточка «Стоимость»: цена сервера (валюта/период/день обновления) + accrual-расход за 30 дней.
+// Цена меняется во времени — история хранится сегментами, расход считается по фактически
+// действовавшей цене (см. services/finance). Разные валюты показываем раздельно.
+function ServerCostCard({ serverId }: { serverId: string }) {
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const priceQ = useQuery({ queryKey: ["serverPrice", serverId], queryFn: () => q.getServerPrice(serverId), retry: 2 });
+  const costQ = useQuery({ queryKey: ["serverCost", serverId], queryFn: () => q.serverCost(serverId), retry: 2 });
+  const price = priceQ.data?.price ?? null;
+
+  const [editing, setEditing] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("RUB");
+  const [period, setPeriod] = useState("month");
+  const [anchor, setAnchor] = useState("");
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      q.setServerPrice(serverId, {
+        amount: amount.trim() === "" ? null : Number.parseFloat(amount.replace(",", ".")),
+        currency,
+        period,
+        anchorDay: anchor ? Number.parseInt(anchor, 10) : null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["serverPrice", serverId] });
+      qc.invalidateQueries({ queryKey: ["serverCost", serverId] });
+      setEditing(false);
+      toast("Цена сохранена");
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось сохранить цену"),
+  });
+
+  const openEdit = () => {
+    setAmount(price ? String(price.amount) : "");
+    setCurrency(price?.currency ?? "RUB");
+    setPeriod(price?.period ?? "month");
+    setAnchor(price?.anchorDay ? String(price.anchorDay) : "");
+    setEditing(true);
+  };
+
+  const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
+  const cost = costQ.data?.byCurrency ?? [];
+
+  return (
+    <div className="card stack">
+      <div className="rowflex" style={{ justifyContent: "space-between", gap: 12 }}>
+        <div className="muted-3" style={label}>
+          Стоимость
+        </div>
+        <Btn sm onClick={openEdit}>
+          <Icon name="edit" size={15} />
+          {price ? "Изменить" : "Задать цену"}
+        </Btn>
+      </div>
+
+      <div className="rowflex" style={{ gap: 24, flexWrap: "wrap" }}>
+        <div>
+          <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 3 }}>
+            Цена
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>
+            {price ? `${fmtMoney(price.amount, price.currency)} / ${PRICE_PERIOD_LABEL[price.period]}` : "не задана"}
+          </div>
+          {price?.period === "month" && price.anchorDay ? (
+            <div className="muted-3" style={{ fontSize: 11.5, marginTop: 2 }}>
+              обновление {price.anchorDay}-го числа
+            </div>
+          ) : null}
+        </div>
+        <div>
+          <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 3 }}>
+            Расход за 30 дней
+          </div>
+          {cost.length === 0 ? (
+            <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-3)" }}>—</div>
+          ) : (
+            cost.map((c) => (
+              <div key={c.currency} style={{ fontSize: 18, fontWeight: 700 }}>
+                {fmtMoney(c.amount, c.currency)}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {editing && (
+        <Modal
+          title="Стоимость сервера"
+          onClose={() => setEditing(false)}
+          footer={
+            <>
+              <Btn variant="ghost" block onClick={() => setEditing(false)}>
+                Отмена
+              </Btn>
+              <Btn variant="primary" block disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                Сохранить
+              </Btn>
+            </>
+          }
+        >
+          <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+            Цена аренды сервера. При изменении сохраняется история — расход считается по фактически действовавшей цене
+            за каждый период. Пусто — сервер бесплатный.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+            <Field label="Цена за период">
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step="0.01"
+                value={amount}
+                placeholder="пусто — бесплатно"
+                autoFocus
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </Field>
+            <Field label="Валюта">
+              <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <Field label="Период оплаты">
+            <div style={{ display: "flex", gap: 8 }}>
+              {(["minute", "day", "month"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`chip${period === p ? " selected" : ""}`}
+                  style={{ flex: 1, height: 40, justifyContent: "center", cursor: "pointer", fontSize: 13.5 }}
+                  onClick={() => setPeriod(p)}
+                >
+                  {p === "minute" ? "Минута" : p === "day" ? "Сутки" : "Месяц"}
+                </button>
+              ))}
+            </div>
+          </Field>
+          {period === "month" && (
+            <Field label="День обновления (1–31, необязательно)">
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={31}
+                value={anchor}
+                placeholder="напр. 15"
+                onChange={(e) => setAnchor(e.target.value)}
+              />
+            </Field>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // Секция «Цепочка (мультихоп)»: трафик клиентов этого (entry) сервера выходит в интернет через
 // другой (exit) сервер. Реализация — Xray outbound chaining: entry становится vless-клиентом exit.
 function ChainSection({ server }: { server: Server }) {
@@ -1194,6 +1361,8 @@ export function ServerDetailScreen() {
       <ServerMetricsCard serverId={serverId} online={online} />
 
       <ServerTrafficQuotaCard server={server} />
+
+      <ServerCostCard serverId={serverId} />
 
       <ServerClientsCard serverId={serverId} online={online} />
 

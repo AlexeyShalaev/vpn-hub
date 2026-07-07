@@ -6,6 +6,7 @@ import type {
   AvailableServer,
   ChainLink,
   ConfigResult,
+  CostReport,
   Device,
   DeviceLimit,
   Group,
@@ -18,7 +19,9 @@ import type {
   Provider,
   Server,
   ServerAccess,
+  ServerCost,
   ServerMetrics,
+  ServerPrice,
   ServerTraffic,
   ServerUsage,
   Session,
@@ -113,6 +116,14 @@ export const setBandwidthQuota = (id: string, quotaBytes: number | null, billing
   http.patch<Server>(`/servers/${id}/quota`, { quotaBytes, billingDay });
 // трафик сервера и пользователей за текущий период (owner)
 export const serverUsage = (id: string) => http.get<ServerUsage>(`/servers/${id}/usage`);
+// финансовый учёт: цена сервера + accrual-расход + сводный отчёт
+export const getServerPrice = (id: string) => http.get<{ price: ServerPrice | null }>(`/servers/${id}/price`);
+export const setServerPrice = (
+  id: string,
+  b: { amount: number | null; currency: string; period: string; anchorDay: number | null },
+) => http.put<{ price: ServerPrice | null }>(`/servers/${id}/price`, b);
+export const serverCost = (id: string) => http.get<ServerCost>(`/servers/${id}/cost`);
+export const financeCost = () => http.get<CostReport>("/finance/cost");
 
 // мультихоп: цепочки, где этот сервер — вход (entry); трафик выходит через exit-сервер (Xray outbound)
 export const listChains = (sid: string) => http.get<ChainLink[]>(`/servers/${sid}/chains`);

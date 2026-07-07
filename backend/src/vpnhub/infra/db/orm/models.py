@@ -75,6 +75,30 @@ class Server(BaseTable, DatetimeColumnsMixin):
     )
 
 
+class ServerPrice(BaseTable):
+    """Сегмент истории цены сервера (финансовый учёт). Цена меняется во времени, поэтому храним
+    историю: при смене закрываем текущий сегмент (effective_to=now) и открываем новый. Расход
+    считается по СЕГМЕНТАМ (accrual: сумма по каждому сегменту = цена × длительность/период), а не
+    текущей ценой × всё время. Валюты не конвертируем — суммируем раздельно.
+
+    amount_micros — цена в «микроединицах» валюты (сумма × 1e6), чтобы не терять точность на float.
+    period — minute|day|month; anchor_day — день обновления (для month, 1..31; справочно/для UI).
+    Открытый (текущий) сегмент — тот, у кого effective_to IS NULL.
+    """
+
+    __tablename__ = "server_prices"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    server_id: Mapped[str] = mapped_column(String(32), index=True)
+    amount_micros: Mapped[int] = mapped_column(BigInteger)  # цена × 1e6 в валюте currency
+    currency: Mapped[str] = mapped_column(String(8))  # RUB | USD | EUR | ... (не конвертируем)
+    period: Mapped[str] = mapped_column(String(8))  # minute | day | month
+    anchor_day: Mapped[int | None] = mapped_column(Integer, nullable=True)  # день обновления (month)
+    effective_from: Mapped[float] = mapped_column()  # epoch начала действия сегмента
+    effective_to: Mapped[float | None] = mapped_column(nullable=True)  # epoch конца; NULL = текущий
+
+    __table_args__ = (Index("server_prices_scope_idx", "server_id", "effective_from"),)
+
+
 class ServerVpn(BaseTable):
     __tablename__ = "server_vpns"
     __table_args__ = (UniqueConstraint("server_id", "type", name="server_vpns_uq"),)

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Query
 
 from vpnhub.api.deps import require_user, service
 from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.services.auth import Identity
+from vpnhub.services.finance import FinanceService
 from vpnhub.services.groups import GroupService
 from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.multihop import ChainService
@@ -300,6 +302,61 @@ async def server_usage(
     svc: ServerService = Depends(service(ServerService)),
 ) -> dict:
     return await svc.usage(ident.id, sid)
+
+
+# ---------- финансовый учёт (стоимость серверов) ----------
+
+_MONTH_SECONDS = 30 * 86400
+
+
+@router.get("/servers/{sid}/price")
+async def get_server_price(
+    sid: str,
+    ident: Identity = Depends(require_user),
+    svc: FinanceService = Depends(service(FinanceService)),
+) -> dict:
+    return {"price": await svc.get_price(ident.id, sid)}
+
+
+@router.put("/servers/{sid}/price")
+async def set_server_price(
+    sid: str,
+    body: dict[str, Any] = Body(default={}),
+    ident: Identity = Depends(require_user),
+    svc: FinanceService = Depends(service(FinanceService)),
+) -> dict:
+    # body: { amount: number|null, currency: str, period: minute|day|month, anchorDay: int|null }
+    raw = body.get("amount")
+    amount = float(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else None
+    day = body.get("anchorDay")
+    anchor = int(day) if isinstance(day, (int, float)) and not isinstance(day, bool) else None
+    price = await svc.set_price(
+        ident.id, sid, amount, str(body.get("currency") or "RUB"), str(body.get("period") or "month"), anchor
+    )
+    return {"price": price}
+
+
+@router.get("/servers/{sid}/cost")
+async def server_cost(
+    sid: str,
+    start: float | None = Query(default=None),
+    end: float | None = Query(default=None),
+    ident: Identity = Depends(require_user),
+    svc: FinanceService = Depends(service(FinanceService)),
+) -> dict:
+    now = time.time()
+    return await svc.server_cost(ident.id, sid, start if start is not None else now - _MONTH_SECONDS, end or now)
+
+
+@router.get("/finance/cost")
+async def finance_cost(
+    start: float | None = Query(default=None),
+    end: float | None = Query(default=None),
+    ident: Identity = Depends(require_user),
+    svc: FinanceService = Depends(service(FinanceService)),
+) -> dict:
+    now = time.time()
+    return await svc.cost_report(ident.id, start if start is not None else now - _MONTH_SECONDS, end or now)
 
 
 # ---------- multihop / chains (entry -> exit) ----------
