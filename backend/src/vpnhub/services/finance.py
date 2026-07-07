@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -113,6 +114,12 @@ class FinanceService:
         сохраняется история для accrual-расчёта. Без изменений — no-op.
         """
         now = time.time()
+        # не-конечное (NaN/±Inf) не должно долетать до round()/BigInteger (иначе 500); отрицательное
+        # бесконечное иначе тихо закрыло бы сегмент. Верхняя граница — чтобы micros влез в BigInteger.
+        if amount is not None and not math.isfinite(amount):
+            raise BadRequest("Цена должна быть конечным числом")
+        if amount is not None and amount > 1_000_000_000_000:  # 1e12 → micros 1e18 < bigint max
+            raise BadRequest("Слишком большая цена")
         async with self.uow.transaction() as tx:
             await self._owned(tx, owner_id, sid)
             cur = await self._open_segment(tx, sid)

@@ -80,6 +80,20 @@ async def test__set_price__none_closes_segment(session_maker, uow, settings) -> 
     assert await fin.get_price(oid, sid) is None  # больше нет открытого сегмента
 
 
+async def test__set_price__rejects_non_finite_and_huge(session_maker, uow, settings) -> None:
+    from vpnhub.core.errors import BadRequest
+
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79008880004")
+        srv = await make_server(s, owner_id=owner.id, name="srv-bad")
+        sid, oid = srv.id, owner.id
+    fin = FinanceService(uow, settings)
+    for bad in (float("nan"), float("inf"), float("-inf"), 1e13):
+        with pytest.raises(BadRequest):  # не 500 (round(nan/inf) / переполнение BigInteger)
+            await fin.set_price(oid, sid, bad, "RUB", "day", None)
+    assert await fin.get_price(oid, sid) is None  # кривой ввод не создал и не закрыл сегмент
+
+
 async def test__cost_report__sums_per_currency(session_maker, uow, settings) -> None:
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79008880003")
