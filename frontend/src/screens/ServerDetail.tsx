@@ -13,7 +13,7 @@ import { ServerAccessSections } from "./ServerAccess";
 import { VpnAdvancedModal } from "./VpnAdvanced";
 
 const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
-type ServerDetailTab = "connection" | "protocols" | "monitoring" | "billing" | "access" | "multihop";
+type ServerDetailTab = "connection" | "protocols" | "monitoring" | "access" | "multihop";
 
 // установлен ли на сервере запущенный tcp-Reality Xray (условие мультихопа для entry/exit)
 const hasRunningXray = (s: Server): boolean =>
@@ -959,10 +959,9 @@ export function ServerDetailScreen() {
   const protosByVendor = (t: VpnType): Protocol[] => (server.protocols ?? []).filter((p) => p.vendor === t);
   const syncing = syncMut.isPending;
   const tabs: { id: ServerDetailTab; label: string; icon: string }[] = [
-    { id: "connection", label: "Подключение", icon: "link" },
+    { id: "connection", label: "Основное", icon: "link" },
     { id: "protocols", label: "Протоколы", icon: "servers" },
     { id: "monitoring", label: "Мониторинг", icon: "monitoring" },
-    { id: "billing", label: "Трафик и стоимость", icon: "file" },
     { id: "access", label: "Клиенты и конфиги", icon: "users" },
   ];
   if (hasRunningXray(server)) {
@@ -1100,6 +1099,8 @@ export function ServerDetailScreen() {
               </div>
             </div>
           </div>
+          <ServerTrafficQuotaCard server={server} />
+          <ServerCostCard serverId={serverId} />
         </div>
       )}
 
@@ -1420,13 +1421,6 @@ export function ServerDetailScreen() {
         <div className="stack" role="tabpanel" id="server-tabpanel-monitoring" aria-labelledby="server-tab-monitoring">
           <ServerMetricsCard serverId={serverId} online={online} />
           <ServerClientsCard serverId={serverId} online={online} />
-        </div>
-      )}
-
-      {activeTab === "billing" && (
-        <div className="stack" role="tabpanel" id="server-tabpanel-billing" aria-labelledby="server-tab-billing">
-          <ServerTrafficQuotaCard server={server} />
-          <ServerCostCard serverId={serverId} />
         </div>
       )}
 
