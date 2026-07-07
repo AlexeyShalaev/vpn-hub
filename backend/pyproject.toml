@@ -38,6 +38,7 @@ dependencies = [
   "sqlalchemy-foundation-kit>=0.1.0",
   "alembic-gauntlet>=0.2.1",
   "asyncssh>=2.24.0",
+  "certifi>=2026.6.17",
 ]
 
 [project.urls]

@@ -78,6 +78,8 @@ export interface ProviderPlan {
   price: number;
   currency: string;
   period: string; // minute | day | month
+  available?: boolean; // false = на сайте помечен как распродан/ожидается
+  sourceUrl?: string; // страница FirstByte, с которой распарсен тариф
 }
 
 export interface ServerPrice {

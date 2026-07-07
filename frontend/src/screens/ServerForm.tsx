@@ -384,6 +384,7 @@ export function ServerFormScreen() {
                       <option key={p.id} value={p.id}>
                         {p.name} — {p.price} {p.currency}/мес · {p.cpu}vCPU/{p.ramGb}ГБ · {p.diskGb}ГБ ·{" "}
                         {p.trafficTb ? `${p.trafficTb} ТБ` : "безлимит"}
+                        {p.available === false ? " · недоступен к заказу" : ""}
                       </option>
                     ))}
                   </select>
@@ -391,6 +392,7 @@ export function ServerFormScreen() {
                     <span style={{ fontSize: 12, color: "var(--text-3)" }}>
                       {selPlan.region} · порт {selPlan.portMbps} Мбит · после создания: цена {selPlan.price}{" "}
                       {selPlan.currency}/мес{selPlan.trafficTb ? `, квота ${selPlan.trafficTb} ТБ` : ""}
+                      {selPlan.available === false ? " · на сайте недоступен к заказу" : ""}
                     </span>
                   )}
                 </div>
