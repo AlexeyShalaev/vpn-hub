@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
@@ -13,7 +13,7 @@ import { ServerAccessSections } from "./ServerAccess";
 import { VpnAdvancedModal } from "./VpnAdvanced";
 
 const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
-type ServerDetailTab = "connection" | "protocols" | "monitoring" | "access" | "multihop";
+type ServerDetailTab = "connection" | "protocols" | "monitoring" | "access";
 
 // установлен ли на сервере запущенный tcp-Reality Xray (условие мультихопа для entry/exit)
 const hasRunningXray = (s: Server): boolean =>
@@ -925,13 +925,6 @@ export function ServerDetailScreen() {
     onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить сервер"),
   });
 
-  useEffect(() => {
-    const server = serverQ.data;
-    if (activeTab === "multihop" && server && !hasRunningXray(server)) {
-      setActiveTab("protocols");
-    }
-  }, [activeTab, serverQ.data]);
-
   if (serverQ.isLoading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
@@ -964,9 +957,6 @@ export function ServerDetailScreen() {
     { id: "monitoring", label: "Мониторинг", icon: "monitoring" },
     { id: "access", label: "Клиенты и конфиги", icon: "users" },
   ];
-  if (hasRunningXray(server)) {
-    tabs.push({ id: "multihop", label: "Мультихоп", icon: "refresh" });
-  }
 
   return (
     <div className="stack">
@@ -1414,6 +1404,7 @@ export function ServerDetailScreen() {
               })}
             </div>
           </div>
+          <ChainSection server={server} />
         </div>
       )}
 
@@ -1427,12 +1418,6 @@ export function ServerDetailScreen() {
       {activeTab === "access" && (
         <div className="stack" role="tabpanel" id="server-tabpanel-access" aria-labelledby="server-tab-access">
           <ServerAccessSections serverId={serverId} />
-        </div>
-      )}
-
-      {activeTab === "multihop" && hasRunningXray(server) && (
-        <div className="stack" role="tabpanel" id="server-tabpanel-multihop" aria-labelledby="server-tab-multihop">
-          <ChainSection server={server} />
         </div>
       )}
 
