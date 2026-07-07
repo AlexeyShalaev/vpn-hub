@@ -193,9 +193,24 @@ export function ServerFormScreen() {
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => (serverId ? q.updateServer(serverId, body) : q.createServer(body)),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       qc.invalidateQueries({ queryKey: ["servers"] });
       qc.invalidateQueries({ queryKey: ["server", res.id] });
+      // при создании из плана провайдера — подтягиваем цену (финучёт) и квоту трафика (best-effort)
+      if (!serverId && selPlan) {
+        try {
+          await q.setServerPrice(res.id, {
+            amount: selPlan.price,
+            currency: selPlan.currency,
+            period: selPlan.period,
+            anchorDay: null,
+          });
+          const quota = selPlan.trafficTb ? Math.round(selPlan.trafficTb * 1024 ** 4) : null;
+          await q.setBandwidthQuota(res.id, quota, null);
+        } catch {
+          // не критично — цену/квоту можно задать на странице сервера
+        }
+      }
       toast("Сервер сохранён");
       go("server", { serverId: res.id });
     },
@@ -225,6 +240,16 @@ export function ServerFormScreen() {
     if (form.providerCustom) return null;
     return providers.find((p) => p.name === form.provider) ?? null;
   }, [providers, form.provider, form.providerCustom]);
+
+  // тарифные планы выбранного провайдера (для автозаполнения цены + квоты трафика при создании)
+  const plansQ = useQuery({
+    queryKey: ["providerPlans", selProvider?.id],
+    queryFn: () => q.providerPlans(selProvider?.id ?? ""),
+    enabled: !!selProvider?.id && !serverId,
+  });
+  const plans = plansQ.data ?? [];
+  const [planId, setPlanId] = useState("");
+  const selPlan = useMemo(() => plans.find((p) => p.id === planId) ?? null, [plans, planId]);
 
   const loginLabel = form.auth === "key" ? "SSH пользователь" : "Логин";
   const secretLabel = form.auth === "key" ? "SSH-ключ" : "Пароль";
@@ -346,6 +371,31 @@ export function ServerFormScreen() {
                   </span>
                 ))}
               </div>
+
+              {/* Тарифы провайдера: выбор плана подтянет цену (финучёт) и квоту трафика после создания */}
+              {!serverId && plans.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
+                    Тариф — подтянет цену и квоту трафика
+                  </span>
+                  <select className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+                    <option value="">— выбрать тариф (необязательно) —</option>
+                    {plans.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} — {p.price} {p.currency}/мес · {p.cpu}vCPU/{p.ramGb}ГБ · {p.diskGb}ГБ ·{" "}
+                        {p.trafficTb ? `${p.trafficTb} ТБ` : "безлимит"}
+                      </option>
+                    ))}
+                  </select>
+                  {selPlan && (
+                    <span style={{ fontSize: 12, color: "var(--text-3)" }}>
+                      {selPlan.region} · порт {selPlan.portMbps} Мбит · после создания: цена {selPlan.price}{" "}
+                      {selPlan.currency}/мес{selPlan.trafficTb ? `, квота ${selPlan.trafficTb} ТБ` : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <a
                 href={selProvider.url}
                 target="_blank"

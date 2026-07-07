@@ -43,6 +43,14 @@ async def providers(store: ProviderStore = Depends(service(ProviderStore))) -> l
     return store.list()
 
 
+@router.get("/providers/{pid}/plans")
+async def provider_plans(pid: str, _: Identity = Depends(require_user)) -> list[dict]:
+    # справочные тарифные планы провайдера — для автозаполнения цены/квоты при создании сервера
+    from vpnhub.infra.provider_plans import plans_for  # noqa: PLC0415 — лёгкий локальный импорт
+
+    return plans_for(pid)
+
+
 # ---------- servers ----------
 
 

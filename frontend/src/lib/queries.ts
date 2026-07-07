@@ -17,6 +17,7 @@ import type {
   MyUsage,
   Pool,
   Provider,
+  ProviderPlan,
   Server,
   ServerAccess,
   ServerCost,
@@ -132,6 +133,8 @@ export const createChain = (sid: string, exitServerId: string) =>
 export const deleteChain = (sid: string, chainId: string) =>
   http.del<{ ok: boolean }>(`/servers/${sid}/chains/${chainId}`);
 export const listProviders = () => http.get<Provider[]>("/providers");
+// справочные тарифные планы провайдера (для автозаполнения цены/квоты при создании сервера)
+export const providerPlans = (pid: string) => http.get<ProviderPlan[]>(`/providers/${pid}/plans`);
 
 // per-server ресурсы хоста (CPU/RAM/диск/load/uptime/TCP + онлайн-клиенты) — последние + история
 export const serverMetrics = (sid: string) => http.get<ServerMetrics>(`/servers/${sid}/metrics`);

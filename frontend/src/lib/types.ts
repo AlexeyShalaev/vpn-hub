@@ -65,6 +65,21 @@ export interface Server {
   protocols: Protocol[];
 }
 
+export interface ProviderPlan {
+  id: string;
+  name: string;
+  region: string;
+  cpu: number;
+  ramGb: number;
+  diskGb: number;
+  diskType: string;
+  portMbps: number;
+  trafficTb: number | null; // квота трафика, null = безлимит
+  price: number;
+  currency: string;
+  period: string; // minute | day | month
+}
+
 export interface ServerPrice {
   amount: number; // цена в единицах валюты за период
   currency: string; // RUB | USD | EUR | ...
