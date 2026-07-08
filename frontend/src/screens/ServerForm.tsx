@@ -310,7 +310,7 @@ export function ServerFormScreen() {
       amount: nullableNumber(billing.priceAmount),
       currency: billing.priceCurrency,
       period: billing.pricePeriod,
-      anchorDay: nullableDay(billing.priceAnchorDay),
+      anchorDay: billing.pricePeriod === "month" ? nullableDay(billing.priceAnchorDay) : null,
     });
     await q.setBandwidthQuota(
       targetServerId,
@@ -412,7 +412,9 @@ export function ServerFormScreen() {
       return;
     }
     if (
-      (billing.priceAnchorDay.trim() && nullableDay(billing.priceAnchorDay) == null) ||
+      (billing.pricePeriod === "month" &&
+        billing.priceAnchorDay.trim() &&
+        nullableDay(billing.priceAnchorDay) == null) ||
       (billing.trafficBillingDay.trim() && nullableDay(billing.trafficBillingDay) == null)
     ) {
       toast("День периода должен быть от 1 до 31");
@@ -793,7 +795,8 @@ export function ServerFormScreen() {
                 min={1}
                 max={31}
                 value={billing.priceAnchorDay}
-                placeholder="необязательно"
+                disabled={billing.pricePeriod !== "month"}
+                placeholder={billing.pricePeriod === "month" ? "необязательно" : "только для месяца"}
                 onChange={(e) => setBilling((b) => ({ ...b, priceAnchorDay: e.target.value }))}
               />
             </Field>
@@ -806,7 +809,9 @@ export function ServerFormScreen() {
                   type="button"
                   className={`chip${billing.pricePeriod === p ? " selected" : ""}`}
                   style={{ flex: 1, height: 40, justifyContent: "center", cursor: "pointer", fontSize: 13.5 }}
-                  onClick={() => setBilling((b) => ({ ...b, pricePeriod: p }))}
+                  onClick={() =>
+                    setBilling((b) => ({ ...b, pricePeriod: p, priceAnchorDay: p === "month" ? b.priceAnchorDay : "" }))
+                  }
                 >
                   {p === "minute" ? "Минута" : p === "day" ? "Сутки" : "Месяц"}
                 </button>
