@@ -109,6 +109,7 @@ function suggestName(location: string, provider: string): string {
 const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
 const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
   firstbyte: "FirstByte",
+  ishosting: "ISHOSTING",
   ufo: "UFO Hosting",
 };
 
@@ -126,6 +127,7 @@ function isDynamicPlanProviderId(providerId: string | undefined): providerId is 
 function dynamicPlanProviderIdByName(name: string): string {
   const key = normalizeProviderKey(name);
   if (key === "firstbyte") return "firstbyte";
+  if (key === "ishosting" || key === "ishostingcom") return "ishosting";
   if (key === "ufo" || key === "ufohosting") return "ufo";
   return "";
 }
@@ -170,6 +172,12 @@ function providerPlanBaseMatchKey(name: string): string {
   return providerPlanMatchKey(name.replace(/\[[a-z]{2}\]\s*$/i, "").replace(/\s+·.+$/, ""));
 }
 
+function providerPlanLooseMatchKey(name: string): string {
+  const base = providerPlanBaseMatchKey(name);
+  const ishostingPlan = /^(lite|start|medium|premium|elite|exclusive)\b/.exec(base);
+  return ishostingPlan?.[1] ?? base;
+}
+
 function sameRegion(a: string, b: string): boolean {
   return a.trim().localeCompare(b.trim(), "ru", { sensitivity: "accent" }) === 0;
 }
@@ -177,8 +185,9 @@ function sameRegion(a: string, b: string): boolean {
 function findProviderPlanByTariff(plans: ProviderPlan[], tariff: string, region = ""): ProviderPlan | null {
   const target = providerPlanMatchKey(tariff);
   const targetBase = providerPlanBaseMatchKey(tariff);
+  const targetLoose = providerPlanLooseMatchKey(tariff);
   if (!target) return null;
-  const matches = plans.filter((p) => {
+  const exactMatches = plans.filter((p) => {
     const label = providerPlanLabel(p);
     return (
       providerPlanMatchKey(label) === target ||
@@ -186,7 +195,10 @@ function findProviderPlanByTariff(plans: ProviderPlan[], tariff: string, region 
       (targetBase && providerPlanBaseMatchKey(label) === targetBase)
     );
   });
-  if (!matches.length) return null;
+  const matches =
+    exactMatches.length > 0 || !region.trim()
+      ? exactMatches
+      : plans.filter((p) => providerPlanLooseMatchKey(providerPlanLabel(p)) === targetLoose);
   const regionMatch = region.trim() ? matches.find((p) => sameRegion(p.region, region)) : null;
   return regionMatch ?? matches[0] ?? null;
 }

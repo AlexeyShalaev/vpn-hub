@@ -11,8 +11,10 @@ from vpnhub.infra import provider_plans
 from vpnhub.infra.provider_plans import (
     TIB,
     discover_firstbyte_plan_urls,
+    discover_ishosting_plan_urls,
     discover_ufo_countries,
     parse_firstbyte_plans,
+    parse_ishosting_plans,
     parse_ufo_plans,
     plan_bandwidth_bytes,
 )
@@ -118,6 +120,53 @@ UFO_INDIA_CARDS = """
 </div>
 """
 
+ISHOSTING_LANDING = """
+<html><body>
+<a href="/en/vps/at">Austria</a>
+<a href="/en/vps/ae">UAE</a>
+<a href="/en/vps/linux">Linux VPS</a>
+<a href="/en/vps/1011_1y">Start</a>
+</body></html>
+"""
+
+ISHOSTING_AT_CARDS = """
+<html><body>
+<ul>
+  <li><div class="services-list-cards-item">
+    <div class="title"><span class="main"><a href="/en/vps/879_1y">Lite</a></span></div>
+    <div class="labels"><span class="location"><span class="fi fi-at"></span> Austria </span></div>
+    <div class="price"><span class="value"><span class="from text">From</span>$5.94</span>
+      <span class="period">/ 1 month</span></div>
+    <ul class="specs">
+      <li class="specs-item"><span class="value">Xeon 2.90 GHz</span><span class="type">CPU</span></li>
+      <li class="specs-item"><span class="value">1 Gb</span><span class="type">RAM</span></li>
+      <li class="specs-item"><span class="value">20GB NVMe</span><span class="type">Drive</span></li>
+      <li class="specs-item"><span class="value">2 Tb</span><span class="type">Bandwidth</span></li>
+    </ul>
+    <ul class="tags"><li class="tags-item"><span>1Gbps Port</span></li></ul>
+  </div></li>
+  <li><div class="services-list-cards-item">
+    <div class="title"><span class="main"><a href="/en/vps/1012_1y">Medium</a></span></div>
+    <div class="labels"><span class="location"><span class="fi fi-at"></span> Austria </span></div>
+    <div class="price"><span class="value"><span class="from text">From</span>$21.24</span>
+      <span class="period">/ 1 month</span></div>
+    <ul class="specs">
+      <li class="specs-item"><span class="value">Xeon 3x2.90 GHz</span><span class="type">CPU</span></li>
+      <li class="specs-item"><span class="value">4 Gb</span><span class="type">RAM</span></li>
+      <li class="specs-item"><span class="value">40GB NVMe</span><span class="type">Drive</span></li>
+      <li class="specs-item"><span class="value">Unmetered</span><span class="type">Bandwidth</span></li>
+    </ul>
+    <ul class="tags"><li class="tags-item"><span>1Gbps Port</span></li></ul>
+  </div></li>
+  <li><div class="services-list-cards-item">
+    <div class="title"><span class="main"><a href="/en/vps/1046_1y">Lite - Linux NVMe</a></span></div>
+    <div class="labels"><span class="location"><span class="fi fi-ee"></span> Estonia </span></div>
+    <div class="price"><span class="value">$12.00</span></div>
+  </div></li>
+</ul>
+</body></html>
+"""
+
 
 def test__parse_firstbyte_plans__extracts_current_price_specs_region_and_availability() -> None:
     plans = parse_firstbyte_plans({"https://firstbyte.ru/vps-vds/kvm-ssd/": FIRSTBYTE_TABLE})
@@ -200,6 +249,59 @@ def test__parse_ufo_plans__extracts_cards_from_landing_and_ajax_fragments() -> N
     assert by_id["ufo-india-brachium"]["portMbps"] == 1000
 
 
+def test__discover_ishosting_plan_urls__uses_country_links_and_static_fallback() -> None:
+    urls = discover_ishosting_plan_urls({"https://ishosting.com/en/vps": ISHOSTING_LANDING})
+
+    assert "https://ishosting.com/en/vps/at" in urls
+    assert "https://ishosting.com/en/vps/ae" in urls
+    assert "https://ishosting.com/en/vps/nl" in urls  # fallback list if landing page is partial
+    assert "https://ishosting.com/en/vps/linux" not in urls
+    assert "https://ishosting.com/en/vps/1011_1y" not in urls
+
+
+def test__parse_ishosting_plans__extracts_cards_and_skips_special_offers() -> None:
+    plans = parse_ishosting_plans({"https://ishosting.com/en/vps/at": ISHOSTING_AT_CARDS})
+    by_id = {p["id"]: p for p in plans}
+
+    assert by_id["ishosting-austria-lite"] == {
+        "id": "ishosting-austria-lite",
+        "name": "Lite · Austria",
+        "region": "Austria",
+        "cpu": 1,
+        "ramGb": 1,
+        "diskGb": 20,
+        "diskType": "NVMe",
+        "portMbps": 1000,
+        "trafficTb": 2,
+        "price": 5.94,
+        "currency": "USD",
+        "period": "month",
+        "available": True,
+        "sourceUrl": "https://ishosting.com/en/vps/at",
+    }
+    assert by_id["ishosting-austria-medium"]["cpu"] == 3
+    assert by_id["ishosting-austria-medium"]["trafficTb"] is None
+    assert "ishosting-estonia-lite-linux-nvme" not in by_id
+
+
+async def test__fetch_ishosting_plans__loads_country_pages_with_browser_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        assert timeout > 0
+        if url == "https://ishosting.com/en/vps":
+            return ISHOSTING_LANDING
+        if url == "https://ishosting.com/en/vps/at":
+            return ISHOSTING_AT_CARDS
+        return ""
+
+    monkeypatch.setattr(provider_plans, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_ishosting_plans()
+
+    assert [p["id"] for p in plans] == ["ishosting-austria-lite", "ishosting-austria-medium"]
+
+
 async def test__fetch_ufo_plans__loads_country_fragments_with_page_nonce(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch_url(url: str, timeout: float) -> str:
         assert url == "https://ufo.hosting/vps-vds"
@@ -238,6 +340,15 @@ async def test__plans_for__ufo_fetches_dynamic_catalog(monkeypatch: pytest.Monke
     monkeypatch.setattr(provider_plans, "fetch_ufo_plans", fake_fetch)
 
     assert await provider_plans.plans_for("UFO Hosting") == [{"id": "ufo-live"}]
+
+
+async def test__plans_for__ishosting_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch() -> list[dict[str, Any]]:
+        return [{"id": "ish-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_ishosting_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("ISHOSTING") == [{"id": "ish-live"}]
 
 
 async def test__plans_for__firstbyte_caches_dynamic_catalog_and_returns_copy(
