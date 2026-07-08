@@ -111,6 +111,7 @@ const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
   ahost: "AHost",
   firstbyte: "FirstByte",
   ishosting: "ISHOSTING",
+  serverspace: "Serverspace",
   ufo: "UFO Hosting",
 };
 
@@ -130,6 +131,7 @@ function dynamicPlanProviderIdByName(name: string): string {
   if (key === "ahost" || key === "ahosteu") return "ahost";
   if (key === "firstbyte") return "firstbyte";
   if (key === "ishosting" || key === "ishostingcom") return "ishosting";
+  if (key === "serverspace" || key === "serverspaceru" || key === "serverspaceio") return "serverspace";
   if (key === "ufo" || key === "ufohosting") return "ufo";
   return "";
 }

@@ -17,6 +17,7 @@ from vpnhub.infra.provider_plans import (
     parse_ahost_plans,
     parse_firstbyte_plans,
     parse_ishosting_plans,
+    parse_serverspace_plans,
     parse_ufo_plans,
     plan_bandwidth_bytes,
 )
@@ -219,6 +220,47 @@ AHOST_GERMANY_CARDS = """
 </body></html>
 """
 
+SERVERSPACE_PRICE_PAGE = """
+<html><body>
+<select id="fixedDc">
+  <option value="239">Ташкент</option>
+  <option value="2" selected>Москва, 5th Gen Intel</option>
+</select>
+<div class="table">
+  <div class="table__row plans-row show">
+    <div class="table__cell cell-ram"><span>1 ГБ</span></div>
+    <div class="table__cell cell-cpu"><span>1 Core</span></div>
+    <div class="table__cell cell-ssd"><span>25 ГБ</span></div>
+    <div class="table__cell cell-bandwidth"><span>50 Мбит/c</span></div>
+    <div class="table__cell">
+      <div class="price">
+        <span class="price__value">0.609</span>
+        <span class="price__symbol">₽</span>
+        <span class="price__period">/час</span>
+      </div>
+    </div>
+    <div class="table__cell">
+      <div class="price">
+        <span class="price__value">438.21</span>
+        <span class="price__symbol">₽</span>
+        <span class="price__period">/мес</span>
+      </div>
+    </div>
+  </div>
+  <div class="table__row plans-row show">
+    <div class="table__cell cell-ram"><span>2 ГБ</span></div>
+    <div class="table__cell cell-cpu"><span>2 Core</span></div>
+    <div class="table__cell cell-ssd"><span>60 ГБ</span></div>
+    <div class="table__cell cell-bandwidth"><span>50 Мбит/c</span></div>
+    <div class="table__cell"><div class="price"><span class="price__value">2.165</span><span>₽</span></div></div>
+    <div class="table__cell"><div class="price"><span class="price__value">1 559.13</span><span>₽</span></div></div>
+  </div>
+</div>
+</body></html>
+"""
+
+SERVERSPACE_CHALLENGE_PAGE = "<html><script>var __js_p_ = 1; var __jhash_ = 2;</script>ajaxload.info</html>"
+
 
 def test__parse_firstbyte_plans__extracts_current_price_specs_region_and_availability() -> None:
     plans = parse_firstbyte_plans({"https://firstbyte.ru/vps-vds/kvm-ssd/": FIRSTBYTE_TABLE})
@@ -372,6 +414,51 @@ def test__parse_ahost_plans__extracts_cards_without_port() -> None:
     assert "ahost-germany-windows-start" not in by_id
 
 
+def test__parse_serverspace_plans__extracts_fixed_plans_and_selected_dc() -> None:
+    plans = parse_serverspace_plans({"https://serverspace.ru/conditions/price/": SERVERSPACE_PRICE_PAGE})
+    by_id = {p["id"]: p for p in plans}
+
+    assert by_id["serverspace-fixed-1c-1gb-25gb"] == {
+        "id": "serverspace-fixed-1c-1gb-25gb",
+        "name": "Fixed 1C/1GB/25GB SSD · Москва, 5th Gen Intel",
+        "region": "Москва, 5th Gen Intel",
+        "cpu": 1,
+        "ramGb": 1,
+        "diskGb": 25,
+        "diskType": "SSD",
+        "portMbps": 50,
+        "trafficTb": None,
+        "price": 438.21,
+        "currency": "RUB",
+        "period": "month",
+        "available": True,
+        "sourceUrl": "https://serverspace.ru/conditions/price/",
+    }
+    assert by_id["serverspace-fixed-2c-2gb-60gb"]["price"] == 1559.13
+    assert by_id["serverspace-fixed-2c-2gb-60gb"]["currency"] == "RUB"
+
+
+def test__parse_serverspace_plans__skips_js_challenge() -> None:
+    assert parse_serverspace_plans({"https://serverspace.ru/conditions/price/": SERVERSPACE_CHALLENGE_PAGE}) == []
+
+
+async def test__fetch_serverspace_plans__loads_price_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_fetch_serverspace_price_page(timeout: float) -> str:
+        assert timeout > 0
+        return SERVERSPACE_PRICE_PAGE
+
+    monkeypatch.setattr(provider_plans, "_fetch_serverspace_price_page", fake_fetch_serverspace_price_page)
+
+    plans = await provider_plans.fetch_serverspace_plans()
+
+    assert [p["id"] for p in plans] == [
+        "serverspace-fixed-1c-1gb-25gb",
+        "serverspace-fixed-2c-2gb-60gb",
+    ]
+
+
 async def test__fetch_ahost_plans__loads_country_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch_url(url: str, timeout: float) -> str:
         assert timeout > 0
@@ -462,6 +549,15 @@ async def test__plans_for__ahost_fetches_dynamic_catalog(monkeypatch: pytest.Mon
     monkeypatch.setattr(provider_plans, "fetch_ahost_plans", fake_fetch)
 
     assert await provider_plans.plans_for("AHost") == [{"id": "ahost-live"}]
+
+
+async def test__plans_for__serverspace_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch() -> list[dict[str, Any]]:
+        return [{"id": "serverspace-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_serverspace_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("Serverspace") == [{"id": "serverspace-live"}]
 
 
 async def test__plans_for__firstbyte_caches_dynamic_catalog_and_returns_copy(
