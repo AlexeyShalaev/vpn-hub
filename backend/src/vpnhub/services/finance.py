@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from vpnhub.api.config import Settings
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.uow import Uow, UowTransaction
@@ -130,7 +131,7 @@ def _unit_costs(
 
 
 class FinanceService:
-    def __init__(self, uow: Uow, settings: Any) -> None:
+    def __init__(self, uow: Uow, settings: Settings) -> None:
         self.uow = uow
         self.settings = settings
 

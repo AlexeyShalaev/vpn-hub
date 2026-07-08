@@ -20,6 +20,7 @@ from vpnhub.services.auth import AuthService
 from vpnhub.services.backups import BackupService
 from vpnhub.services.configs import ConfigService
 from vpnhub.services.devices import DeviceService
+from vpnhub.services.finance import FinanceService
 from vpnhub.services.groups import GroupService
 from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.me import MeService
@@ -79,6 +80,7 @@ class AppProvider(Provider):
     admin = provide(AdminService)
     backups = provide(BackupService)
     audit = provide(AuditService)
+    finance = provide(FinanceService)
     traffic = provide(TrafficService)
     host_metrics = provide(HostMetricsService)
     metrics = provide(MetricsService)
