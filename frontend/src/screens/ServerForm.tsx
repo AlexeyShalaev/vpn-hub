@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Btn, Field, Icon, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import type { ParsedServerInfo } from "../lib/credentialParse";
-import { hasUsefulInfo, parseServerInfo } from "../lib/credentialParse";
+import { parseServerInfo } from "../lib/credentialParse";
 import * as q from "../lib/queries";
 import type { Provider, ProviderPlan, Server } from "../lib/types";
 import { useNav } from "../nav";
@@ -104,6 +104,10 @@ function isFirstByteProvider(p: Provider | null): boolean {
   return (p?.id ?? "").toLowerCase() === "firstbyte" || (p?.name ?? "").trim().toLowerCase() === "firstbyte";
 }
 
+function isFirstByteProviderName(name: string): boolean {
+  return name.trim().toLowerCase() === "firstbyte";
+}
+
 function fmtTraffic(tb: number | null): string {
   return tb == null ? "безлимит" : `${tb} ТБ`;
 }
@@ -136,6 +140,13 @@ function findProviderPlanByTariff(plans: ProviderPlan[], tariff: string): Provid
     plans.find((p) => providerPlanMatchKey(p.name) === target) ??
     null
   );
+}
+
+function providerNameById(providers: Provider[], providerId: string): string {
+  const p = providers.find((pp) => pp.id === providerId);
+  if (p) return p.name;
+  if (providerId === "firstbyte") return "FirstByte";
+  return providerId;
 }
 
 function withProviderPlan(
@@ -264,7 +275,9 @@ export function ServerFormScreen() {
     if (form.providerCustom) return null;
     return providers.find((p) => p.name === form.provider) ?? null;
   }, [providers, form.provider, form.providerCustom]);
-  const firstByteSelected = isFirstByteProvider(selProvider);
+  const firstByteSelected =
+    isFirstByteProvider(selProvider) || (!form.providerCustom && isFirstByteProviderName(form.provider));
+  const planProviderId = firstByteSelected ? "firstbyte" : "";
 
   const [planRegion, setPlanRegion] = useState("");
   const [planId, setPlanId] = useState("");
@@ -272,9 +285,9 @@ export function ServerFormScreen() {
   // FirstByte: динамические тарифы с сайта. Страна/тариф — необязательная подсказка
   // для автозаполнения локации, цены и квоты трафика; SSH/IP остаются ручными.
   const plansQ = useQuery({
-    queryKey: ["providerPlans", selProvider?.id],
-    queryFn: () => q.providerPlans(selProvider?.id ?? ""),
-    enabled: firstByteSelected,
+    queryKey: ["providerPlans", planProviderId],
+    queryFn: () => q.providerPlans(planProviderId),
+    enabled: planProviderId === "firstbyte",
   });
   const plans = plansQ.data ?? [];
   const planRegions = useMemo(
@@ -290,7 +303,7 @@ export function ServerFormScreen() {
   useEffect(() => {
     setPlanRegion("");
     setPlanId("");
-  }, [selProvider?.id]);
+  }, [planProviderId]);
 
   useEffect(() => {
     if (planRegion || !form.location.trim() || planRegions.length === 0) return;
@@ -322,6 +335,7 @@ export function ServerFormScreen() {
     const plan = plans.find((p) => planOptionKey(p) === id);
     if (!plan) return;
     applyProviderPlan(plan);
+    setPendingProviderPlan(null);
   }
 
   async function applyBillingToServer(targetServerId: string) {
@@ -342,30 +356,33 @@ export function ServerFormScreen() {
   // распознанные реквизиты сразу подставляются в поля.
   const [pasteText, setPasteText] = useState("");
   const [parsed, setParsed] = useState<ParsedServerInfo | null>(null);
-  const [pendingProviderPlan, setPendingProviderPlan] = useState("");
+  const [pendingProviderPlan, setPendingProviderPlan] = useState<{ providerId: string; tariff: string } | null>(null);
 
   useEffect(() => {
-    if (!pendingProviderPlan || !firstByteSelected || plans.length === 0) return;
-    const plan = findProviderPlanByTariff(plans, pendingProviderPlan);
+    if (!pendingProviderPlan || pendingProviderPlan.providerId !== planProviderId || plans.length === 0) return;
+    const plan = findProviderPlanByTariff(plans, pendingProviderPlan.tariff);
     if (!plan) return;
     applyProviderPlan(plan);
-    setPendingProviderPlan("");
-  }, [pendingProviderPlan, firstByteSelected, plans]);
+    setPendingProviderPlan(null);
+  }, [pendingProviderPlan, planProviderId, plans]);
 
   function onPasteChange(text: string) {
     setPasteText(text);
     if (!text.trim()) {
       setParsed(null);
-      setPendingProviderPlan("");
+      setPendingProviderPlan(null);
       return;
     }
-    const selectedId = providers.find((p) => p.name === form.provider)?.id;
+    const selectedProvider = providers.find((p) => p.name === form.provider);
+    const selectedId =
+      selectedProvider?.id ??
+      (!form.providerCustom && isFirstByteProviderName(form.provider) ? "firstbyte" : undefined);
     const info = parseServerInfo(text, selectedId);
     setParsed(info);
+    const planProvider = info.providerId ?? selectedId;
     setPendingProviderPlan(
-      (info.providerId === "firstbyte" || selectedId === "firstbyte") && info.tariff ? info.tariff : "",
+      planProvider === "firstbyte" && info.tariff ? { providerId: "firstbyte", tariff: info.tariff } : null,
     );
-    if (!hasUsefulInfo(info)) return;
     setForm((f) => {
       const n = { ...f };
       if (info.providerId) {
@@ -393,8 +410,7 @@ export function ServerFormScreen() {
     if (!parsed) return [];
     const chips: string[] = [];
     if (parsed.providerId) {
-      const p = providers.find((pp) => pp.id === parsed.providerId);
-      if (p) chips.push(`Провайдер: ${p.name}`);
+      chips.push(`Провайдер: ${providerNameById(providers, parsed.providerId)}`);
     }
     if (parsed.ip) chips.push(`IP: ${parsed.ip}`);
     else if (parsed.hostname) chips.push(`Хост: ${parsed.hostname}`);
@@ -405,6 +421,23 @@ export function ServerFormScreen() {
     if (parsed.tariff) chips.push(`Тариф: ${parsed.tariff}`);
     return chips;
   }, [parsed, providers]);
+  const pendingFirstByteTariff = pendingProviderPlan?.providerId === "firstbyte" ? pendingProviderPlan.tariff : "";
+  const pendingFirstByteMatch = pendingFirstByteTariff ? findProviderPlanByTariff(plans, pendingFirstByteTariff) : null;
+  const pendingFirstByteNotFound =
+    !!pendingFirstByteTariff && plansQ.isSuccess && plans.length > 0 && !pendingFirstByteMatch;
+  const pendingFirstByteMessage = (() => {
+    if (!pendingFirstByteTariff) return "";
+    if (plansQ.isError) {
+      return `Нашли тариф ${pendingFirstByteTariff}, но каталог FirstByte сейчас не загрузился. Тариф оставлен в поле.`;
+    }
+    if (pendingFirstByteNotFound) {
+      return `Каталог FirstByte загружен, но тариф ${pendingFirstByteTariff} не найден. Тариф оставлен в поле.`;
+    }
+    if (plansQ.isLoading || plansQ.isFetching) {
+      return `Нашли тариф ${pendingFirstByteTariff}. Загружаем каталог FirstByte, затем подставим цену и квоту.`;
+    }
+    return `Нашли тариф ${pendingFirstByteTariff}. Ждём каталог FirstByte для автозаполнения цены и квоты.`;
+  })();
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => (serverId ? q.updateServer(serverId, body) : q.createServer(body)),
@@ -735,6 +768,22 @@ export function ServerFormScreen() {
                   Не удалось распознать реквизиты — заполните поля вручную.
                 </p>
               ))}
+            {pendingFirstByteMessage && (
+              <div
+                className="rowflex"
+                style={{
+                  gap: 8,
+                  marginTop: 8,
+                  alignItems: "flex-start",
+                  color: pendingFirstByteNotFound || plansQ.isError ? "var(--text-3)" : "var(--text-2)",
+                  fontSize: 12.5,
+                  lineHeight: 1.45,
+                }}
+              >
+                {(plansQ.isLoading || plansQ.isFetching) && <Spinner />}
+                <span>{pendingFirstByteMessage}</span>
+              </div>
+            )}
           </Field>
         )}
 
@@ -773,7 +822,10 @@ export function ServerFormScreen() {
           <input
             className="input"
             value={form.providerPlan}
-            onChange={(e) => set("providerPlan", e.target.value)}
+            onChange={(e) => {
+              setPendingProviderPlan(null);
+              set("providerPlan", e.target.value);
+            }}
             placeholder="например, MSK-highmem-KVM-SSD-2"
           />
         </Field>
