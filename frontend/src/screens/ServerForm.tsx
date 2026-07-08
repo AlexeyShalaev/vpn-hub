@@ -124,6 +124,20 @@ function providerPlanLabel(p: ProviderPlan): string {
   return p.name.split(" · ")[0]?.trim() || p.name;
 }
 
+function providerPlanMatchKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function findProviderPlanByTariff(plans: ProviderPlan[], tariff: string): ProviderPlan | null {
+  const target = providerPlanMatchKey(tariff);
+  if (!target) return null;
+  return (
+    plans.find((p) => providerPlanMatchKey(providerPlanLabel(p)) === target) ??
+    plans.find((p) => providerPlanMatchKey(p.name) === target) ??
+    null
+  );
+}
+
 function withProviderPlan(
   metadata: Record<string, unknown> | undefined,
   providerPlan: string,
@@ -290,10 +304,9 @@ export function ServerFormScreen() {
     if (region) set("location", region);
   }
 
-  function onPlanChange(id: string) {
-    setPlanId(id);
-    const plan = plans.find((p) => planOptionKey(p) === id);
-    if (!plan) return;
+  function applyProviderPlan(plan: ProviderPlan) {
+    setPlanRegion(plan.region);
+    setPlanId(planOptionKey(plan));
     setForm((f) => ({ ...f, location: plan.region, providerPlan: providerPlanLabel(plan) }));
     setBilling((b) => ({
       ...b,
@@ -303,6 +316,12 @@ export function ServerFormScreen() {
       priceAnchorDay: "",
       trafficQuotaGb: plan.trafficTb ? String(+(plan.trafficTb * 1024).toFixed(2)) : "",
     }));
+  }
+
+  function onPlanChange(id: string) {
+    const plan = plans.find((p) => planOptionKey(p) === id);
+    if (!plan) return;
+    applyProviderPlan(plan);
   }
 
   async function applyBillingToServer(targetServerId: string) {
@@ -323,23 +342,36 @@ export function ServerFormScreen() {
   // распознанные реквизиты сразу подставляются в поля.
   const [pasteText, setPasteText] = useState("");
   const [parsed, setParsed] = useState<ParsedServerInfo | null>(null);
+  const [pendingProviderPlan, setPendingProviderPlan] = useState("");
+
+  useEffect(() => {
+    if (!pendingProviderPlan || !firstByteSelected || plans.length === 0) return;
+    const plan = findProviderPlanByTariff(plans, pendingProviderPlan);
+    if (!plan) return;
+    applyProviderPlan(plan);
+    setPendingProviderPlan("");
+  }, [pendingProviderPlan, firstByteSelected, plans]);
 
   function onPasteChange(text: string) {
     setPasteText(text);
     if (!text.trim()) {
       setParsed(null);
+      setPendingProviderPlan("");
       return;
     }
     const selectedId = providers.find((p) => p.name === form.provider)?.id;
     const info = parseServerInfo(text, selectedId);
     setParsed(info);
+    setPendingProviderPlan(
+      (info.providerId === "firstbyte" || selectedId === "firstbyte") && info.tariff ? info.tariff : "",
+    );
     if (!hasUsefulInfo(info)) return;
     setForm((f) => {
       const n = { ...f };
       if (info.providerId) {
         const p = providers.find((pp) => pp.id === info.providerId);
-        if (p) {
-          n.provider = p.name;
+        if (p || info.providerId === "firstbyte") {
+          n.provider = p?.name ?? "FirstByte";
           n.providerCustom = false;
         }
       }
