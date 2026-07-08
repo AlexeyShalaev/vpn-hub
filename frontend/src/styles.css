@@ -671,9 +671,11 @@ a {
     border-top: 1px solid var(--border);
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
     z-index: 40;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
   .bottom-nav button {
-    flex: 1;
+    flex: 0 0 72px;
     display: flex;
     flex-direction: column;
     align-items: center;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +10,8 @@ from sqlalchemy import select
 
 from tests.factories.orm import make_server, make_user, seed
 from vpnhub.infra.db.orm import models as m
-from vpnhub.services.finance import MICROS, FinanceService, accrue_segment, accrued_by_currency
+from vpnhub.services.finance import GIB, MICROS, FinanceService, accrue_segment, accrued_by_currency
+from vpnhub.services.limits import period_start
 
 pytestmark = pytest.mark.integration
 
@@ -108,3 +110,55 @@ async def test__cost_report__sums_per_currency(session_maker, uow, settings) -> 
     curs = {t["currency"] for t in rep["totals"]}
     assert curs == {"RUB", "USD"}  # обе валюты в сводке, раздельно
     assert len(rep["servers"]) == 2
+
+
+async def test__overview__combines_cost_traffic_and_unit_economics(session_maker, uow, settings) -> None:
+    now = time.time()
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79008880005")
+        srv = await make_server(s, owner_id=owner.id, name="MSK", status="online")
+        srv.location = "Москва"
+        srv.provider = "FirstByte"
+        srv.provider_metadata = {"providerPlan": "MSK-highmem-KVM-SSD-2"}
+        srv.bandwidth_quota_bytes = 10 * GIB
+        srv.billing_day = None
+        s.add(
+            m.ServerPrice(
+                server_id=srv.id,
+                amount_micros=round(300 * MICROS),
+                currency="RUB",
+                period="month",
+                anchor_day=None,
+                effective_from=now - DAY,
+                effective_to=None,
+            )
+        )
+        s.add(
+            m.TrafficUsage(
+                server_id=srv.id,
+                user_id=None,
+                period_start=period_start(now, None),
+                rx_bytes=1 * GIB,
+                tx_bytes=2 * GIB,
+                updated_at=now,
+            )
+        )
+        sid, oid = srv.id, owner.id
+
+    rep = await FinanceService(uow, settings).overview(oid, now - DAY, now)
+
+    assert rep["totals"]["servers"] == 1
+    assert rep["totals"]["pricedServers"] == 1
+    assert rep["totals"]["quotaServers"] == 1
+    assert rep["totals"]["trafficQuotaBytes"] == 10 * GIB
+    assert rep["totals"]["trafficUsedBytes"] == 3 * GIB
+    assert rep["totals"]["trafficUtilizationPct"] == 30.0
+    assert rep["totals"]["costByCurrency"][0]["currency"] == "RUB"
+    assert rep["totals"]["costByCurrency"][0]["amount"] > 0
+    assert rep["totals"]["unitCosts"][0]["saleGuide"][1]["marginPct"] == 50
+
+    row = rep["servers"][0]
+    assert row["serverId"] == sid
+    assert row["provider"] == "FirstByte"
+    assert row["providerPlan"] == "MSK-highmem-KVM-SSD-2"
+    assert row["trafficUtilizationPct"] == 30.0

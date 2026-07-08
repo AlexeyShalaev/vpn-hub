@@ -20,11 +20,14 @@ from sqlalchemy import select
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services.limits import period_start, period_usage
 
 MICROS = 1_000_000  # цена хранится в микроединицах валюты (сумма × 1e6) — точность без float
 PERIODS = ("minute", "day", "month")
 # длительность периода в секундах; месяц — средний (365.25/12 суток), чтобы accrual был ровным
 PERIOD_SECONDS: dict[str, float] = {"minute": 60.0, "day": 86400.0, "month": 365.25 / 12 * 86400}
+GIB = 1024**3
+SALE_MARGIN_PCTS = (20, 50, 100)
 
 
 def accrue_segment(
@@ -73,6 +76,57 @@ def _norm_currency(cur: str) -> str:
     if not (3 <= len(cur) <= 8 and cur.isalpha()):
         raise BadRequest("Валюта — 3–8 латинских букв (напр. RUB, USD, EUR)")
     return cur
+
+
+def _money_items(values: dict[str, float]) -> list[dict]:
+    return [{"currency": c, "amount": round(v, 2)} for c, v in sorted(values.items()) if v]
+
+
+def _pct(part: int, total: int | None) -> float | None:
+    if not total or total <= 0:
+        return None
+    return round(part / total * 100, 1)
+
+
+def _unit_amount(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(value, 4 if abs(value) < 1 else 2)
+
+
+def _unit_costs(
+    costs: dict[str, float],
+    used_bytes: int,
+    quota_bytes: int | None,
+    capacity_costs: dict[str, float] | None = None,
+) -> list[dict]:
+    used_gib = used_bytes / GIB if used_bytes > 0 else None
+    quota_gib = quota_bytes / GIB if quota_bytes and quota_bytes > 0 else None
+    capacity = capacity_costs if capacity_costs is not None else costs
+    out: list[dict] = []
+    for currency in sorted(set(costs) | set(capacity)):
+        amount = costs.get(currency, 0.0)
+        capacity_amount = capacity.get(currency, 0.0)
+        per_used = amount / used_gib if used_gib else None
+        per_quota = capacity_amount / quota_gib if quota_gib and capacity_amount else None
+        basis = per_quota if per_quota is not None else per_used
+        out.append(
+            {
+                "currency": currency,
+                "costPerUsedGb": _unit_amount(per_used),
+                "costPerQuotaGb": _unit_amount(per_quota),
+                "saleGuide": [
+                    {
+                        "marginPct": margin,
+                        "pricePerGb": _unit_amount(basis * (1 + margin / 100)) if basis is not None else None,
+                        "pricePerTb": _unit_amount(basis * 1024 * (1 + margin / 100)) if basis is not None else None,
+                        "basis": "quota" if per_quota is not None else "used",
+                    }
+                    for margin in SALE_MARGIN_PCTS
+                ],
+            }
+        )
+    return out
 
 
 class FinanceService:
@@ -209,5 +263,90 @@ class FinanceService:
             "start": start,
             "end": end,
             "totals": [{"currency": c, "amount": round(v, 2)} for c, v in sorted(totals.items())],
+            "servers": servers_out,
+        }
+
+    async def overview(self, owner_id: str, start: float, end: float) -> dict:
+        """Финансовый overview владельца: cost + текущая утилизация трафика + unit economics.
+
+        Расход считается за выбранный диапазон [start, end]. Трафик/квоты — за текущий
+        биллинг-период каждого сервера, потому что квота сбрасывается по server.billing_day.
+        Валюты не конвертируем, поэтому себестоимость и сценарии продажи идут отдельно по валютам.
+        """
+        now = time.time()
+        end = min(end, now)
+        if end <= start:
+            raise BadRequest("Некорректный период отчёта")
+
+        totals_cost: dict[str, float] = {}
+        quota_cost: dict[str, float] = {}
+        total_quota_bytes = 0
+        total_used_bytes = 0
+        priced = 0
+        quota_servers = 0
+        servers_out: list[dict] = []
+
+        async with self.uow.query() as tx:
+            servers = await tx.servers.for_owner(owner_id)
+            for s in servers:
+                segs = await self._segments(tx, s.id)
+                price = _price_dict(await self._open_segment(tx, s.id))
+                if price is not None:
+                    priced += 1
+                by_cur = accrued_by_currency(segs, start, end, now)
+                for currency, amount in by_cur.items():
+                    totals_cost[currency] = totals_cost.get(currency, 0.0) + amount
+
+                billing_start = period_start(now, s.billing_day)
+                rx, txb = await period_usage(tx.session, s.id, None, billing_start)
+                used = int(rx) + int(txb)
+                quota = s.bandwidth_quota_bytes
+                if quota and quota > 0:
+                    quota_servers += 1
+                    total_quota_bytes += int(quota)
+                    for currency, amount in by_cur.items():
+                        quota_cost[currency] = quota_cost.get(currency, 0.0) + amount
+                total_used_bytes += used
+
+                metadata = s.provider_metadata if isinstance(s.provider_metadata, dict) else {}
+                provider_plan = metadata.get("providerPlan")
+                servers_out.append(
+                    {
+                        "serverId": s.id,
+                        "name": s.name,
+                        "provider": s.provider,
+                        "providerPlan": provider_plan if isinstance(provider_plan, str) else None,
+                        "location": s.location,
+                        "status": s.status,
+                        "price": price,
+                        "costByCurrency": _money_items(by_cur),
+                        "trafficQuotaBytes": quota,
+                        "trafficUsedBytes": used,
+                        "trafficUtilizationPct": _pct(used, quota),
+                        "billingDay": s.billing_day,
+                        "billingPeriodStart": billing_start,
+                        "unitCosts": _unit_costs(by_cur, used, quota),
+                    }
+                )
+
+        servers_out.sort(
+            key=lambda row: (
+                -(row["trafficUtilizationPct"] or -1),
+                row["name"].lower(),
+            )
+        )
+        return {
+            "start": start,
+            "end": end,
+            "totals": {
+                "servers": len(servers_out),
+                "pricedServers": priced,
+                "quotaServers": quota_servers,
+                "trafficQuotaBytes": total_quota_bytes or None,
+                "trafficUsedBytes": total_used_bytes,
+                "trafficUtilizationPct": _pct(total_used_bytes, total_quota_bytes),
+                "costByCurrency": _money_items(totals_cost),
+                "unitCosts": _unit_costs(totals_cost, total_used_bytes, total_quota_bytes or None, quota_cost),
+            },
             "servers": servers_out,
         }

@@ -7,6 +7,7 @@ export type Screen =
   | "serverForm"
   | "catalog"
   | "monitoring"
+  | "finance"
   | "groups"
   | "group"
   | "access"
@@ -44,6 +45,8 @@ function screenToPath(screen: Screen, params: Params): string {
       return "/catalog";
     case "monitoring":
       return "/monitoring";
+    case "finance":
+      return "/finance";
     case "groups":
       return "/groups";
     case "group":
@@ -91,6 +94,8 @@ function pathToState(pathname: string, search: string): { screen: Screen; params
       return { screen: "catalog", params: {} };
     case "monitoring":
       return { screen: "monitoring", params: {} };
+    case "finance":
+      return { screen: "finance", params: {} };
     case "groups":
       return b ? { screen: "group", params: { groupId: b } } : { screen: "groups", params: {} };
     case "access":

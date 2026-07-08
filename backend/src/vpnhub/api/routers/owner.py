@@ -367,6 +367,17 @@ async def finance_cost(
     return await svc.cost_report(ident.id, start if start is not None else now - _MONTH_SECONDS, end or now)
 
 
+@router.get("/finance/overview")
+async def finance_overview(
+    start: float | None = Query(default=None),
+    end: float | None = Query(default=None),
+    ident: Identity = Depends(require_user),
+    svc: FinanceService = Depends(service(FinanceService)),
+) -> dict:
+    now = time.time()
+    return await svc.overview(ident.id, start if start is not None else now - _MONTH_SECONDS, end or now)
+
+
 # ---------- multihop / chains (entry -> exit) ----------
 
 

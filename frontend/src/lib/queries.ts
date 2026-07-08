@@ -9,6 +9,7 @@ import type {
   CostReport,
   Device,
   DeviceLimit,
+  FinanceOverview,
   Group,
   InvitePeek,
   Me,
@@ -125,6 +126,10 @@ export const setServerPrice = (
 ) => http.put<{ price: ServerPrice | null }>(`/servers/${id}/price`, b);
 export const serverCost = (id: string) => http.get<ServerCost>(`/servers/${id}/cost`);
 export const financeCost = () => http.get<CostReport>("/finance/cost");
+export const financeOverview = (start: number, end: number) => {
+  const qs = new URLSearchParams({ start: String(start), end: String(end) });
+  return http.get<FinanceOverview>(`/finance/overview?${qs.toString()}`);
+};
 
 // мультихоп: цепочки, где этот сервер — вход (entry); трафик выходит через exit-сервер (Xray outbound)
 export const listChains = (sid: string) => http.get<ChainLink[]>(`/servers/${sid}/chains`);

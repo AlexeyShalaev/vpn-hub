@@ -14,6 +14,7 @@ import { AvailableScreen } from "../screens/Available";
 import { CatalogScreen } from "../screens/Catalog";
 import { DevicesScreen } from "../screens/Devices";
 import { EventsScreen } from "../screens/Events";
+import { FinanceScreen } from "../screens/Finance";
 import { GroupDetailScreen } from "../screens/GroupDetail";
 import { GroupsScreen } from "../screens/Groups";
 import { HomeScreen } from "../screens/Home";
@@ -441,6 +442,7 @@ const NAV_META: Record<string, { labelKey: TKey; icon: string }> = {
   home: { labelKey: "nav.home", icon: "home" },
   servers: { labelKey: "nav.servers", icon: "servers" },
   monitoring: { labelKey: "nav.monitoring", icon: "monitoring" },
+  finance: { labelKey: "nav.finance", icon: "finance" },
   groups: { labelKey: "nav.groups", icon: "groups" },
   access: { labelKey: "nav.access", icon: "access" },
   available: { labelKey: "nav.available", icon: "available" },
@@ -462,7 +464,7 @@ function Shell({ me }: { me: Me }) {
   // так что двойной вызов под React StrictMode (dev) не оставляет висящих коннектов.
   useEffect(() => subscribeEvents(qc), [qc]);
 
-  const ownerItems = ["home", "servers", "monitoring", "groups", "access", "events"];
+  const ownerItems = ["home", "servers", "monitoring", "finance", "groups", "access", "events"];
   const memberItems = ["available", "devices", "setup"];
   const main = viewRole === "owner" ? ownerItems : memberItems;
   const adminItems = me.isAdmin ? ["users", "system"] : [];
@@ -488,6 +490,8 @@ function Shell({ me }: { me: Me }) {
         return <CatalogScreen />;
       case "monitoring":
         return <MonitoringScreen />;
+      case "finance":
+        return <FinanceScreen />;
       case "groups":
         return <GroupsScreen />;
       case "group":

@@ -138,7 +138,7 @@ export function HomeScreen() {
           )}
         </SummaryCard>
 
-        <SummaryCard icon="servers" title="Расходы на серверы" go="servers">
+        <SummaryCard icon="finance" title="Расходы на серверы" go="finance">
           {costTotals.length === 0 ? (
             <div className="muted" style={{ fontSize: 13 }}>
               Задайте цену серверов на их страницах — здесь появится расход за 30 дней.

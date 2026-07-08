@@ -58,6 +58,15 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M3 12h4l2 6 4-14 2 8h6" />
     </>
   ),
+  finance: (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <rect x="7" y="11" width="3" height="5" rx="1" />
+      <rect x="12" y="7" width="3" height="9" rx="1" />
+      <rect x="17" y="9" width="3" height="7" rx="1" />
+    </>
+  ),
   // ---- иконки платформ устройств (имя = platform-ключ, см. Device.platform) ----
   ios: (
     <>

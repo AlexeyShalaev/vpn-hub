@@ -111,6 +111,53 @@ export interface CostReport {
   servers: { serverId: string; name: string; price: ServerPrice | null; byCurrency: CostByCurrency[] }[];
 }
 
+export interface FinanceSaleGuide {
+  marginPct: number;
+  pricePerGb: number | null;
+  pricePerTb: number | null;
+  basis: "quota" | "used";
+}
+
+export interface FinanceUnitCost {
+  currency: string;
+  costPerUsedGb: number | null;
+  costPerQuotaGb: number | null;
+  saleGuide: FinanceSaleGuide[];
+}
+
+export interface FinanceServerRow {
+  serverId: string;
+  name: string;
+  provider: string;
+  providerPlan: string | null;
+  location: string;
+  status: "online" | "offline" | "unknown";
+  price: ServerPrice | null;
+  costByCurrency: CostByCurrency[];
+  trafficQuotaBytes: number | null;
+  trafficUsedBytes: number;
+  trafficUtilizationPct: number | null;
+  billingDay: number | null;
+  billingPeriodStart: number;
+  unitCosts: FinanceUnitCost[];
+}
+
+export interface FinanceOverview {
+  start: number;
+  end: number;
+  totals: {
+    servers: number;
+    pricedServers: number;
+    quotaServers: number;
+    trafficQuotaBytes: number | null;
+    trafficUsedBytes: number;
+    trafficUtilizationPct: number | null;
+    costByCurrency: CostByCurrency[];
+    unitCosts: FinanceUnitCost[];
+  };
+  servers: FinanceServerRow[];
+}
+
 export interface ServerUsage {
   periodStart: number; // epoch начала текущего периода
   quota: number | null; // квота сервера (байт), null = безлимит
