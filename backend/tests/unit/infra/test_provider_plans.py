@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
 
 from vpnhub.infra import provider_plans
-from vpnhub.infra.provider_plans import TIB, discover_firstbyte_plan_urls, parse_firstbyte_plans, plan_bandwidth_bytes
+from vpnhub.infra.provider_plans import (
+    TIB,
+    discover_firstbyte_plan_urls,
+    discover_ufo_countries,
+    parse_firstbyte_plans,
+    parse_ufo_plans,
+    plan_bandwidth_bytes,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -64,6 +72,52 @@ highhdd-KVM-SAS-1</td>
 </body></html>
 """
 
+UFO_LANDING = """
+<html><body>
+<script>
+ window.wp_ajax = {
+   ajax_url: "https://ufo.hosting/wp-admin/admin-ajax.php",
+   nonce: "nonce-123"
+ };
+</script>
+<ul id="country-list">
+  <li class="dropdown-option" data-value="india" data-country="Индия">Индия</li>
+  <li class="dropdown-option" data-value="kazakhstan" data-country="Казахстан">Казахстан</li>
+  <li class="dropdown-option" data-value="russia" data-country="Россия">Россия</li>
+</ul>
+</body></html>
+"""
+
+UFO_RUSSIA_CARDS = """
+<div class="serv-card serv-card-v animate-fade-in flex" data-cat="VPS/VDS">
+  <div>
+    <h3>Тариф Naos</h3>
+    <span>Страна Россия</span>
+    <div class="price-item" data-base-price="577"><span class="current-price">577₽</span></div>
+    <div><span>CPU:</span><span>vCore x1</span></div>
+    <div><span>RAM:</span><span>1 GB ECC</span></div>
+    <div><span>SSD:</span><span>25 GB NVMe</span></div>
+    <div><span>Сеть:</span><span>10 Gbps*</span></div>
+    <button>Выбрать</button>
+  </div>
+</div>
+"""
+
+UFO_INDIA_CARDS = """
+<div class="serv-card serv-card-v animate-fade-in flex" data-cat="VPS/VDS">
+  <div>
+    <h3>Тариф Brachium</h3>
+    <span>Страна Индия</span>
+    <div class="price-item" data-base-price="977"><span class="current-price">977₽</span></div>
+    <div><span>CPU:</span><span>vCore x2</span></div>
+    <div><span>RAM:</span><span>4 GB ECC</span></div>
+    <div><span>SSD:</span><span>60 GB NVMe</span></div>
+    <div><span>Сеть:</span><span>1 Gbps*</span></div>
+    <button>Выбрать</button>
+  </div>
+</div>
+"""
+
 
 def test__parse_firstbyte_plans__extracts_current_price_specs_region_and_availability() -> None:
     plans = parse_firstbyte_plans({"https://firstbyte.ru/vps-vds/kvm-ssd/": FIRSTBYTE_TABLE})
@@ -109,6 +163,65 @@ def test__discover_firstbyte_plan_urls__uses_seed_links_and_sitemap_but_skips_ro
     assert "https://firstbyte.ru/dedicated/" not in urls
 
 
+def test__discover_ufo_countries__extracts_country_dropdown() -> None:
+    assert discover_ufo_countries(UFO_LANDING) == [
+        ("india", "Индия"),
+        ("kazakhstan", "Казахстан"),
+        ("russia", "Россия"),
+    ]
+
+
+def test__parse_ufo_plans__extracts_cards_from_landing_and_ajax_fragments() -> None:
+    plans = parse_ufo_plans(
+        {
+            "https://ufo.hosting/vps-vds#country=russia": UFO_RUSSIA_CARDS,
+            "https://ufo.hosting/vps-vds#country=india": UFO_INDIA_CARDS,
+        }
+    )
+    by_id = {p["id"]: p for p in plans}
+
+    assert by_id["ufo-russia-naos"] == {
+        "id": "ufo-russia-naos",
+        "name": "Naos · Россия",
+        "region": "Россия",
+        "cpu": 1,
+        "ramGb": 1,
+        "diskGb": 25,
+        "diskType": "NVMe",
+        "portMbps": 10000,
+        "trafficTb": None,
+        "price": 577,
+        "currency": "RUB",
+        "period": "month",
+        "available": True,
+        "sourceUrl": "https://ufo.hosting/vps-vds#country=russia",
+    }
+    assert by_id["ufo-india-brachium"]["region"] == "Индия"
+    assert by_id["ufo-india-brachium"]["portMbps"] == 1000
+
+
+async def test__fetch_ufo_plans__loads_country_fragments_with_page_nonce(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_url(url: str, timeout: float) -> str:
+        assert url == "https://ufo.hosting/vps-vds"
+        assert timeout > 0
+        return UFO_LANDING
+
+    async def fake_post_form_url(url: str, form: dict[str, str], timeout: float) -> str:
+        assert url == "https://ufo.hosting/wp-admin/admin-ajax.php"
+        assert form["action"] == "fetch_services_by_city"
+        assert form["nonce"] == "nonce-123"
+        assert timeout > 0
+        html = UFO_INDIA_CARDS if form["cities"] == "india" else ""
+        return json.dumps({"success": True, "data": {"vds": html}})
+
+    monkeypatch.setattr(provider_plans, "_fetch_url", fake_fetch_url)
+    monkeypatch.setattr(provider_plans, "_post_form_url", fake_post_form_url)
+
+    plans = await provider_plans.fetch_ufo_plans()
+
+    assert [p["id"] for p in plans] == ["ufo-india-brachium"]
+
+
 async def test__plans_for__firstbyte_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch() -> list[dict[str, Any]]:
         return [{"id": "fb-live"}]
@@ -116,6 +229,15 @@ async def test__plans_for__firstbyte_fetches_dynamic_catalog(monkeypatch: pytest
     monkeypatch.setattr(provider_plans, "fetch_firstbyte_plans", fake_fetch)
 
     assert await provider_plans.plans_for("FirstByte") == [{"id": "fb-live"}]
+
+
+async def test__plans_for__ufo_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch() -> list[dict[str, Any]]:
+        return [{"id": "ufo-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_ufo_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("UFO Hosting") == [{"id": "ufo-live"}]
 
 
 async def test__plans_for__firstbyte_caches_dynamic_catalog_and_returns_copy(

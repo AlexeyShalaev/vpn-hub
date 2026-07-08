@@ -107,13 +107,39 @@ function suggestName(location: string, provider: string): string {
 }
 
 const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
+const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
+  firstbyte: "FirstByte",
+  ufo: "UFO Hosting",
+};
 
-function isFirstByteProvider(p: Provider | null): boolean {
-  return (p?.id ?? "").toLowerCase() === "firstbyte" || (p?.name ?? "").trim().toLowerCase() === "firstbyte";
+function normalizeProviderKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s._-]+/g, "");
 }
 
-function isFirstByteProviderName(name: string): boolean {
-  return name.trim().toLowerCase() === "firstbyte";
+function isDynamicPlanProviderId(providerId: string | undefined): providerId is string {
+  return !!providerId && Object.hasOwn(DYNAMIC_PLAN_PROVIDER_LABELS, providerId);
+}
+
+function dynamicPlanProviderIdByName(name: string): string {
+  const key = normalizeProviderKey(name);
+  if (key === "firstbyte") return "firstbyte";
+  if (key === "ufo" || key === "ufohosting") return "ufo";
+  return "";
+}
+
+function dynamicPlanProviderId(p: Provider | null, providerName: string): string {
+  const byId = (p?.id ?? "").toLowerCase();
+  if (isDynamicPlanProviderId(byId)) return byId;
+  const byKnownName = dynamicPlanProviderIdByName(p?.name ?? "");
+  if (byKnownName) return byKnownName;
+  return dynamicPlanProviderIdByName(providerName);
+}
+
+function planProviderDisplayName(providerId: string): string {
+  return DYNAMIC_PLAN_PROVIDER_LABELS[providerId] ?? providerId;
 }
 
 function fmtTraffic(tb: number | null): string {
@@ -140,20 +166,35 @@ function providerPlanMatchKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function findProviderPlanByTariff(plans: ProviderPlan[], tariff: string): ProviderPlan | null {
+function providerPlanBaseMatchKey(name: string): string {
+  return providerPlanMatchKey(name.replace(/\[[a-z]{2}\]\s*$/i, "").replace(/\s+·.+$/, ""));
+}
+
+function sameRegion(a: string, b: string): boolean {
+  return a.trim().localeCompare(b.trim(), "ru", { sensitivity: "accent" }) === 0;
+}
+
+function findProviderPlanByTariff(plans: ProviderPlan[], tariff: string, region = ""): ProviderPlan | null {
   const target = providerPlanMatchKey(tariff);
+  const targetBase = providerPlanBaseMatchKey(tariff);
   if (!target) return null;
-  return (
-    plans.find((p) => providerPlanMatchKey(providerPlanLabel(p)) === target) ??
-    plans.find((p) => providerPlanMatchKey(p.name) === target) ??
-    null
-  );
+  const matches = plans.filter((p) => {
+    const label = providerPlanLabel(p);
+    return (
+      providerPlanMatchKey(label) === target ||
+      providerPlanMatchKey(p.name) === target ||
+      (targetBase && providerPlanBaseMatchKey(label) === targetBase)
+    );
+  });
+  if (!matches.length) return null;
+  const regionMatch = region.trim() ? matches.find((p) => sameRegion(p.region, region)) : null;
+  return regionMatch ?? matches[0] ?? null;
 }
 
 function providerNameById(providers: Provider[], providerId: string): string {
   const p = providers.find((pp) => pp.id === providerId);
   if (p) return p.name;
-  if (providerId === "firstbyte") return "FirstByte";
+  if (isDynamicPlanProviderId(providerId)) return planProviderDisplayName(providerId);
   return providerId;
 }
 
@@ -276,19 +317,18 @@ export function ServerFormScreen() {
     if (form.providerCustom) return null;
     return providers.find((p) => p.name === form.provider) ?? null;
   }, [providers, form.provider, form.providerCustom]);
-  const firstByteSelected =
-    isFirstByteProvider(selProvider) || (!form.providerCustom && isFirstByteProviderName(form.provider));
-  const planProviderId = firstByteSelected ? "firstbyte" : "";
+  const planProviderId = dynamicPlanProviderId(selProvider, form.provider);
+  const planProviderLabel = planProviderDisplayName(planProviderId);
 
   const [planRegion, setPlanRegion] = useState("");
   const [planId, setPlanId] = useState("");
 
-  // FirstByte: динамические тарифы с сайта. Страна/тариф — необязательная подсказка
+  // Динамические тарифы провайдера. Страна/тариф — необязательная подсказка
   // для автозаполнения локации, цены и квоты трафика; SSH/IP остаются ручными.
   const plansQ = useQuery({
     queryKey: ["providerPlans", planProviderId],
     queryFn: () => q.providerPlans(planProviderId),
-    enabled: planProviderId === "firstbyte",
+    enabled: !!planProviderId,
   });
   const plans = plansQ.data ?? [];
   const planRegions = useMemo(
@@ -358,11 +398,15 @@ export function ServerFormScreen() {
   // распознанные реквизиты сразу подставляются в поля.
   const [pasteText, setPasteText] = useState("");
   const [parsed, setParsed] = useState<ParsedServerInfo | null>(null);
-  const [pendingProviderPlan, setPendingProviderPlan] = useState<{ providerId: string; tariff: string } | null>(null);
+  const [pendingProviderPlan, setPendingProviderPlan] = useState<{
+    providerId: string;
+    tariff: string;
+    location?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!pendingProviderPlan || pendingProviderPlan.providerId !== planProviderId || plans.length === 0) return;
-    const plan = findProviderPlanByTariff(plans, pendingProviderPlan.tariff);
+    const plan = findProviderPlanByTariff(plans, pendingProviderPlan.tariff, pendingProviderPlan.location);
     if (!plan) return;
     applyProviderPlan(plan);
     setPendingProviderPlan(null);
@@ -378,19 +422,21 @@ export function ServerFormScreen() {
     const selectedProvider = providers.find((p) => p.name === form.provider);
     const selectedId =
       selectedProvider?.id ??
-      (!form.providerCustom && isFirstByteProviderName(form.provider) ? "firstbyte" : undefined);
+      (!form.providerCustom ? dynamicPlanProviderIdByName(form.provider) || undefined : undefined);
     const info = parseServerInfo(text, selectedId);
     setParsed(info);
     const planProvider = info.providerId ?? selectedId;
     setPendingProviderPlan(
-      planProvider === "firstbyte" && info.tariff ? { providerId: "firstbyte", tariff: info.tariff } : null,
+      planProvider && isDynamicPlanProviderId(planProvider) && info.tariff
+        ? { providerId: planProvider, tariff: info.tariff, location: info.location }
+        : null,
     );
     setForm((f) => {
       const n = { ...f };
       if (info.providerId) {
         const p = providers.find((pp) => pp.id === info.providerId);
-        if (p || info.providerId === "firstbyte") {
-          n.provider = p?.name ?? "FirstByte";
+        if (p || isDynamicPlanProviderId(info.providerId)) {
+          n.provider = p?.name ?? planProviderDisplayName(info.providerId);
           n.providerCustom = false;
         }
       }
@@ -423,22 +469,24 @@ export function ServerFormScreen() {
     if (parsed.tariff) chips.push(`Тариф: ${parsed.tariff}`);
     return chips;
   }, [parsed, providers]);
-  const pendingFirstByteTariff = pendingProviderPlan?.providerId === "firstbyte" ? pendingProviderPlan.tariff : "";
-  const pendingFirstByteMatch = pendingFirstByteTariff ? findProviderPlanByTariff(plans, pendingFirstByteTariff) : null;
-  const pendingFirstByteNotFound =
-    !!pendingFirstByteTariff && plansQ.isSuccess && plans.length > 0 && !pendingFirstByteMatch;
-  const pendingFirstByteMessage = (() => {
-    if (!pendingFirstByteTariff) return "";
+  const pendingTariff = pendingProviderPlan?.providerId === planProviderId ? pendingProviderPlan.tariff : "";
+  const pendingMatch = pendingTariff
+    ? findProviderPlanByTariff(plans, pendingTariff, pendingProviderPlan?.location)
+    : null;
+  const pendingNotFound = !!pendingTariff && plansQ.isSuccess && plans.length > 0 && !pendingMatch;
+  const pendingPlanProviderLabel = planProviderDisplayName(pendingProviderPlan?.providerId ?? planProviderId);
+  const pendingPlanMessage = (() => {
+    if (!pendingTariff) return "";
     if (plansQ.isError) {
-      return `Нашли тариф ${pendingFirstByteTariff}, но каталог FirstByte сейчас не загрузился. Тариф оставлен в поле.`;
+      return `Нашли тариф ${pendingTariff}, но каталог ${pendingPlanProviderLabel} сейчас не загрузился. Тариф оставлен в поле.`;
     }
-    if (pendingFirstByteNotFound) {
-      return `Каталог FirstByte загружен, но тариф ${pendingFirstByteTariff} не найден. Тариф оставлен в поле.`;
+    if (pendingNotFound) {
+      return `Каталог ${pendingPlanProviderLabel} загружен, но тариф ${pendingTariff} не найден. Тариф оставлен в поле.`;
     }
     if (plansQ.isLoading || plansQ.isFetching) {
-      return `Нашли тариф ${pendingFirstByteTariff}. Загружаем каталог FirstByte, затем подставим цену и квоту.`;
+      return `Нашли тариф ${pendingTariff}. Загружаем каталог ${pendingPlanProviderLabel}, затем подставим цену и квоту.`;
     }
-    return `Нашли тариф ${pendingFirstByteTariff}. Ждём каталог FirstByte для автозаполнения цены и квоты.`;
+    return `Нашли тариф ${pendingTariff}. Ждём каталог ${pendingPlanProviderLabel} для автозаполнения цены и квоты.`;
   })();
 
   const save = useMutation({
@@ -624,10 +672,10 @@ export function ServerFormScreen() {
                 ))}
               </div>
 
-              {firstByteSelected && (
+              {planProviderId && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
-                    Тариф FirstByte для автозаполнения
+                    Тариф {planProviderLabel} для автозаполнения
                   </span>
                   {plansQ.isLoading ? (
                     <div className="rowflex" style={{ gap: 8, color: "var(--text-3)", fontSize: 12.5 }}>
@@ -636,10 +684,12 @@ export function ServerFormScreen() {
                     </div>
                   ) : plansQ.isError ? (
                     <span style={{ fontSize: 12.5, color: "var(--danger)" }}>
-                      Не удалось загрузить тарифы FirstByte.
+                      Не удалось загрузить тарифы {planProviderLabel}.
                     </span>
                   ) : plans.length === 0 ? (
-                    <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>Тарифы FirstByte не найдены.</span>
+                    <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>
+                      Тарифы {planProviderLabel} не найдены.
+                    </span>
                   ) : (
                     <>
                       <div
@@ -773,20 +823,20 @@ export function ServerFormScreen() {
                   Не удалось распознать реквизиты — заполните поля вручную.
                 </p>
               ))}
-            {pendingFirstByteMessage && (
+            {pendingPlanMessage && (
               <div
                 className="rowflex"
                 style={{
                   gap: 8,
                   marginTop: 8,
                   alignItems: "flex-start",
-                  color: pendingFirstByteNotFound || plansQ.isError ? "var(--text-3)" : "var(--text-2)",
+                  color: pendingNotFound || plansQ.isError ? "var(--text-3)" : "var(--text-2)",
                   fontSize: 12.5,
                   lineHeight: 1.45,
                 }}
               >
                 {(plansQ.isLoading || plansQ.isFetching) && <Spinner />}
-                <span>{pendingFirstByteMessage}</span>
+                <span>{pendingPlanMessage}</span>
               </div>
             )}
           </Field>
