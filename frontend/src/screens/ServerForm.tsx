@@ -819,7 +819,7 @@ export function ServerFormScreen() {
             </div>
           </Field>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            <Field label="Квота трафика, ГБ">
+            <Field label="Квота сетевого трафика, ГБ">
               <input
                 className="input"
                 type="number"

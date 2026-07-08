@@ -442,7 +442,7 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
 
       {editing && (
         <Modal
-          title="Квота трафика сервера"
+          title="Квота сетевого трафика сервера"
           onClose={() => setEditing(false)}
           footer={
             <>
@@ -456,10 +456,10 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
           }
         >
           <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
-            Квота трафика вашего тарифа за период (панель предупредит при приближении). Пусто — безлимитный тариф. День
-            сброса — обычно день оплаты VPS; пусто — 1-е число месяца.
+            Квота сетевого трафика вашего тарифа за период (панель предупредит при приближении). Пусто — безлимитный
+            тариф. День сброса — обычно день оплаты VPS; пусто — 1-е число месяца.
           </p>
-          <Field label="Квота, ГБ за период">
+          <Field label="Квота сетевого трафика, ГБ за период">
             <input
               className="input"
               type="number"
