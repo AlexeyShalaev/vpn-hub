@@ -3,6 +3,13 @@ import { useState } from "react";
 import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import * as q from "../lib/queries";
+import {
+  bytesToTrafficInput,
+  convertTrafficInputUnit,
+  TRAFFIC_UNITS,
+  type TrafficUnit,
+  trafficValueToBytes,
+} from "../lib/trafficUnits";
 import type { MonitoringClient, Protocol, Server, ServerMetricSample, Vpn, VpnType } from "../lib/types";
 import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } from "../lib/types";
 import { vpnLogo } from "../lib/vpnLogos";
@@ -328,14 +335,6 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
   );
 }
 
-const GIB = 1024 ** 3;
-// байты → ГБ-строка для инпута (пусто, если null); ГБ-строка → байты
-const bytesToGb = (n: number | null): string => (n == null ? "" : String(+(n / GIB).toFixed(2)));
-const gbToBytes = (s: string): number | null => {
-  const g = Number.parseFloat(s.replace(",", "."));
-  return Number.isFinite(g) && g > 0 ? Math.round(g * GIB) : null;
-};
-
 // Карточка «Трафик и квота»: квота трафика тарифа + день сброса периода (настройка владельца) и
 // фактическое использование за текущий период — суммарно по серверу и по пользователям (топ-жоры).
 // Пер-user превышение честно отсекается на Этапе 3b; здесь — учёт, индикатор и предупреждения.
@@ -349,12 +348,17 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
     refetchInterval: 60000,
   });
   const [editing, setEditing] = useState(false);
-  const [quotaGb, setQuotaGb] = useState("");
+  const [quotaValue, setQuotaValue] = useState("");
+  const [quotaUnit, setQuotaUnit] = useState<TrafficUnit>("GB");
   const [billingDay, setBillingDay] = useState("");
 
   const saveMut = useMutation({
     mutationFn: () =>
-      q.setBandwidthQuota(server.id, gbToBytes(quotaGb), billingDay ? Number.parseInt(billingDay, 10) : null),
+      q.setBandwidthQuota(
+        server.id,
+        trafficValueToBytes(quotaValue, quotaUnit),
+        billingDay ? Number.parseInt(billingDay, 10) : null,
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["server", server.id] });
       qc.invalidateQueries({ queryKey: ["serverUsage", server.id] });
@@ -374,7 +378,9 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
   const dayLabel = server.billingDay ? `${server.billingDay}-е число` : "1-е число (по умолчанию)";
 
   const openEdit = () => {
-    setQuotaGb(bytesToGb(server.bandwidthQuota));
+    const quotaInput = bytesToTrafficInput(server.bandwidthQuota);
+    setQuotaValue(quotaInput.value);
+    setQuotaUnit(quotaInput.unit);
     setBillingDay(server.billingDay ? String(server.billingDay) : "");
     setEditing(true);
   };
@@ -459,17 +465,34 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
             Квота сетевого трафика вашего тарифа за период (панель предупредит при приближении). Пусто — безлимитный
             тариф. День сброса — обычно день оплаты VPS; пусто — 1-е число месяца.
           </p>
-          <Field label="Квота сетевого трафика, ГБ за период">
-            <input
-              className="input"
-              type="number"
-              min={0}
-              step="0.1"
-              value={quotaGb}
-              placeholder="пусто — безлимит"
-              autoFocus
-              onChange={(e) => setQuotaGb(e.target.value)}
-            />
+          <Field label="Квота сетевого трафика за период">
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 92px", gap: 8 }}>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step={quotaUnit === "B" ? 1 : 0.1}
+                value={quotaValue}
+                placeholder="пусто — безлимит"
+                autoFocus
+                onChange={(e) => setQuotaValue(e.target.value)}
+              />
+              <select
+                className="input"
+                value={quotaUnit}
+                onChange={(e) => {
+                  const unit = e.target.value as TrafficUnit;
+                  setQuotaValue((v) => convertTrafficInputUnit(v, quotaUnit, unit));
+                  setQuotaUnit(unit);
+                }}
+              >
+                {TRAFFIC_UNITS.map((u) => (
+                  <option key={u.value} value={u.value}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </Field>
           <Field label="День сброса периода (1–31)">
             <input

@@ -4,6 +4,13 @@ import { PhoneField } from "../components/PhoneField";
 import { Avatar, Btn, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { toDataUrl } from "../lib/qr";
 import * as q from "../lib/queries";
+import {
+  bytesToTrafficInput,
+  convertTrafficInputUnit,
+  TRAFFIC_UNITS,
+  type TrafficUnit,
+  trafficValueToBytes,
+} from "../lib/trafficUnits";
 import type { Group, Member, Pool } from "../lib/types";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
@@ -17,15 +24,9 @@ function plural(n: number, a: string, b: string, c: string): string {
   return c;
 }
 
-const GIB = 1024 ** 3;
 const intOrNull = (s: string): number | null => {
   const n = Number.parseInt(s, 10);
   return s.trim() === "" || !Number.isFinite(n) ? null : n;
-};
-const bytesToGb = (n: number | null): string => (n == null ? "" : String(+(n / GIB).toFixed(2)));
-const gbToBytes = (s: string): number | null => {
-  const g = Number.parseFloat(s.replace(",", "."));
-  return Number.isFinite(g) && g > 0 ? Math.round(g * GIB) : null;
 };
 
 // Эффективный доступ группы = серверы её пулов ∪ точечно выданные серверы.
@@ -62,9 +63,11 @@ export function GroupDetailScreen() {
   const [editingGroupLimit, setEditingGroupLimit] = useState(false);
   const [groupLimitVal, setGroupLimitVal] = useState("");
   const [groupBytesVal, setGroupBytesVal] = useState("");
+  const [groupBytesUnit, setGroupBytesUnit] = useState<TrafficUnit>("GB");
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [memberLimitVal, setMemberLimitVal] = useState("");
   const [memberBytesVal, setMemberBytesVal] = useState("");
+  const [memberBytesUnit, setMemberBytesUnit] = useState<TrafficUnit>("GB");
   const [form, setForm] = useState<{ name: string; role: "admin" | "member"; phone: string }>({
     name: "",
     role: "member",
@@ -120,7 +123,7 @@ export function GroupDetailScreen() {
   const groupLimitMut = useMutation({
     mutationFn: async () => {
       await q.setGroupLimit(groupId, intOrNull(groupLimitVal));
-      await q.setGroupBytes(groupId, gbToBytes(groupBytesVal));
+      await q.setGroupBytes(groupId, trafficValueToBytes(groupBytesVal, groupBytesUnit));
     },
     onSuccess: () => {
       invalidate();
@@ -132,7 +135,7 @@ export function GroupDetailScreen() {
   const memberLimitMut = useMutation({
     mutationFn: async (mid: string) => {
       await q.setMemberLimit(groupId, mid, intOrNull(memberLimitVal));
-      await q.setMemberBytes(groupId, mid, gbToBytes(memberBytesVal));
+      await q.setMemberBytes(groupId, mid, trafficValueToBytes(memberBytesVal, memberBytesUnit));
     },
     onSuccess: () => {
       invalidate();
@@ -301,8 +304,10 @@ export function GroupDetailScreen() {
             sm
             style={{ flex: "none" }}
             onClick={() => {
+              const limit = bytesToTrafficInput(group.maxBytes);
               setGroupLimitVal(group.maxDevices?.toString() ?? "");
-              setGroupBytesVal(bytesToGb(group.maxBytes));
+              setGroupBytesVal(limit.value);
+              setGroupBytesUnit(limit.unit);
               setEditingGroupLimit(true);
             }}
           >
@@ -341,8 +346,10 @@ export function GroupDetailScreen() {
               onToggleRole={() => roleMut.mutate(m.id)}
               onRemove={() => removeMut.mutate(m.id)}
               onEditLimit={() => {
+                const limit = bytesToTrafficInput(m.maxBytes);
                 setMemberLimitVal(m.maxDevices?.toString() ?? "");
-                setMemberBytesVal(bytesToGb(m.maxBytes));
+                setMemberBytesVal(limit.value);
+                setMemberBytesUnit(limit.unit);
                 setEditingMember(m);
               }}
             />
@@ -551,16 +558,33 @@ export function GroupDetailScreen() {
               onChange={(e) => setGroupLimitVal(e.target.value)}
             />
           </Field>
-          <Field label="Трафик, ГБ за период (на сервер)">
-            <input
-              className="input"
-              type="number"
-              min={0}
-              step="0.1"
-              value={groupBytesVal}
-              placeholder="пусто — без лимита"
-              onChange={(e) => setGroupBytesVal(e.target.value)}
-            />
+          <Field label="Трафик за период (на сервер)">
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 92px", gap: 8 }}>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step={groupBytesUnit === "B" ? 1 : 0.1}
+                value={groupBytesVal}
+                placeholder="пусто — без лимита"
+                onChange={(e) => setGroupBytesVal(e.target.value)}
+              />
+              <select
+                className="input"
+                value={groupBytesUnit}
+                onChange={(e) => {
+                  const unit = e.target.value as TrafficUnit;
+                  setGroupBytesVal((v) => convertTrafficInputUnit(v, groupBytesUnit, unit));
+                  setGroupBytesUnit(unit);
+                }}
+              >
+                {TRAFFIC_UNITS.map((u) => (
+                  <option key={u.value} value={u.value}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </Field>
         </Modal>
       )}
@@ -600,16 +624,33 @@ export function GroupDetailScreen() {
               onChange={(e) => setMemberLimitVal(e.target.value)}
             />
           </Field>
-          <Field label="Трафик, ГБ за период (на сервер)">
-            <input
-              className="input"
-              type="number"
-              min={0}
-              step="0.1"
-              value={memberBytesVal}
-              placeholder="пусто — как у группы"
-              onChange={(e) => setMemberBytesVal(e.target.value)}
-            />
+          <Field label="Трафик за период (на сервер)">
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 92px", gap: 8 }}>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step={memberBytesUnit === "B" ? 1 : 0.1}
+                value={memberBytesVal}
+                placeholder="пусто — как у группы"
+                onChange={(e) => setMemberBytesVal(e.target.value)}
+              />
+              <select
+                className="input"
+                value={memberBytesUnit}
+                onChange={(e) => {
+                  const unit = e.target.value as TrafficUnit;
+                  setMemberBytesVal((v) => convertTrafficInputUnit(v, memberBytesUnit, unit));
+                  setMemberBytesUnit(unit);
+                }}
+              >
+                {TRAFFIC_UNITS.map((u) => (
+                  <option key={u.value} value={u.value}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </Field>
         </Modal>
       )}

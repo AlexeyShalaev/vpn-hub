@@ -4,6 +4,13 @@ import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, FilePicker, Icon, KeyInput, Modal, ScreenHeader, Spinner } from "../components/ui";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
+import {
+  bytesToTrafficInput,
+  convertTrafficInputUnit,
+  TRAFFIC_UNITS,
+  type TrafficUnit,
+  trafficValueToBytes,
+} from "../lib/trafficUnits";
 import type { MetricSeries, SystemInfo } from "../lib/types";
 import { copyText, useStore } from "../store";
 
@@ -198,14 +205,17 @@ export function SystemScreen() {
   );
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [devLimit, setDevLimit] = useState("");
-  const [userBytesGb, setUserBytesGb] = useState("");
+  const [userBytesValue, setUserBytesValue] = useState("");
+  const [userBytesUnit, setUserBytesUnit] = useState<TrafficUnit>("GB");
   useEffect(() => {
     const n = sysQ.data?.defaultDevicesPerUser;
     if (n != null) setDevLimit(String(n));
   }, [sysQ.data?.defaultDevicesPerUser]);
   useEffect(() => {
     const b = sysQ.data?.defaultUserBytes;
-    setUserBytesGb(b != null && b > 0 ? String(+(b / 1024 ** 3).toFixed(2)) : "");
+    const limit = bytesToTrafficInput(b ?? null);
+    setUserBytesValue(limit.value);
+    setUserBytesUnit(limit.unit);
   }, [sysQ.data?.defaultUserBytes]);
 
   const upgradeMut = useMutation({
@@ -538,22 +548,37 @@ export function SystemScreen() {
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-              <span className="muted">Трафик, ГБ за период</span>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                step="0.1"
-                style={{ width: 140 }}
-                value={userBytesGb}
-                placeholder="пусто — без лимита"
-                onChange={(e) => setUserBytesGb(e.target.value)}
-              />
+              <span className="muted">Трафик за период</span>
+              <div style={{ display: "grid", gridTemplateColumns: "140px 92px", gap: 8 }}>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  step={userBytesUnit === "B" ? 1 : 0.1}
+                  value={userBytesValue}
+                  placeholder="пусто — без лимита"
+                  onChange={(e) => setUserBytesValue(e.target.value)}
+                />
+                <select
+                  className="input"
+                  value={userBytesUnit}
+                  onChange={(e) => {
+                    const unit = e.target.value as TrafficUnit;
+                    setUserBytesValue((v) => convertTrafficInputUnit(v, userBytesUnit, unit));
+                    setUserBytesUnit(unit);
+                  }}
+                >
+                  {TRAFFIC_UNITS.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </label>
             <Btn
               onClick={() => {
-                const g = Number.parseFloat(userBytesGb.replace(",", "."));
-                userBytesMut.mutate(Number.isFinite(g) && g > 0 ? Math.round(g * 1024 ** 3) : null);
+                userBytesMut.mutate(trafficValueToBytes(userBytesValue, userBytesUnit));
               }}
               disabled={userBytesMut.isPending}
             >

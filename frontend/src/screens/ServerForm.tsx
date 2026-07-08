@@ -5,6 +5,13 @@ import { ApiError } from "../lib/api";
 import type { ParsedServerInfo } from "../lib/credentialParse";
 import { parseServerInfo } from "../lib/credentialParse";
 import * as q from "../lib/queries";
+import {
+  bytesToTrafficInput,
+  convertTrafficInputUnit,
+  TRAFFIC_UNITS,
+  type TrafficUnit,
+  trafficValueToBytes,
+} from "../lib/trafficUnits";
 import type { Provider, ProviderPlan, Server } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
@@ -27,7 +34,8 @@ interface BillingState {
   priceCurrency: string;
   pricePeriod: string;
   priceAnchorDay: string;
-  trafficQuotaGb: string;
+  trafficQuotaValue: string;
+  trafficQuotaUnit: TrafficUnit;
   trafficBillingDay: string;
 }
 
@@ -49,11 +57,11 @@ const EMPTY_BILLING: BillingState = {
   priceCurrency: "RUB",
   pricePeriod: "month",
   priceAnchorDay: "",
-  trafficQuotaGb: "",
+  trafficQuotaValue: "",
+  trafficQuotaUnit: "GB",
   trafficBillingDay: "",
 };
 
-const GIB = 1024 ** 3;
 const CURRENCIES = ["RUB", "USD", "EUR", "KZT", "UAH", "GBP"];
 const PRICE_PERIODS = ["minute", "day", "month"];
 
@@ -160,15 +168,6 @@ function withProviderPlan(
   return next;
 }
 
-function bytesToGb(n: number | null): string {
-  return n == null ? "" : String(+(n / GIB).toFixed(2));
-}
-
-function gbToBytes(s: string): number | null {
-  const gb = Number.parseFloat(s.replace(",", "."));
-  return Number.isFinite(gb) && gb > 0 ? Math.round(gb * GIB) : null;
-}
-
 function nullableNumber(s: string): number | null {
   if (!s.trim()) return null;
   const n = Number.parseFloat(s.replace(",", "."));
@@ -232,9 +231,11 @@ export function ServerFormScreen() {
       auth: s.auth,
       secret: s.secret,
     });
+    const quotaInput = bytesToTrafficInput(s.bandwidthQuota);
     setBilling((b) => ({
       ...b,
-      trafficQuotaGb: bytesToGb(s.bandwidthQuota),
+      trafficQuotaValue: quotaInput.value,
+      trafficQuotaUnit: quotaInput.unit,
       trafficBillingDay: s.billingDay ? String(s.billingDay) : "",
     }));
     setLoaded(true);
@@ -327,7 +328,8 @@ export function ServerFormScreen() {
       priceCurrency: plan.currency,
       pricePeriod: plan.period,
       priceAnchorDay: "",
-      trafficQuotaGb: plan.trafficTb ? String(+(plan.trafficTb * 1024).toFixed(2)) : "",
+      trafficQuotaValue: plan.trafficTb ? String(plan.trafficTb) : "",
+      trafficQuotaUnit: "TB",
     }));
   }
 
@@ -347,7 +349,7 @@ export function ServerFormScreen() {
     });
     await q.setBandwidthQuota(
       targetServerId,
-      gbToBytes(billing.trafficQuotaGb),
+      trafficValueToBytes(billing.trafficQuotaValue, billing.trafficQuotaUnit),
       nullableDay(billing.trafficBillingDay),
     );
   }
@@ -472,7 +474,10 @@ export function ServerFormScreen() {
       toast("Проверьте стоимость сервера");
       return;
     }
-    if (billing.trafficQuotaGb.trim() && gbToBytes(billing.trafficQuotaGb) == null) {
+    if (
+      billing.trafficQuotaValue.trim() &&
+      trafficValueToBytes(billing.trafficQuotaValue, billing.trafficQuotaUnit) == null
+    ) {
       toast("Проверьте квоту трафика");
       return;
     }
@@ -903,16 +908,38 @@ export function ServerFormScreen() {
             </div>
           </Field>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            <Field label="Квота сетевого трафика, ГБ">
-              <input
-                className="input"
-                type="number"
-                min={0}
-                step="0.1"
-                value={billing.trafficQuotaGb}
-                placeholder="пусто — безлимит"
-                onChange={(e) => setBilling((b) => ({ ...b, trafficQuotaGb: e.target.value }))}
-              />
+            <Field label="Квота сетевого трафика">
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 92px", gap: 8 }}>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  step={billing.trafficQuotaUnit === "B" ? 1 : 0.1}
+                  value={billing.trafficQuotaValue}
+                  placeholder="пусто — безлимит"
+                  onChange={(e) => setBilling((b) => ({ ...b, trafficQuotaValue: e.target.value }))}
+                />
+                <select
+                  className="input"
+                  value={billing.trafficQuotaUnit}
+                  onChange={(e) =>
+                    setBilling((b) => {
+                      const unit = e.target.value as TrafficUnit;
+                      return {
+                        ...b,
+                        trafficQuotaValue: convertTrafficInputUnit(b.trafficQuotaValue, b.trafficQuotaUnit, unit),
+                        trafficQuotaUnit: unit,
+                      };
+                    })
+                  }
+                >
+                  {TRAFFIC_UNITS.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </Field>
             <Field label="День сброса трафика">
               <input
