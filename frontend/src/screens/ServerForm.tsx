@@ -108,6 +108,7 @@ function suggestName(location: string, provider: string): string {
 
 const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
 const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
+  ahost: "AHost",
   firstbyte: "FirstByte",
   ishosting: "ISHOSTING",
   ufo: "UFO Hosting",
@@ -126,6 +127,7 @@ function isDynamicPlanProviderId(providerId: string | undefined): providerId is 
 
 function dynamicPlanProviderIdByName(name: string): string {
   const key = normalizeProviderKey(name);
+  if (key === "ahost" || key === "ahosteu") return "ahost";
   if (key === "firstbyte") return "firstbyte";
   if (key === "ishosting" || key === "ishostingcom") return "ishosting";
   if (key === "ufo" || key === "ufohosting") return "ufo";
@@ -152,8 +154,12 @@ function fmtPrice(p: ProviderPlan): string {
   return `${p.price.toLocaleString("ru-RU")} ${p.currency}/${PRICE_PERIOD_LABEL[p.period] ?? p.period}`;
 }
 
+function fmtPort(p: ProviderPlan): string {
+  return p.portMbps > 0 ? `${p.portMbps} Мбит` : "порт не указан";
+}
+
 function planSpecs(p: ProviderPlan): string {
-  return `${p.cpu}vCPU/${p.ramGb}ГБ RAM · ${p.diskGb}ГБ ${p.diskType} · ${p.portMbps} Мбит · ${fmtTraffic(p.trafficTb)}`;
+  return `${p.cpu}vCPU/${p.ramGb}ГБ RAM · ${p.diskGb}ГБ ${p.diskType} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb)}`;
 }
 
 function planOptionKey(p: ProviderPlan): string {

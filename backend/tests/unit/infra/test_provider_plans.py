@@ -10,9 +10,11 @@ import pytest
 from vpnhub.infra import provider_plans
 from vpnhub.infra.provider_plans import (
     TIB,
+    discover_ahost_plan_urls,
     discover_firstbyte_plan_urls,
     discover_ishosting_plan_urls,
     discover_ufo_countries,
+    parse_ahost_plans,
     parse_firstbyte_plans,
     parse_ishosting_plans,
     parse_ufo_plans,
@@ -167,6 +169,56 @@ ISHOSTING_AT_CARDS = """
 </body></html>
 """
 
+AHOST_LANDING = """
+<html><body>
+  <a href="/ru/vds-linux/germany#section-title"><div class="country-title">Германия</div></a>
+  <a href="/ru/vds-linux/netherlands#section-title"><div class="country-title">Нидерланды</div></a>
+  <a href="/ru/vds-windows/germany#section-title"><div class="country-title">Windows Германия</div></a>
+  <a href="/ru/vds-linux/linux">Linux VPS</a>
+</body></html>
+"""
+
+AHOST_GERMANY_CARDS = """
+<html><body>
+<div class="country-description-title">
+  <div class="title">Тарифы</div>
+  <div class="d-flex align-items-center country-name-block">
+    <div class="flag"></div><div class="name">Германия</div>
+  </div>
+</div>
+<div class="rates-items-list">
+  <div class="item-price-block-col col-12 rate-item" data-id="218">
+    <div class="rate-item_container">
+      <div class="rate-item_title">KVM SMART</div>
+      <div class="rate-item_price">5<span>€</span></div>
+      <ul class="rate-item_list">
+        <li><div class="quantity">1 ядро</div><div class="info">процессор Intel Xeon 2,4 ГГц</div></li>
+        <li><div class="quantity">1024 Мб</div><div class="info">оперативной памяти</div></li>
+        <li><div class="quantity">10 Гб</div><div class="info">SSD диска</div></li>
+        <li><div class="quantity">1.00 Тб</div><div class="info">Трафика в месяц</div></li>
+      </ul>
+    </div>
+  </div>
+  <div class="item-price-block-col col-12 rate-item" data-id="38">
+    <div class="rate-item_container">
+      <div class="rate-item_title">KVM BASIC</div>
+      <div class="rate-item_price">15<span>€</span></div>
+      <ul class="rate-item_list">
+        <li><div class="quantity">2 ядра</div><div class="info">процессор Intel Xeon 2,4 ГГц</div></li>
+        <li><div class="quantity">4096 Мб</div><div class="info">оперативной памяти</div></li>
+        <li><div class="quantity">50 Гб</div><div class="info">SSD диска</div></li>
+        <li><div class="quantity">4.00 Тб</div><div class="info">Трафика в месяц</div></li>
+      </ul>
+    </div>
+  </div>
+  <div class="item-price-block-col col-12 rate-item">
+    <div class="rate-item_title">Windows START</div>
+    <div class="rate-item_price">9<span>€</span></div>
+  </div>
+</div>
+</body></html>
+"""
+
 
 def test__parse_firstbyte_plans__extracts_current_price_specs_region_and_availability() -> None:
     plans = parse_firstbyte_plans({"https://firstbyte.ru/vps-vds/kvm-ssd/": FIRSTBYTE_TABLE})
@@ -284,6 +336,58 @@ def test__parse_ishosting_plans__extracts_cards_and_skips_special_offers() -> No
     assert "ishosting-estonia-lite-linux-nvme" not in by_id
 
 
+def test__discover_ahost_plan_urls__uses_country_links_and_static_fallback() -> None:
+    urls = discover_ahost_plan_urls({"https://ahost.eu/ru/vds-linux": AHOST_LANDING})
+
+    assert "https://ahost.eu/ru/vds-linux/germany" in urls
+    assert "https://ahost.eu/ru/vds-linux/netherlands" in urls
+    assert "https://ahost.eu/ru/vds-linux/japan" in urls  # fallback list if landing page is partial
+    assert "https://ahost.eu/ru/vds-windows/germany" not in urls
+    assert "https://ahost.eu/ru/vds-linux/linux" not in urls
+
+
+def test__parse_ahost_plans__extracts_cards_without_port() -> None:
+    plans = parse_ahost_plans({"https://ahost.eu/ru/vds-linux/germany": AHOST_GERMANY_CARDS})
+    by_id = {p["id"]: p for p in plans}
+
+    assert by_id["ahost-germany-kvm-smart"] == {
+        "id": "ahost-germany-kvm-smart",
+        "name": "KVM SMART · Германия",
+        "region": "Германия",
+        "cpu": 1,
+        "ramGb": 1,
+        "diskGb": 10,
+        "diskType": "SSD",
+        "portMbps": 0,
+        "trafficTb": 1,
+        "price": 5,
+        "currency": "EUR",
+        "period": "month",
+        "available": True,
+        "sourceUrl": "https://ahost.eu/ru/vds-linux/germany",
+    }
+    assert by_id["ahost-germany-kvm-basic"]["cpu"] == 2
+    assert by_id["ahost-germany-kvm-basic"]["ramGb"] == 4
+    assert by_id["ahost-germany-kvm-basic"]["trafficTb"] == 4
+    assert "ahost-germany-windows-start" not in by_id
+
+
+async def test__fetch_ahost_plans__loads_country_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_url(url: str, timeout: float) -> str:
+        assert timeout > 0
+        if url == "https://ahost.eu/ru/vds-linux":
+            return AHOST_LANDING
+        if url == "https://ahost.eu/ru/vds-linux/germany":
+            return AHOST_GERMANY_CARDS
+        return ""
+
+    monkeypatch.setattr(provider_plans, "_fetch_url", fake_fetch_url)
+
+    plans = await provider_plans.fetch_ahost_plans()
+
+    assert [p["id"] for p in plans] == ["ahost-germany-kvm-smart", "ahost-germany-kvm-basic"]
+
+
 async def test__fetch_ishosting_plans__loads_country_pages_with_browser_fetch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -349,6 +453,15 @@ async def test__plans_for__ishosting_fetches_dynamic_catalog(monkeypatch: pytest
     monkeypatch.setattr(provider_plans, "fetch_ishosting_plans", fake_fetch)
 
     assert await provider_plans.plans_for("ISHOSTING") == [{"id": "ish-live"}]
+
+
+async def test__plans_for__ahost_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch() -> list[dict[str, Any]]:
+        return [{"id": "ahost-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_ahost_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("AHost") == [{"id": "ahost-live"}]
 
 
 async def test__plans_for__firstbyte_caches_dynamic_catalog_and_returns_copy(
