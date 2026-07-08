@@ -599,6 +599,21 @@ async def test__plans_for__firstbyte_returns_stale_cache_when_refresh_fails(
     assert calls == 2
 
 
+async def test__plans_for__empty_catalog_is_cached_briefly(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    async def fake_fetch() -> list[dict[str, Any]]:
+        nonlocal calls
+        calls += 1
+        return []
+
+    monkeypatch.setattr(provider_plans, "fetch_firstbyte_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("firstbyte") == []
+    assert await provider_plans.plans_for("FirstByte") == []
+    assert calls == 1
+
+
 async def test__plans_for__unknown_empty() -> None:
     assert await provider_plans.plans_for("nonexistent") == []
     assert await provider_plans.plans_for("") == []

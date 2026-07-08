@@ -23,6 +23,7 @@ from typing import Any
 
 import certifi
 import structlog
+from cashews import Cache
 
 log = structlog.get_logger(__name__)
 
@@ -50,6 +51,8 @@ _SERVERSPACE_CHALLENGE_MARKERS = ("__js_p_", "__jhash_", "ajaxload.info")
 _SERVERSPACE_JS_COOKIE_RE = re.compile(r"__js_p_=([^;]+)")
 _SERVERSPACE_HASH_COOKIE_RE = re.compile(r"(__hash_)=([^;]+)")
 _PROVIDER_PLANS_CACHE_TTL_S = 30 * 60
+_PROVIDER_PLANS_STALE_TTL_S = 6 * 60 * 60
+_PROVIDER_PLANS_EMPTY_TTL_S = 5 * 60
 _USER_AGENT = "vpnhub-provider-plans/0.1 (+https://github.com/AlexeyShalaev/vpn-hub)"
 _BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -170,13 +173,10 @@ _UFO_NONCE_RE = re.compile(r"\bnonce\s*:\s*['\"]([^'\"]+)['\"]")
 _PlanFetcher = Callable[[], Awaitable[list[dict[str, Any]]]]
 
 
-@dataclass(frozen=True)
-class _PlansCacheEntry:
-    plans: tuple[dict[str, Any], ...]
-    expires_at: float
-
-
-_PLANS_CACHE: dict[str, _PlansCacheEntry] = {}
+_PROVIDER_PLANS_CACHE = Cache()
+_PROVIDER_PLANS_CACHE.setup("mem://")
+_PROVIDER_PLANS_CACHE_VERSION = 0
+_PROVIDER_PLANS_PROVIDER_VERSIONS: dict[str, int] = {}
 _PLANS_REFRESH_LOCKS: dict[str, asyncio.Lock] = {}
 _PLANS_LOCK = asyncio.Lock()
 
@@ -1638,21 +1638,58 @@ def parse_serverspace_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
 
 
 def clear_provider_plan_cache(provider_id: str | None = None) -> None:
-    """Очистить in-memory кэш тарифов (используется тестами и будущей ручной инвалидацией)."""
+    """Инвалидировать in-memory кэш тарифов (используется тестами и будущей ручной инвалидацией)."""
+    global _PROVIDER_PLANS_CACHE_VERSION  # noqa: PLW0603 — синхронная инвалидация через namespace версии.
     if provider_id is None:
-        _PLANS_CACHE.clear()
+        _PROVIDER_PLANS_CACHE_VERSION += 1
+        _PROVIDER_PLANS_PROVIDER_VERSIONS.clear()
+        _PLANS_REFRESH_LOCKS.clear()
         return
-    _PLANS_CACHE.pop(provider_id.strip().lower(), None)
+    key = _provider_key(provider_id)
+    _PROVIDER_PLANS_PROVIDER_VERSIONS[key] = _PROVIDER_PLANS_PROVIDER_VERSIONS.get(key, 0) + 1
+    _PLANS_REFRESH_LOCKS.pop(key, None)
 
 
 def _clone_plans(plans: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [dict(p) for p in plans]
 
 
-def _extend_stale_cache(provider_id: str, cached: _PlansCacheEntry) -> list[dict[str, Any]]:
-    entry = _PlansCacheEntry(cached.plans, time.monotonic() + _PROVIDER_PLANS_CACHE_TTL_S)
-    _PLANS_CACHE[provider_id] = entry
-    return _clone_plans(entry.plans)
+def _freeze_plans(plans: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+    return tuple(_clone_plans(plans))
+
+
+def _cache_key(provider_id: str, bucket: str) -> str:
+    provider_version = _PROVIDER_PLANS_PROVIDER_VERSIONS.get(provider_id, 0)
+    return f"provider-plans:v{_PROVIDER_PLANS_CACHE_VERSION}:{provider_id}:v{provider_version}:{bucket}"
+
+
+async def _store_provider_plans(
+    provider_id: str,
+    plans: Iterable[Mapping[str, Any]],
+    *,
+    fresh_ttl: int,
+    stale: bool,
+) -> tuple[dict[str, Any], ...]:
+    frozen = _freeze_plans(plans)
+    if fresh_ttl > 0:
+        await _PROVIDER_PLANS_CACHE.set(_cache_key(provider_id, "fresh"), frozen, expire=fresh_ttl)
+    if stale:
+        await _PROVIDER_PLANS_CACHE.set(
+            _cache_key(provider_id, "stale"),
+            frozen,
+            expire=_PROVIDER_PLANS_STALE_TTL_S,
+        )
+    return frozen
+
+
+async def _extend_stale_cache(provider_id: str, cached: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    frozen = await _store_provider_plans(
+        provider_id,
+        cached,
+        fresh_ttl=_PROVIDER_PLANS_CACHE_TTL_S,
+        stale=True,
+    )
+    return _clone_plans(frozen)
 
 
 async def _refresh_lock(provider_id: str) -> asyncio.Lock:
@@ -1663,34 +1700,38 @@ async def _refresh_lock(provider_id: str) -> asyncio.Lock:
 async def _cached_provider_plans(provider_id: str, fetcher: _PlanFetcher) -> list[dict[str, Any]]:
     """TTL-кэш в памяти процесса, чтобы UI не парсил сайт провайдера на каждый запрос."""
     key = provider_id.strip().lower()
-    now = time.monotonic()
-    cached = _PLANS_CACHE.get(key)
-    if cached and cached.expires_at > now:
-        return _clone_plans(cached.plans)
+    cached = await _PROVIDER_PLANS_CACHE.get(_cache_key(key, "fresh"))
+    if cached is not None:
+        return _clone_plans(cached)
 
     async with await _refresh_lock(key):
-        now = time.monotonic()
-        cached = _PLANS_CACHE.get(key)
-        if cached and cached.expires_at > now:
-            return _clone_plans(cached.plans)
+        cached = await _PROVIDER_PLANS_CACHE.get(_cache_key(key, "fresh"))
+        if cached is not None:
+            return _clone_plans(cached)
+        stale = await _PROVIDER_PLANS_CACHE.get(_cache_key(key, "stale"))
 
         try:
             fresh = await fetcher()
         except Exception as exc:
-            if cached:
+            if stale is not None:
                 log.warning("provider_plans_cache_stale", provider=key, error=str(exc))
-                return _extend_stale_cache(key, cached)
+                return await _extend_stale_cache(key, stale)
             raise
 
         if not fresh:
-            if cached:
+            if stale is not None:
                 log.warning("provider_plans_cache_stale_empty", provider=key)
-                return _extend_stale_cache(key, cached)
+                return await _extend_stale_cache(key, stale)
+            await _store_provider_plans(key, (), fresh_ttl=_PROVIDER_PLANS_EMPTY_TTL_S, stale=False)
             return []
 
-        entry = _PlansCacheEntry(tuple(_clone_plans(fresh)), time.monotonic() + _PROVIDER_PLANS_CACHE_TTL_S)
-        _PLANS_CACHE[key] = entry
-        return _clone_plans(entry.plans)
+        frozen = await _store_provider_plans(
+            key,
+            fresh,
+            fresh_ttl=_PROVIDER_PLANS_CACHE_TTL_S,
+            stale=True,
+        )
+        return _clone_plans(frozen)
 
 
 async def fetch_firstbyte_plans(timeout: float = _FIRSTBYTE_TIMEOUT) -> list[dict[str, Any]]:
