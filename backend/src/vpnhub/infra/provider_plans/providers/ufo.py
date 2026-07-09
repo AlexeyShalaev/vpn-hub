@@ -13,8 +13,8 @@ from typing import Any
 
 import structlog
 
-from .common import _int, _norm, _speed_mbps, _tariff_name
-from .http import _fetch_url, _post_form_url
+from ..common import _int, _norm, _speed_mbps, _tariff_name
+from ..http import _fetch_url, _post_form_url
 
 log = structlog.get_logger(__name__)
 
@@ -23,6 +23,7 @@ _UFO_PLANS_URL = f"{_UFO_BASE}/vps-vds"
 _UFO_AJAX_URL = f"{_UFO_BASE}/wp-admin/admin-ajax.php"
 _UFO_TIMEOUT = 8.0
 _UFO_NONCE_RE = re.compile(r"\bnonce\s*:\s*['\"]([^'\"]+)['\"]")
+
 
 @dataclass(frozen=True)
 class _UfoCountry:
@@ -130,6 +131,7 @@ class _UfoPlanCardParser(HTMLParser):
             self._card_depth = 0
             self._in_h3 = False
             self._spec_label = None
+
 
 def _ufo_spec_label(text: str) -> str | None:
     label = _norm(text).rstrip(":").lower()
@@ -251,6 +253,7 @@ def parse_ufo_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
             if plan := _ufo_card_to_plan(card, url):
                 by_id.setdefault(str(plan["id"]), plan)
     return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), int(p["price"]), str(p["id"])))
+
 
 async def _fetch_ufo_country_pages(
     countries: Iterable[tuple[str, str]],

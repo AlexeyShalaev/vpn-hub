@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import Any
 
 import structlog
 from cashews import Cache
+
+from .common import _clone_plans
+from .keys import _provider_key
 
 _PROVIDER_PLANS_CACHE_TTL_S = 30 * 60
 _PROVIDER_PLANS_STALE_TTL_S = 6 * 60 * 60
@@ -35,10 +37,6 @@ def clear_provider_plan_cache(provider_id: str | None = None) -> None:
     key = _provider_key(provider_id)
     _PROVIDER_PLANS_PROVIDER_VERSIONS[key] = _PROVIDER_PLANS_PROVIDER_VERSIONS.get(key, 0) + 1
     _PLANS_REFRESH_LOCKS.pop(key, None)
-
-
-def _clone_plans(plans: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    return [dict(p) for p in plans]
 
 
 def _freeze_plans(plans: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
@@ -119,19 +117,3 @@ async def _cached_provider_plans(provider_id: str, fetcher: _PlanFetcher) -> lis
             stale=True,
         )
         return _clone_plans(frozen)
-
-
-def _provider_key(provider_id: str) -> str:
-    raw = (provider_id or "").strip().lower()
-    compact = re.sub(r"[\s_-]+", "", raw)
-    if compact == "firstbyte":
-        return "firstbyte"
-    if compact in {"ufo", "ufohosting"}:
-        return "ufo"
-    if compact in {"ishosting", "ishostingcom"}:
-        return "ishosting"
-    if compact in {"ahost", "ahosteu"}:
-        return "ahost"
-    if compact in {"serverspace", "serverspaceru", "serverspaceio"}:
-        return "serverspace"
-    return raw

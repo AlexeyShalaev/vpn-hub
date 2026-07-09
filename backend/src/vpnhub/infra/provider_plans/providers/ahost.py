@@ -13,9 +13,9 @@ from typing import Any
 
 import structlog
 
-from .common import _int, _norm, _quantity_gb, _storage_type_from_text, _tariff_name, _traffic_tb_any
-from .http import _fetch_url
-from .links import _IshostingLinkParser
+from ..common import _int, _norm, _quantity_gb, _storage_type_from_text, _tariff_name, _traffic_tb_any
+from ..http import _fetch_url
+from ..links import _IshostingLinkParser
 from .ufo import _ufo_slug
 
 log = structlog.get_logger(__name__)
@@ -68,11 +68,13 @@ _AHOST_COUNTRIES: Mapping[str, str] = {
 _AHOST_PLAN_NAMES = {"KVM SMART", "KVM STARTER", "KVM BASIC", "KVM ADVANCED", "KVM PREMIUM"}
 _AHOST_EXCLUDED_SLUGS = {"linux"}
 
+
 @dataclass
 class _AhostPlanCard:
     name: str = ""
     specs: list[tuple[str, str]] = field(default_factory=list)
     price: float | None = None
+
 
 class _AhostPlanCardParser(HTMLParser):
     """Парсер карточек AHost (`rate-item`) со страниц `/ru/vds-linux/<country>`."""
@@ -183,6 +185,7 @@ class _AhostPlanCardParser(HTMLParser):
         if self._country_title_depth:
             self._country_title_depth -= 1
 
+
 def _price_eur(text: str) -> float | None:
     if m := re.search(r"(\d+(?:[.,]\d+)?)\s*(?:€|eur)", text, flags=re.IGNORECASE):
         value = float(m.group(1).replace(",", "."))
@@ -274,6 +277,7 @@ def parse_ahost_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
             if plan := _ahost_card_to_plan(card, url, parser.region):
                 by_id.setdefault(str(plan["id"]), plan)
     return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), float(p["price"]), str(p["id"])))
+
 
 async def _fetch_ahost_pages(urls: Iterable[str], timeout: float) -> dict[str, str]:
     sem = asyncio.Semaphore(_AHOST_FETCH_CONCURRENCY)

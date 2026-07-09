@@ -8,36 +8,49 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
-from . import ahost, cache, firstbyte, ishosting, serverspace, ufo
-from .ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
-from .cache import _cached_provider_plans, _provider_key, clear_provider_plan_cache
+from . import cache
+from .cache import _cached_provider_plans, clear_provider_plan_cache
+from .catalog import plans_for as _plans_for
 from .common import TIB, plan_bandwidth_bytes
-from .firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
-from .ishosting import discover_ishosting_plan_urls, fetch_ishosting_plans, parse_ishosting_plans
-from .serverspace import fetch_serverspace_plans, parse_serverspace_plans
-from .ufo import discover_ufo_countries, fetch_ufo_plans, parse_ufo_plans
+from .keys import _provider_key
+from .providers import ahost, firstbyte, ishosting, serverspace, ufo
+from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
+from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
+from .providers.ishosting import discover_ishosting_plan_urls, fetch_ishosting_plans, parse_ishosting_plans
+from .providers.serverspace import fetch_serverspace_plans, parse_serverspace_plans
+from .providers.ufo import discover_ufo_countries, fetch_ufo_plans, parse_ufo_plans
+
+_COMPAT_MODULES = {
+    "ahost": ahost,
+    "firstbyte": firstbyte,
+    "ishosting": ishosting,
+    "serverspace": serverspace,
+    "ufo": ufo,
+}
+for _name, _module in _COMPAT_MODULES.items():
+    sys.modules.setdefault(f"{__name__}.{_name}", _module)
 
 
 async def plans_for(provider_id: str) -> list[dict[str, Any]]:
-    """Планы провайдера по его id (пустой список, если каталога нет/сайт недоступен)."""
-    provider = _provider_key(provider_id)
-    if provider == "firstbyte":
-        return await _cached_provider_plans("firstbyte", fetch_firstbyte_plans)
-    if provider == "ufo":
-        return await _cached_provider_plans("ufo", fetch_ufo_plans)
-    if provider == "ishosting":
-        return await _cached_provider_plans("ishosting", fetch_ishosting_plans)
-    if provider == "ahost":
-        return await _cached_provider_plans("ahost", fetch_ahost_plans)
-    if provider == "serverspace":
-        return await _cached_provider_plans("serverspace", fetch_serverspace_plans)
-    return []
+    return await _plans_for(
+        provider_id,
+        {
+            "firstbyte": fetch_firstbyte_plans,
+            "ufo": fetch_ufo_plans,
+            "ishosting": fetch_ishosting_plans,
+            "ahost": fetch_ahost_plans,
+            "serverspace": fetch_serverspace_plans,
+        },
+    )
 
 
 __all__ = [
     "TIB",
+    "_cached_provider_plans",
+    "_provider_key",
     "ahost",
     "cache",
     "clear_provider_plan_cache",

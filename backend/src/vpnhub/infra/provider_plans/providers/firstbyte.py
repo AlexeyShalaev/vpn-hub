@@ -12,8 +12,8 @@ from typing import Any
 
 import structlog
 
-from .common import _int, _norm
-from .http import _fetch_url
+from ..common import _int, _norm
+from ..http import _fetch_url
 
 log = structlog.get_logger(__name__)
 
@@ -44,6 +44,7 @@ _FIRSTBYTE_SEEDS: tuple[str, ...] = (
 )
 
 _LOC_RE = re.compile(r"<loc>\s*(?:<!\[CDATA\[)?(.+?)(?:\]\]>)?\s*</loc>", re.IGNORECASE | re.DOTALL)
+
 
 class _PlanHtmlParser(HTMLParser):
     """Минимальный HTML-парсер под WordPress-таблицы FirstByte.
@@ -125,6 +126,7 @@ class _PlanHtmlParser(HTMLParser):
             self._row = None
             self._cell_parts = None
             self._skip_stack = []
+
 
 def _normalize_firstbyte_url(url: str) -> str | None:
     full = urllib.parse.urljoin(_FIRSTBYTE_BASE, url)
@@ -211,6 +213,7 @@ def _find_idx(headers: list[str], needle: str) -> int | None:
 
 def _cell(row: list[str], idx: int | None) -> str:
     return row[idx] if idx is not None and idx < len(row) else ""
+
 
 def _ram_gb(text: str, header: str) -> float | None:
     raw = _int(text)
@@ -337,6 +340,7 @@ def _plans_from_table(table: list[list[str]], source_url: str) -> list[dict[str,
         )
     return out
 
+
 def parse_firstbyte_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
     """Распарсить тарифы FirstByte из уже скачанных HTML-страниц."""
     by_id: dict[str, dict[str, Any]] = {}
@@ -347,6 +351,7 @@ def parse_firstbyte_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
             for plan in _plans_from_table(table, url):
                 by_id.setdefault(str(plan["id"]), plan)
     return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), str(p["id"])))
+
 
 async def fetch_firstbyte_plans(timeout: float = _FIRSTBYTE_TIMEOUT) -> list[dict[str, Any]]:
     """Скачать сайт FirstByte и вернуть текущие тарифы."""

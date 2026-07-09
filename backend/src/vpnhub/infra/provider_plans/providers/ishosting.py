@@ -13,9 +13,9 @@ from typing import Any
 
 import structlog
 
-from .common import _int, _norm, _tariff_name
-from .http import _fetch_browser_url
-from .links import _IshostingLinkParser
+from ..common import _int, _norm, _tariff_name
+from ..http import _fetch_browser_url
+from ..links import _IshostingLinkParser
 
 log = structlog.get_logger(__name__)
 
@@ -67,6 +67,7 @@ _ISHOSTING_COUNTRIES: Mapping[str, str] = {
 }
 _ISHOSTING_PLAN_NAMES = {"Lite", "Start", "Medium", "Premium", "Elite", "Exclusive"}
 
+
 @dataclass
 class _IshostingPlanCard:
     name: str = ""
@@ -74,6 +75,7 @@ class _IshostingPlanCard:
     specs: dict[str, str] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     price: float | None = None
+
 
 class _IshostingPlanCardParser(HTMLParser):
     """Парсер основных VPS-карточек ISHOSTING из SSR-разметки Nuxt."""
@@ -213,6 +215,7 @@ class _IshostingPlanCardParser(HTMLParser):
             self._in_specs = False
             self._spec_capture = None
             self._tag_parts = None
+
 
 def _price_usd(text: str) -> float | None:
     if m := re.search(r"\$\s*(\d+(?:[.,]\d+)?)", text):
@@ -355,6 +358,7 @@ def parse_ishosting_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
             if plan := _ishosting_card_to_plan(card, url):
                 by_id.setdefault(str(plan["id"]), plan)
     return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), float(p["price"]), str(p["id"])))
+
 
 async def _fetch_ishosting_pages(urls: Iterable[str], timeout: float) -> dict[str, str]:
     sem = asyncio.Semaphore(_ISHOSTING_FETCH_CONCURRENCY)

@@ -17,8 +17,8 @@ from typing import Any
 import certifi
 import structlog
 
-from .common import _int, _norm, _quantity_gb, _speed_mbps, _storage_type_from_text
-from .http import _BROWSER_USER_AGENT, _NoRedirect
+from ..common import _int, _norm, _quantity_gb, _speed_mbps, _storage_type_from_text
+from ..http import _BROWSER_USER_AGENT, _NoRedirect
 
 log = structlog.get_logger(__name__)
 
@@ -28,6 +28,7 @@ _SERVERSPACE_CHALLENGE_MARKERS = ("__js_p_", "__jhash_", "ajaxload.info")
 _SERVERSPACE_JS_COOKIE_RE = re.compile(r"__js_p_=([^;]+)")
 _SERVERSPACE_HASH_COOKIE_RE = re.compile(r"(__hash_)=([^;]+)")
 
+
 @dataclass
 class _ServerspaceFixedPlanRow:
     ram: str = ""
@@ -36,6 +37,7 @@ class _ServerspaceFixedPlanRow:
     bandwidth: str = ""
     price_values: list[float] = field(default_factory=list)
     currency: str = ""
+
 
 class _ServerspaceFixedPlanParser(HTMLParser):
     """Парсер фиксированных тарифов Serverspace с блока `Fixed plans`."""
@@ -148,6 +150,7 @@ class _ServerspaceFixedPlanParser(HTMLParser):
     def selected_region(self) -> str:
         return self.region or self._first_region or "Serverspace"
 
+
 def _number_value(text: str) -> float | None:
     compact = _norm(text).replace(" ", "").replace(",", ".")
     if m := re.search(r"\d+(?:\.\d+)?", compact):
@@ -183,11 +186,7 @@ def _serverspace_label_number(value: float) -> str:
 
 
 def _serverspace_plan_id(cpu: int, ram: float, disk: float) -> str:
-    return (
-        f"serverspace-fixed-{cpu}c-"
-        f"{_serverspace_label_number(ram)}gb-"
-        f"{_serverspace_label_number(disk)}gb"
-    )
+    return f"serverspace-fixed-{cpu}c-{_serverspace_label_number(ram)}gb-{_serverspace_label_number(disk)}gb"
 
 
 def _serverspace_challenge(html: str) -> bool:
@@ -322,6 +321,7 @@ def parse_serverspace_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
             if plan := _serverspace_row_to_plan(row, url, parser.selected_region):
                 by_id.setdefault(str(plan["id"]), plan)
     return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), float(p["price"]), str(p["id"])))
+
 
 async def fetch_serverspace_plans(timeout: float = _SERVERSPACE_TIMEOUT) -> list[dict[str, Any]]:
     """Скачать страницу цен Serverspace и вернуть фиксированные VPS-тарифы."""
