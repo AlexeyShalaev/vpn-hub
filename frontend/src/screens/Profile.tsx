@@ -28,8 +28,9 @@ export function ProfileScreen() {
   const logoutM = useMutation({
     mutationFn: () => q.logout(),
     onSuccess: () => {
+      qc.setQueryData(["me"], null);
+      qc.removeQueries({ predicate: ({ queryKey }) => queryKey[0] !== "me" && queryKey[0] !== "setup" });
       setMe(null);
-      qc.invalidateQueries();
     },
     onError: () => toast("Не удалось выйти"),
   });
