@@ -130,6 +130,7 @@ def pool_to_dict(p: m.Pool, server_ids: list[str]) -> dict:
 def member_to_dict(mb: m.GroupMember) -> dict:
     return {
         "id": mb.id,
+        "userId": mb.user_id,
         "name": mb.display_name,
         "role": mb.role,
         "status": mb.status,

@@ -59,6 +59,7 @@ async def test__create__valid__adds_owner_as_admin_member(uow, settings, session
     assert result["name"] == "Семья"
     assert len(result["members"]) == 1
     member = result["members"][0]
+    assert member["userId"] == owner.id
     assert member["role"] == "admin"
     assert member["status"] == "active"
     assert member["name"] == "Хозяин (вы)"
@@ -150,7 +151,8 @@ async def test__add_member__existing_user_phone__active_with_user_id(uow, settin
     added = next(mb for mb in result["members"] if mb["name"] == "Друг")
     assert added["status"] == "active"
     assert added["phone"] == "+79991234567"
-    # реальная привязка к user_id (в БД, а не в сериализованном ответе)
+    assert added["userId"] == member_user_id
+    # реальная привязка к user_id в БД тоже есть
     async with uow.query() as tx:
         group = await tx.groups.get(gid)
         member = next(mb for mb in group.members if mb.phone == normalize_phone("+79991234567"))
@@ -168,6 +170,7 @@ async def test__add_member__unknown_phone__invited(uow, settings, session_maker)
     result = await svc.add_member(owner.id, g.id, "Гость", "member", "+79991234567")
     # Assert
     added = next(mb for mb in result["members"] if mb["name"] == "Гость")
+    assert added["userId"] is None
     assert added["status"] == "invited"
     assert added["phone"] == "+79991234567"
 

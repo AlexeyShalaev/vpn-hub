@@ -5,11 +5,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import { Btn, Icon, ScreenHeader, Spinner } from "../components/ui";
+import { countUniqueNonSelfGroupMembers } from "../lib/groupMembers";
 import type { TKey } from "../lib/i18n";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Screen } from "../nav";
 import { useNav } from "../nav";
+import { useStore } from "../store";
 import { EventList } from "./Events";
 
 // Карточка-ссылка: клик уводит в соответствующий раздел. Стиль повторяет ServerCard.
@@ -72,6 +74,7 @@ function MutedLine({ textKey }: { textKey: TKey }) {
 export function HomeScreen() {
   const t = useT();
   const go = useNav((n) => n.go);
+  const meId = useStore((s) => s.me?.id ?? null);
 
   const { data: servers, isLoading: serversLoading } = useQuery({
     queryKey: ["servers"],
@@ -101,8 +104,8 @@ export function HomeScreen() {
   const online = (servers ?? []).filter((s) => s.status === "online").length;
   const offline = (servers ?? []).filter((s) => s.status === "offline").length;
   const groupCount = groups?.length ?? 0;
-  // Суммарно уникальных участников по всем группам (один человек может быть в нескольких).
-  const memberCount = new Set((groups ?? []).flatMap((g) => g.members.map((m) => m.id))).size;
+  // Суммарно уникальных приглашённых участников по всем группам, без самого владельца.
+  const memberCount = countUniqueNonSelfGroupMembers(groups ?? [], meId);
   const recentEvents = (events ?? []).slice(0, 5);
 
   return (

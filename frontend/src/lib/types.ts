@@ -183,6 +183,7 @@ export interface Pool {
 
 export interface Member {
   id: string;
+  userId: string | null;
   name: string;
   role: "admin" | "member";
   status: "active" | "invited";

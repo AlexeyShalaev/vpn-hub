@@ -5,6 +5,7 @@
 // его переиспользует будущий экран Home (задача №10) — здесь он лишь встроен
 // вверху экрана Servers для владельца.
 import { useQuery } from "@tanstack/react-query";
+import { hasNonSelfGroupMember } from "../lib/groupMembers";
 import type { TKey } from "../lib/i18n";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
@@ -28,8 +29,7 @@ export function computeSteps(servers: Server[], groups: Group[], meId: string | 
   const hasServer = servers.length > 0;
   const hasInstalled = servers.some((s) => s.protocols.some((p) => p.state === "installed"));
   const hasGroup = groups.length > 0;
-  // Участник «кроме самого владельца»: любой member группы с id, отличным от владельца.
-  const hasMember = groups.some((g) => g.members.some((m) => m.id !== meId));
+  const hasMember = hasNonSelfGroupMember(groups, meId);
   // Доступ выдан: группе открыт пул ИЛИ хотя бы один сервер.
   const hasAccess = groups.some((g) => g.access.pools.length > 0 || Object.keys(g.access.servers).length > 0);
   return [
