@@ -301,6 +301,33 @@ class TrafficSample(BaseTable):
     __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
 
 
+class TrafficPeerState(BaseTable):
+    """Последний кумулятив счётчиков per (server, proto, client) — O(1)-дельты и «сейчас»-состояние.
+
+    Обновляется на каждый `TrafficService.record` и переживает purge сырых сэмплов: дельта после
+    простоя клиента считается от последнего известного кумулятива, а не заново от нуля (иначе —
+    ложный всплеск на весь кумулятив). Заодно хранит последние скорость/онлайн/handshake — показ
+    «онлайн сейчас / скорость» не зависит от выбранного периода дашборда и яруса хранения.
+    """
+
+    __tablename__ = "traffic_peer_state"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    server_id: Mapped[str] = mapped_column(String(32), index=True)
+    proto: Mapped[str] = mapped_column(String(24))
+    client_id: Mapped[str] = mapped_column(String(64))
+    device_config_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # None → external
+    ext_name: Mapped[str | None] = mapped_column(String(128), nullable=True)  # имя из clientsTable
+    rx_bytes: Mapped[int] = mapped_column(BigInteger, default=0)  # последний кумулятив
+    tx_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    rx_speed: Mapped[float] = mapped_column(default=0.0)  # байт/с из последней дельты
+    tx_speed: Mapped[float] = mapped_column(default=0.0)
+    last_at: Mapped[float] = mapped_column(default=0.0)  # epoch последнего замера
+    last_handshake: Mapped[float | None] = mapped_column(nullable=True)  # epoch (wg); max за историю
+    online: Mapped[bool | None] = mapped_column(nullable=True)  # из stats движка; None — по handshake
+
+    __table_args__ = (UniqueConstraint("server_id", "proto", "client_id", name="traffic_peer_state_uq"),)
+
+
 class TrafficUsage(BaseTable):
     """Персистентный накопитель трафика за биллинг-период (переживает purge сырых сэмплов).
 

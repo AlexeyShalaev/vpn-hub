@@ -10,6 +10,8 @@ from __future__ import annotations
 import time
 
 import pytest
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 
 from tests.factories.orm import (
     make_device,
@@ -88,6 +90,66 @@ async def test__record__empty_stats__is_noop(svc, session_maker):
     assert await svc.record(srv.id, "awg", []) == 0
     ov = await svc.overview(owner.id, srv.id)
     assert ov["clients"] == []
+
+
+# --------------------------------------------------------------------------- peer_state
+
+
+async def test__record__delta_survives_raw_purge(svc, session_maker, uow):
+    """Дельта считается от peer_state: purge сырых сэмплов не даёт ложный всплеск после простоя.
+
+    Регресс-тест бага: раньше дельта бралась от последнего СЫРОГО сэмпла, и после его удаления
+    ретеншном следующая дельта равнялась полному кумулятиву (ложные гигабайты за один тик).
+    """
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110100")
+        srv = await make_server(s, owner_id=owner.id)
+
+    hs = time.time()
+    await svc.record(srv.id, "awg", [PeerStat(client_id="P", rx=1000, tx=2000, last_handshake=hs)])
+    async with uow.transaction() as tx:  # эмулируем ретеншн: сырьё удалено, peer_state остаётся
+        await tx.session.execute(sa_delete(m.TrafficSample))
+    await svc.record(srv.id, "awg", [PeerStat(client_id="P", rx=1100, tx=2200, last_handshake=hs)])
+
+    ov = await svc.overview(owner.id, srv.id)
+    row = ov["clients"][0]
+    assert (row["rxTotal"], row["txTotal"]) == (100, 200)  # прирост, а не полный кумулятив
+
+
+async def test__record__peer_state_upserted(svc, session_maker, uow):
+    """peer_state хранит последний кумулятив, max handshake, скорость и непустое имя clientsTable."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110101")
+        srv = await make_server(s, owner_id=owner.id)
+
+    hs = time.time()
+    await svc.record(srv.id, "awg", [PeerStat(client_id="P", rx=100, tx=200, last_handshake=hs)])
+    time.sleep(0.01)  # ненулевой интервал между замерами — скорость должна стать > 0
+    await svc.record(srv.id, "awg", [PeerStat(client_id="P", rx=300, tx=500, last_handshake=hs + 5, name="Ext")])
+
+    async with uow.query() as tx:
+        st = (await tx.session.execute(select(m.TrafficPeerState))).scalar_one()
+    assert (st.server_id, st.proto, st.client_id) == (srv.id, "awg", "P")
+    assert (st.rx_bytes, st.tx_bytes) == (300, 500)
+    assert st.last_handshake == pytest.approx(hs + 5)
+    assert st.ext_name == "Ext"
+    assert st.rx_speed > 0 and st.tx_speed > 0
+    assert st.last_at > 0
+
+
+async def test__record__counter_reset_rewrites_state(svc, session_maker, uow):
+    """Рестарт счётчиков (curr<prev) перезаписывает state текущим кумулятивом (не суммой)."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110102")
+        srv = await make_server(s, owner_id=owner.id)
+
+    hs = time.time()
+    await svc.record(srv.id, "awg", [PeerStat(client_id="P", rx=1000, tx=1000, last_handshake=hs)])
+    await svc.record(srv.id, "awg", [PeerStat(client_id="P", rx=50, tx=30, last_handshake=hs)])
+
+    async with uow.query() as tx:
+        st = (await tx.session.execute(select(m.TrafficPeerState))).scalar_one()
+    assert (st.rx_bytes, st.tx_bytes) == (50, 30)  # следующая дельта пойдёт от нового кумулятива
 
 
 # --------------------------------------------------------------------------- overview

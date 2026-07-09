@@ -12,8 +12,10 @@
   (кладём в tx; rx=0, online не поддержан Outline). Нужен провизионер с материалом (apiUrl).
 Идентификатор движка = наш `device_configs.client_id` (pubkey / uuid / authid / CN / key-id).
 
-Хранение — таблица дельта-сэмплов `traffic_samples` (одна строка на клиента-протокол на тик).
-Дельта считается от прошлого сэмпла; при рестарте счётчиков (curr<prev) дельта = curr.
+Хранение — таблица дельта-сэмплов `traffic_samples` (одна строка на клиента-протокол на тик)
+плюс состояние счётчиков `traffic_peer_state` (последний кумулятив per server+proto+client).
+Дельта считается от peer_state (O(1), переживает purge сырья); при рестарте счётчиков
+(curr<prev) дельта = curr.
 Онлайн-статус: для wg — свежесть `last_handshake` (`traffic_online_window_seconds`); для
 xray/hysteria2 — поле `online` из stats движка (у них handshake нет).
 """
@@ -27,6 +29,7 @@ from typing import Any
 import structlog
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import NotFound
@@ -348,16 +351,19 @@ class TrafficService:
     async def record(self, server_id: str, proto: str, stats: list[PeerStat]) -> int:
         """Записать сэмплы для протокола за один тик (отдельная транзакция).
 
-        Дельта считается от последнего сэмпла по (server, proto, client): curr>=prev → curr-prev,
-        curr<prev (рестарт счётчиков wg) → curr, первый сэмпл → дельта = кумулятив. Сопоставление
-        client_id → DeviceConfig — по client_id (pubkey); отсутствие устройства не ошибка (external).
+        Дельта считается от `traffic_peer_state` (последний кумулятив по server+proto+client):
+        curr>=prev → curr-prev, curr<prev (рестарт счётчиков wg) → curr, первый сэмпл → дельта =
+        кумулятив. Состояние переживает purge сырых сэмплов — простой клиента дольше ретеншна не
+        даёт ложный всплеск. Сопоставление client_id → DeviceConfig — по client_id (pubkey);
+        отсутствие устройства не ошибка (external). Конкурентные record() одного клиента разводятся
+        уникумом traffic_peer_state_uq (вставка в savepoint, как add_period_usage).
         """
         if not stats:
             return 0
         now = time.time()
         client_ids = [s.client_id for s in stats]
         async with self.uow.transaction() as tx:
-            prev = await self._last_cumulative(tx, server_id, proto, client_ids)
+            states = await self._peer_states(tx, server_id, proto, client_ids)
             dc_by_client = await self._device_config_ids(tx, server_id, client_ids)
             user_by_client = await self._user_ids(tx, server_id, client_ids)
             billing_day = (
@@ -367,9 +373,13 @@ class TrafficService:
             # накопитель за период: None-ключ — суммарный трафик сервера (вкл. external), user_id — пер-user
             by_user: dict[str | None, list[int]] = {}
             for st in stats:
-                prev_rx, prev_tx = prev.get(st.client_id, (0, 0))
+                state = states.get(st.client_id)
+                prev_rx, prev_tx = (state.rx_bytes, state.tx_bytes) if state is not None else (0, 0)
                 rx_delta = st.rx - prev_rx if st.rx >= prev_rx else st.rx
                 tx_delta = st.tx - prev_tx if st.tx >= prev_tx else st.tx
+                await self._upsert_peer_state(
+                    tx, server_id, proto, st, state, dc_by_client.get(st.client_id), rx_delta, tx_delta, now
+                )
                 tx.session.add(
                     m.TrafficSample(
                         server_id=server_id,
@@ -409,31 +419,90 @@ class TrafficService:
         ).all()
         return {cid: uid for cid, uid in rows if cid and uid}
 
-    async def _last_cumulative(
+    async def _peer_states(
         self, tx: Any, server_id: str, proto: str, client_ids: list[str]
-    ) -> dict[str, tuple[int, int]]:
-        """Последние кумулятивы (rx,tx) по каждому client_id (для расчёта дельт)."""
-        rows = list(
+    ) -> dict[str, m.TrafficPeerState]:
+        """Состояния счётчиков по каждому client_id (O(1)-дельты вместо скана истории сэмплов)."""
+        rows = (
             (
                 await tx.session.execute(
-                    select(m.TrafficSample)
-                    .where(
-                        m.TrafficSample.server_id == server_id,
-                        m.TrafficSample.proto == proto,
-                        m.TrafficSample.client_id.in_(client_ids),
+                    select(m.TrafficPeerState).where(
+                        m.TrafficPeerState.server_id == server_id,
+                        m.TrafficPeerState.proto == proto,
+                        m.TrafficPeerState.client_id.in_(client_ids),
                     )
-                    .order_by(m.TrafficSample.at.asc())
                 )
             )
             .scalars()
             .all()
         )
-        # последний по времени выигрывает (asc → последняя запись перетирает)
-        out: dict[str, tuple[int, int]] = {}
-        for r in rows:
-            if r.client_id is not None:
-                out[r.client_id] = (r.rx_bytes, r.tx_bytes)
-        return out
+        return {r.client_id: r for r in rows}
+
+    @staticmethod
+    def _apply_peer_state(
+        state: m.TrafficPeerState, st: PeerStat, dc_id: str | None, rx_delta: int, tx_delta: int, now: float
+    ) -> None:
+        """Обновить state последним замером; скорость — из дельты по интервалу от прошлого замера."""
+        interval = now - state.last_at
+        if state.last_at > 0 and interval > 0:
+            state.rx_speed = rx_delta / interval
+            state.tx_speed = tx_delta / interval
+        state.rx_bytes, state.tx_bytes, state.last_at = st.rx, st.tx, now
+        lh = state.last_handshake
+        if st.last_handshake is not None and (lh is None or st.last_handshake > lh):
+            state.last_handshake = st.last_handshake
+        state.online = st.online
+        if st.name:  # имя из clientsTable добираем непустым (у части замеров может отсутствовать)
+            state.ext_name = st.name
+        if dc_id:
+            state.device_config_id = dc_id
+
+    async def _upsert_peer_state(
+        self,
+        tx: Any,
+        server_id: str,
+        proto: str,
+        st: PeerStat,
+        state: m.TrafficPeerState | None,
+        dc_id: str | None,
+        rx_delta: int,
+        tx_delta: int,
+        now: float,
+    ) -> None:
+        """Обновить/создать peer_state клиента.
+
+        Вставка — в savepoint: гонка конкурентных record() → IntegrityError по
+        traffic_peer_state_uq → перечитываем строку и обновляем (паттерн add_period_usage).
+        """
+        if state is not None:
+            self._apply_peer_state(state, st, dc_id, rx_delta, tx_delta, now)
+            return
+        fresh = m.TrafficPeerState(
+            server_id=server_id,
+            proto=proto,
+            client_id=st.client_id,
+            device_config_id=dc_id,
+            ext_name=st.name or None,
+            rx_bytes=st.rx,
+            tx_bytes=st.tx,
+            last_at=now,
+            last_handshake=st.last_handshake,
+            online=st.online,
+        )
+        try:
+            async with tx.session.begin_nested():
+                tx.session.add(fresh)
+        except IntegrityError:  # параллельный тик успел вставить строку — обновляем её
+            row = (
+                await tx.session.execute(
+                    select(m.TrafficPeerState).where(
+                        m.TrafficPeerState.server_id == server_id,
+                        m.TrafficPeerState.proto == proto,
+                        m.TrafficPeerState.client_id == st.client_id,
+                    )
+                )
+            ).scalar_one()
+            self._apply_peer_state(row, st, dc_id, rx_delta, tx_delta, now)
 
     async def _device_config_ids(self, tx: Any, server_id: str, client_ids: list[str]) -> dict[str, str]:
         """client_id (pubkey) → DeviceConfig.id для клиентов этого сервера."""
