@@ -224,7 +224,7 @@ SERVERSPACE_PRICE_PAGE = """
 <html><body>
 <select id="fixedDc">
   <option value="239">Ташкент</option>
-  <option value="2" selected>Москва, 5th Gen Intel</option>
+  <option value="2" selected data-select-badge="Sold out" disabled>Москва, 5th Gen Intel</option>
 </select>
 <div class="table">
   <div class="table__row plans-row show">
@@ -414,12 +414,12 @@ def test__parse_ahost_plans__extracts_cards_without_port() -> None:
     assert "ahost-germany-windows-start" not in by_id
 
 
-def test__parse_serverspace_plans__extracts_fixed_plans_and_selected_dc() -> None:
+def test__parse_serverspace_plans__extracts_fixed_plans_for_all_dcs() -> None:
     plans = parse_serverspace_plans({"https://serverspace.ru/conditions/price/": SERVERSPACE_PRICE_PAGE})
     by_id = {p["id"]: p for p in plans}
 
-    assert by_id["serverspace-fixed-1c-1gb-25gb"] == {
-        "id": "serverspace-fixed-1c-1gb-25gb",
+    assert by_id["serverspace-dc-2-fixed-1c-1gb-25gb"] == {
+        "id": "serverspace-dc-2-fixed-1c-1gb-25gb",
         "name": "Fixed 1C/1GB/25GB SSD · Москва, 5th Gen Intel",
         "region": "Москва, 5th Gen Intel",
         "cpu": 1,
@@ -431,11 +431,19 @@ def test__parse_serverspace_plans__extracts_fixed_plans_and_selected_dc() -> Non
         "price": 438.21,
         "currency": "RUB",
         "period": "month",
-        "available": True,
+        "available": False,
         "sourceUrl": "https://serverspace.ru/conditions/price/",
     }
-    assert by_id["serverspace-fixed-2c-2gb-60gb"]["price"] == 1559.13
-    assert by_id["serverspace-fixed-2c-2gb-60gb"]["currency"] == "RUB"
+    assert by_id["serverspace-dc-239-fixed-1c-1gb-25gb"]["region"] == "Ташкент"
+    assert by_id["serverspace-dc-239-fixed-1c-1gb-25gb"]["available"] is True
+    assert by_id["serverspace-dc-239-fixed-2c-2gb-60gb"]["price"] == 1559.13
+    assert by_id["serverspace-dc-239-fixed-2c-2gb-60gb"]["currency"] == "RUB"
+    assert set(by_id) == {
+        "serverspace-dc-2-fixed-1c-1gb-25gb",
+        "serverspace-dc-2-fixed-2c-2gb-60gb",
+        "serverspace-dc-239-fixed-1c-1gb-25gb",
+        "serverspace-dc-239-fixed-2c-2gb-60gb",
+    }
 
 
 def test__parse_serverspace_plans__skips_js_challenge() -> None:
@@ -454,8 +462,10 @@ async def test__fetch_serverspace_plans__loads_price_page(
     plans = await provider_plans.fetch_serverspace_plans()
 
     assert [p["id"] for p in plans] == [
-        "serverspace-fixed-1c-1gb-25gb",
-        "serverspace-fixed-2c-2gb-60gb",
+        "serverspace-dc-2-fixed-1c-1gb-25gb",
+        "serverspace-dc-2-fixed-2c-2gb-60gb",
+        "serverspace-dc-239-fixed-1c-1gb-25gb",
+        "serverspace-dc-239-fixed-2c-2gb-60gb",
     ]
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 import ssl
 import time
@@ -37,6 +38,14 @@ class _ServerspaceFixedPlanRow:
     bandwidth: str = ""
     price_values: list[float] = field(default_factory=list)
     currency: str = ""
+    available: bool = True
+
+
+@dataclass(frozen=True)
+class _ServerspaceDataCenter:
+    id: str
+    name: str
+    available: bool = True
 
 
 class _ServerspaceFixedPlanParser(HTMLParser):
@@ -45,15 +54,19 @@ class _ServerspaceFixedPlanParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.rows: list[_ServerspaceFixedPlanRow] = []
+        self.data_centers: list[_ServerspaceDataCenter] = []
         self.region = ""
         self._first_region = ""
+        self._selected_data_center_id = ""
         self._row: _ServerspaceFixedPlanRow | None = None
         self._row_depth = 0
         self._capture: str | None = None
         self._capture_end_tag = ""
         self._capture_parts: list[str] = []
         self._in_fixed_dc_select = False
+        self._option_value = ""
         self._option_selected = False
+        self._option_available = True
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_d = {k: (v or "") for k, v in attrs}
@@ -63,7 +76,10 @@ class _ServerspaceFixedPlanParser(HTMLParser):
             self._in_fixed_dc_select = True
             return
         if self._in_fixed_dc_select and tag == "option":
+            badge = attrs_d.get("data-select-badge", "").lower()
+            self._option_value = attrs_d.get("value", "")
             self._option_selected = "selected" in attrs_d
+            self._option_available = "disabled" not in attrs_d and "sold out" not in badge
             self._start_capture("fixed_region", "option")
             return
 
@@ -88,6 +104,8 @@ class _ServerspaceFixedPlanParser(HTMLParser):
             self._start_capture("price_value", "span")
         elif tag == "span" and "price__symbol" in classes:
             self._start_capture("price_symbol", "span")
+        elif tag == "button" and "disabled" in attrs_d:
+            self._row.available = False
 
     def handle_data(self, data: str) -> None:
         if self._capture:
@@ -125,9 +143,17 @@ class _ServerspaceFixedPlanParser(HTMLParser):
         if capture == "fixed_region":
             if text and not self._first_region:
                 self._first_region = text
+            data_center_id = _serverspace_data_center_id(self._option_value, text)
+            if text and not any(dc.id == data_center_id for dc in self.data_centers):
+                self.data_centers.append(
+                    _ServerspaceDataCenter(id=data_center_id, name=text, available=self._option_available)
+                )
             if text and self._option_selected:
                 self.region = text
+                self._selected_data_center_id = data_center_id
+            self._option_value = ""
             self._option_selected = False
+            self._option_available = True
             return
 
         if self._row is None:
@@ -149,6 +175,20 @@ class _ServerspaceFixedPlanParser(HTMLParser):
     @property
     def selected_region(self) -> str:
         return self.region or self._first_region or "Serverspace"
+
+    @property
+    def selected_data_center(self) -> _ServerspaceDataCenter:
+        if self._selected_data_center_id:
+            for data_center in self.data_centers:
+                if data_center.id == self._selected_data_center_id:
+                    return data_center
+        if self.data_centers:
+            return self.data_centers[0]
+        return _ServerspaceDataCenter(id="", name=self.selected_region)
+
+    @property
+    def plan_data_centers(self) -> list[_ServerspaceDataCenter]:
+        return self.data_centers or [self.selected_data_center]
 
 
 def _number_value(text: str) -> float | None:
@@ -185,8 +225,22 @@ def _serverspace_label_number(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else str(value).replace(".", "p")
 
 
-def _serverspace_plan_id(cpu: int, ram: float, disk: float) -> str:
-    return f"serverspace-fixed-{cpu}c-{_serverspace_label_number(ram)}gb-{_serverspace_label_number(disk)}gb"
+def _serverspace_data_center_id(value: str, name: str) -> str:
+    clean_value = _norm(value).lower()
+    if clean_value:
+        slug = re.sub(r"[^a-z0-9]+", "-", clean_value).strip("-")
+        if slug:
+            return f"dc-{slug}"
+    digest = hashlib.sha256(_norm(name).encode("utf-8")).hexdigest()[:8]
+    return f"dc-{digest}"
+
+
+def _serverspace_plan_id(cpu: int, ram: float, disk: float, data_center_id: str = "") -> str:
+    data_center_prefix = f"{data_center_id}-" if data_center_id else ""
+    return (
+        f"serverspace-{data_center_prefix}"
+        f"fixed-{cpu}c-{_serverspace_label_number(ram)}gb-{_serverspace_label_number(disk)}gb"
+    )
 
 
 def _serverspace_challenge(html: str) -> bool:
@@ -279,7 +333,9 @@ async def _fetch_serverspace_price_page(timeout: float) -> str:
 def _serverspace_row_to_plan(
     row: _ServerspaceFixedPlanRow,
     source_url: str,
-    region: str,
+    data_center: _ServerspaceDataCenter,
+    *,
+    include_data_center_id: bool,
 ) -> dict[str, Any] | None:
     cpu = _int(row.cpu)
     ram = _quantity_gb(row.ram)
@@ -291,10 +347,12 @@ def _serverspace_row_to_plan(
         return None
     ram_label = _serverspace_label_number(ram)
     disk_label = _serverspace_label_number(disk)
+    data_center_id = data_center.id if include_data_center_id else ""
+    available = data_center.available if include_data_center_id else data_center.available and row.available
     return {
-        "id": _serverspace_plan_id(cpu, ram, disk),
-        "name": f"Fixed {cpu}C/{ram_label}GB/{disk_label}GB {disk_type} · {region}",
-        "region": region,
+        "id": _serverspace_plan_id(cpu, ram, disk, data_center_id),
+        "name": f"Fixed {cpu}C/{ram_label}GB/{disk_label}GB {disk_type} · {data_center.name}",
+        "region": data_center.name,
         "cpu": cpu,
         "ramGb": ram,
         "diskGb": int(disk),
@@ -304,7 +362,7 @@ def _serverspace_row_to_plan(
         "price": price,
         "currency": _serverspace_currency(source_url, row.currency),
         "period": "month",
-        "available": True,
+        "available": available,
         "sourceUrl": source_url,
     }
 
@@ -317,9 +375,16 @@ def parse_serverspace_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
             continue
         parser = _ServerspaceFixedPlanParser()
         parser.feed(html)
+        include_data_center_id = len(parser.plan_data_centers) > 1
         for row in parser.rows:
-            if plan := _serverspace_row_to_plan(row, url, parser.selected_region):
-                by_id.setdefault(str(plan["id"]), plan)
+            for data_center in parser.plan_data_centers:
+                if plan := _serverspace_row_to_plan(
+                    row,
+                    url,
+                    data_center,
+                    include_data_center_id=include_data_center_id,
+                ):
+                    by_id.setdefault(str(plan["id"]), plan)
     return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), float(p["price"]), str(p["id"])))
 
 
