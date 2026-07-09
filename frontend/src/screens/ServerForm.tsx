@@ -4,6 +4,14 @@ import { Btn, Field, Icon, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import type { ParsedServerInfo } from "../lib/credentialParse";
 import { parseServerInfo } from "../lib/credentialParse";
+import {
+  dynamicPlanProviderId,
+  dynamicPlanProviderIdByName,
+  findDynamicPlanProvider,
+  isDynamicPlanProviderId,
+  planProviderDisplayName,
+  providerNameById,
+} from "../lib/providerPlans";
 import * as q from "../lib/queries";
 import {
   bytesToTrafficInput,
@@ -107,47 +115,6 @@ function suggestName(location: string, provider: string): string {
 }
 
 const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
-const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
-  ahost: "AHost",
-  firstbyte: "FirstByte",
-  ishosting: "ISHOSTING",
-  serverspace: "Serverspace",
-  ufo: "UFO Hosting",
-};
-
-function normalizeProviderKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s._-]+/g, "");
-}
-
-function isDynamicPlanProviderId(providerId: string | undefined): providerId is string {
-  return !!providerId && Object.hasOwn(DYNAMIC_PLAN_PROVIDER_LABELS, providerId);
-}
-
-function dynamicPlanProviderIdByName(name: string): string {
-  const key = normalizeProviderKey(name);
-  if (key === "ahost" || key === "ahosteu") return "ahost";
-  if (key === "firstbyte") return "firstbyte";
-  if (key === "ishosting" || key === "ishostingcom") return "ishosting";
-  if (key === "serverspace" || key === "serverspaceru" || key === "serverspaceio") return "serverspace";
-  if (key === "ufo" || key === "ufohosting") return "ufo";
-  return "";
-}
-
-function dynamicPlanProviderId(p: Provider | null, providerName: string): string {
-  const byId = (p?.id ?? "").toLowerCase();
-  if (isDynamicPlanProviderId(byId)) return byId;
-  const byKnownName = dynamicPlanProviderIdByName(p?.name ?? "");
-  if (byKnownName) return byKnownName;
-  return dynamicPlanProviderIdByName(providerName);
-}
-
-function planProviderDisplayName(providerId: string): string {
-  return DYNAMIC_PLAN_PROVIDER_LABELS[providerId] ?? providerId;
-}
-
 function fmtTraffic(tb: number | null): string {
   return tb == null ? "безлимит" : `${tb} ТБ`;
 }
@@ -209,13 +176,6 @@ function findProviderPlanByTariff(plans: ProviderPlan[], tariff: string, region 
       : plans.filter((p) => providerPlanLooseMatchKey(providerPlanLabel(p)) === targetLoose);
   const regionMatch = region.trim() ? matches.find((p) => sameRegion(p.region, region)) : null;
   return regionMatch ?? matches[0] ?? null;
-}
-
-function providerNameById(providers: Provider[], providerId: string): string {
-  const p = providers.find((pp) => pp.id === providerId);
-  if (p) return p.name;
-  if (isDynamicPlanProviderId(providerId)) return planProviderDisplayName(providerId);
-  return providerId;
 }
 
 function withProviderPlan(
@@ -334,7 +294,7 @@ export function ServerFormScreen() {
   }
 
   const selProvider = useMemo(() => {
-    if (form.providerCustom) return null;
+    if (form.providerCustom) return findDynamicPlanProvider(providers, form.provider);
     return providers.find((p) => p.name === form.provider) ?? null;
   }, [providers, form.provider, form.providerCustom]);
   const planProviderId = dynamicPlanProviderId(selProvider, form.provider);
