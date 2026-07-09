@@ -449,7 +449,7 @@ async def test__fetch_serverspace_plans__loads_price_page(
         assert timeout > 0
         return SERVERSPACE_PRICE_PAGE
 
-    monkeypatch.setattr(provider_plans, "_fetch_serverspace_price_page", fake_fetch_serverspace_price_page)
+    monkeypatch.setattr(provider_plans.serverspace, "_fetch_serverspace_price_page", fake_fetch_serverspace_price_page)
 
     plans = await provider_plans.fetch_serverspace_plans()
 
@@ -468,7 +468,7 @@ async def test__fetch_ahost_plans__loads_country_pages(monkeypatch: pytest.Monke
             return AHOST_GERMANY_CARDS
         return ""
 
-    monkeypatch.setattr(provider_plans, "_fetch_url", fake_fetch_url)
+    monkeypatch.setattr(provider_plans.ahost, "_fetch_url", fake_fetch_url)
 
     plans = await provider_plans.fetch_ahost_plans()
 
@@ -486,7 +486,7 @@ async def test__fetch_ishosting_plans__loads_country_pages_with_browser_fetch(
             return ISHOSTING_AT_CARDS
         return ""
 
-    monkeypatch.setattr(provider_plans, "_fetch_browser_url", fake_fetch_browser_url)
+    monkeypatch.setattr(provider_plans.ishosting, "_fetch_browser_url", fake_fetch_browser_url)
 
     plans = await provider_plans.fetch_ishosting_plans()
 
@@ -507,8 +507,8 @@ async def test__fetch_ufo_plans__loads_country_fragments_with_page_nonce(monkeyp
         html = UFO_INDIA_CARDS if form["cities"] == "india" else ""
         return json.dumps({"success": True, "data": {"vds": html}})
 
-    monkeypatch.setattr(provider_plans, "_fetch_url", fake_fetch_url)
-    monkeypatch.setattr(provider_plans, "_post_form_url", fake_post_form_url)
+    monkeypatch.setattr(provider_plans.ufo, "_fetch_url", fake_fetch_url)
+    monkeypatch.setattr(provider_plans.ufo, "_post_form_url", fake_post_form_url)
 
     plans = await provider_plans.fetch_ufo_plans()
 
@@ -592,7 +592,7 @@ async def test__plans_for__firstbyte_returns_stale_cache_when_refresh_fails(
         raise RuntimeError("site is down")
 
     monkeypatch.setattr(provider_plans, "fetch_firstbyte_plans", fake_fetch)
-    monkeypatch.setattr(provider_plans, "_PROVIDER_PLANS_CACHE_TTL_S", 0)
+    monkeypatch.setattr(provider_plans.cache, "_PROVIDER_PLANS_CACHE_TTL_S", 0)
 
     assert await provider_plans.plans_for("firstbyte") == [{"id": "fb-live"}]
     assert await provider_plans.plans_for("firstbyte") == [{"id": "fb-live"}]
