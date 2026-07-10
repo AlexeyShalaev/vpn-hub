@@ -301,6 +301,51 @@ async def test__collect_for__ssh_failure_marks_unreachable(svc, session_maker, u
     assert sp.traffic_status == "unreachable"
 
 
+async def test__reconcile_owner__enables_stats_where_missing(svc, session_maker, uow, monkeypatch):
+    """On-access доводка: включает статистику на протоколах владельца без ok-мониторинга; ok — пропускает."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79002220200")
+        srv = await make_server(s, owner_id=owner.id)
+        await make_server_protocol(
+            s, server_id=srv.id, proto="xray", container="amnezia-xray", installed=True, running=True
+        )  # traffic_status=None → доводим
+        await make_server_protocol(
+            s, server_id=srv.id, proto="hysteria2", container="amnezia-hysteria2", installed=True, running=True
+        )
+        await make_server_protocol(
+            s, server_id=srv.id, proto="awg", container="amnezia-awg2", installed=True, running=True
+        )  # не stats-протокол
+    async with uow.transaction() as tx:  # hysteria2 уже ok → трогать не должны
+        sp = (
+            await tx.session.execute(select(m.ServerProtocol).where(m.ServerProtocol.proto == "hysteria2"))
+        ).scalar_one()
+        sp.traffic_status = "ok"
+
+    enabled: list[str] = []
+
+    async def fake_enable(spec, ssh):
+        enabled.append(spec.id)
+        return True
+
+    monkeypatch.setattr(hm, "SshClient", _FakeSshCM)
+    monkeypatch.setattr(hm, "enable_stats", fake_enable)
+    svc.settings.stats_auto_enable = True
+
+    await svc._reconcile_owner(owner.id)
+    assert enabled == ["xray"]  # только xray (без ok); hysteria2 уже ok, awg — не stats
+
+
+async def test__kick_reconcile__throttled_per_owner(svc, monkeypatch):
+    """kick_reconcile троттлится per-owner — повторный заход в окне не плодит фоновые задачи."""
+    spawned: list[str] = []
+    monkeypatch.setattr(hm, "_spawn", lambda coro: (spawned.append("x"), coro.close()))
+    hm._RECONCILE_KICKS.clear()
+
+    svc.kick_reconcile("owner-1")
+    svc.kick_reconcile("owner-1")  # сразу же — в окне троттлинга
+    assert len(spawned) == 1
+
+
 async def test__rollup_tick__aggregates_and_purges_raw(svc, session_maker, uow):
     """rollup_tick сворачивает сырьё в почасовые avg/max и чистит сырьё старше ретеншна."""
     async with seed(session_maker) as s:

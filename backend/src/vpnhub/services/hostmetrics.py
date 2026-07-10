@@ -13,6 +13,7 @@ SSH-сессия к онлайн-серверу гоняет `HOST_METRICS_CMD` 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -22,7 +23,7 @@ from typing import Any
 
 import structlog
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, or_, select
 
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import NotFound
@@ -55,6 +56,19 @@ log = structlog.get_logger(__name__)
 # In-memory достаточно: рестарт панели разрешит одну лишнюю идемпотентную попытку.
 _STATS_HEAL_ATTEMPTS: dict[tuple[str, str], float] = {}
 _STATS_HEAL_RETRY_SECONDS = 3600.0
+
+# on-access доводка: при заходе на мониторинг фоново включаем статистику там, где её ещё нет.
+# Троттлинг «пинков» per-owner, чтобы 30с-поллинг дашборда не плодил фоновые задачи.
+_RECONCILE_KICKS: dict[str, float] = {}
+_RECONCILE_KICK_INTERVAL = 60.0
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro: Any) -> None:
+    """Fire-and-forget фоновая задача (ссылку держим, чтобы не собрал GC)."""
+    task = asyncio.ensure_future(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 
 
 def _hourly_id() -> str:
@@ -492,3 +506,65 @@ class HostMetricsService:
                     log.warning("enable_stats failed", server=sid, proto=proto, error=str(e))
                     result[proto] = "error"
         return result
+
+    def kick_reconcile(self, owner_id: str) -> None:
+        """On-access доводка мониторинга: при заходе на дашборд фоново включить статистику там, где её
+        ещё нет. Fire-and-forget + троттлинг per-owner (30с-поллинг не должен плодить задачи); запрос
+        мониторинга не блокируется. Реальный сбор данных подхватит ближайший monitor-тик.
+        """
+        now = time.time()
+        if now - _RECONCILE_KICKS.get(owner_id, 0.0) < _RECONCILE_KICK_INTERVAL:
+            return
+        _RECONCILE_KICKS[owner_id] = now
+        _spawn(self._reconcile_owner(owner_id))
+
+    async def _reconcile_owner(self, owner_id: str) -> None:
+        """Включить точную статистику на серверах владельца, где мониторинг ещё не подтверждён.
+
+        Берём installed stats-протоколы с `traffic_status != "ok"`, группируем по серверу и включаем
+        статистику одной SSH-сессией на сервер (идемпотентно, best-effort). Только включение — трафик
+        НЕ пишем (чтобы не двоить дельты с monitor-тиком).
+        """
+        if not self.settings.stats_auto_enable:
+            return
+        try:
+            async with self.uow.query() as tx:
+                rows = (
+                    await tx.session.execute(
+                        select(m.Server, m.ServerProtocol.proto)
+                        .join(m.ServerProtocol, m.ServerProtocol.server_id == m.Server.id)
+                        .where(
+                            m.Server.owner_user_id == owner_id,
+                            m.ServerProtocol.installed.is_(True),
+                            m.ServerProtocol.proto.in_(STATS_PROTOS),
+                            or_(m.ServerProtocol.traffic_status.is_(None), m.ServerProtocol.traffic_status != "ok"),
+                        )
+                    )
+                ).all()
+            by_server: dict[str, tuple[m.Server, list[str]]] = {}
+            for server, proto in rows:
+                by_server.setdefault(server.id, (server, []))[1].append(proto)
+            if not by_server:
+                return
+            sem = asyncio.Semaphore(max(1, self.settings.monitor_concurrency))
+
+            async def one(server: m.Server, protos: list[str]) -> None:
+                async with sem:
+                    await self._enable_stats_on(server, protos)
+
+            await asyncio.gather(*(one(server, protos) for server, protos in by_server.values()))
+        except Exception:
+            log.warning("reconcile owner monitoring failed", owner=owner_id, exc_info=True)
+
+    async def _enable_stats_on(self, server: m.Server, protos: list[str]) -> None:
+        """Включить статистику для протоколов одного сервера (одна SSH-сессия, best-effort)."""
+        creds = server_creds(server, self.settings.secret_key)
+        try:
+            async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
+                for proto in protos:
+                    try:
+                        await enable_stats(pc.spec_by_id(proto), ssh)
+                    except (SshError, OSError) as e:
+                        log.warning("reconcile enable_stats failed", server=server.id, proto=proto, error=str(e))
+        except (SshError, OSError) as e:  # сервер недоступен — пропускаем, подхватит следующий заход
+            log.info("reconcile ssh skipped", server=server.id, error=str(e))

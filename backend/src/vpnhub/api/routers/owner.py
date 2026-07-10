@@ -140,8 +140,11 @@ async def monitoring(
     period: str = "24h",
     ident: Identity = Depends(require_user),
     svc: TrafficService = Depends(service(TrafficService)),
+    host: HostMetricsService = Depends(service(HostMetricsService)),
 ) -> dict:
-    # супер-мониторинг: per-client трафик+онлайн по ВСЕМ серверам владельца (агрегаты + сводка)
+    # супер-мониторинг: per-client трафик+онлайн по ВСЕМ серверам владельца (агрегаты + сводка).
+    # На заходе фоново доводим мониторинг там, где статистики ещё нет (fire-and-forget + троттлинг).
+    host.kick_reconcile(ident.id)
     return await svc.global_overview(ident.id, period)
 
 
