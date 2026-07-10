@@ -177,3 +177,23 @@ async def test__purge_old__three_tiers_and_daily_forever(svc, session_maker, uow
     assert res["purged_hourly"] == 1
     assert res["purged_daily"] == 0  # daily_retention=0 → вечно
     assert len(await _daily(uow)) == 1
+
+
+async def test__purge_old__daily_finite_retention_deletes_old_buckets(svc, session_maker, uow):
+    # A2: daily теперь по умолчанию конечный — старые посуточные бакеты чистятся
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79004440007")
+        srv = await make_server(s, owner_id=owner.id)
+
+    svc.settings.traffic_daily_retention_days = 730
+    now = 1_000_000_000.0
+    async with uow.transaction() as tx:
+        tx.session.add(m.TrafficDaily(server_id=srv.id, proto="awg", client_id="A", bucket=int(now - 800 * _DAY)))
+        tx.session.add(m.TrafficDaily(server_id=srv.id, proto="awg", client_id="A", bucket=int(now - 10 * _DAY)))
+        await tx.session.flush()
+
+    res = await svc.purge_old(now=now)
+    assert res["purged_daily"] == 1  # старше 730 дней удалён, свежий остался
+    remaining = await _daily(uow)
+    assert len(remaining) == 1
+    assert remaining[0].bucket == int(now - 10 * _DAY)

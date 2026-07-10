@@ -137,7 +137,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("VPNHUB_TRAFFIC_RAW_RETENTION_DAYS", "VPNHUB_TRAFFIC_RETENTION_DAYS"),
     )
     traffic_hourly_retention_days: int = 90
-    traffic_daily_retention_days: int = 0  # 0 = вечно
+    # посуточные агрегаты крошечные (строка/сутки на клиента), но раньше дефолт был «вечно» (0) —
+    # единственный неограниченно растущий ярус. Дефолт — конечный (2 года); 0 всё ещё = вечно.
+    traffic_daily_retention_days: int = 730
     # клиент считается онлайн, если последний handshake свежее этого окна (сек). Эффективное окно —
     # не короче двух интервалов сбора + запас на rekey WG (см. traffic.effective_online_window).
     traffic_online_window_seconds: int = 300

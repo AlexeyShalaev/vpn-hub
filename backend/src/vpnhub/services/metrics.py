@@ -13,13 +13,13 @@ import time
 from typing import Any
 
 import structlog
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 
 from vpnhub.api.config import Settings
 from vpnhub.infra import metrics as mx
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.uow import Uow
+from vpnhub.services.metrics_retention import chunked_delete
 
 log = structlog.get_logger(__name__)
 
@@ -107,8 +107,6 @@ class MetricsService:
         }
 
     async def purge_old(self) -> int:
-        """Удалить сэмплы старше `metrics_retention_days` (идемпотентно)."""
+        """Удалить сэмплы старше `metrics_retention_days` (идемпотентно, пачками)."""
         cutoff = time.time() - self.settings.metrics_retention_days * 86400
-        async with self.uow.transaction() as tx:
-            res: Any = await tx.session.execute(sa_delete(m.MetricSample).where(m.MetricSample.at < cutoff))
-            return int(res.rowcount or 0)
+        return await chunked_delete(self.uow, m.MetricSample, m.MetricSample.at < cutoff)

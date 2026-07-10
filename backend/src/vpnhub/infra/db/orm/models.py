@@ -286,7 +286,8 @@ class TrafficSample(BaseTable):
 
     __tablename__ = "traffic_samples"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
-    server_id: Mapped[str] = mapped_column(String(32), index=True)
+    # без одиночного index — покрыт композитом (server_id, at) ниже (все чтения фильтруют server_id + at)
+    server_id: Mapped[str] = mapped_column(String(32))
     proto: Mapped[str] = mapped_column(String(24))  # id протокола (awg | awg_legacy | ...)
     client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # pubkey/uuid; None — агрегат
     device_config_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # None → external-клиент
@@ -304,7 +305,9 @@ class TrafficSample(BaseTable):
     # (заведённого мимо панели — без нашего DeviceConfig). Для нон-external имя берётся из device_config.
     ext_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    __table_args__ = (Index("traffic_samples_scope_idx", "server_id", "proto", "client_id"),)
+    # Индекс под реальный запрос дашборда/ретеншна: WHERE server_id IN (...) AND at >= since ORDER BY at.
+    # Старый (server_id, proto, client_id) не использовался ни одним чтением (proto/client не фильтруются).
+    __table_args__ = (Index("traffic_samples_time_idx", "server_id", "at"),)
 
 
 class TrafficPeerState(BaseTable):

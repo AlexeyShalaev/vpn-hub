@@ -12,6 +12,7 @@ from vpnhub.infra.db.orm import models as m
 from vpnhub.services.metrics_retention import (
     SETTING_RAW_RETENTION,
     SETTING_SIZE_CAP_GB,
+    chunked_delete,
     metrics_disk_usage,
     raw_retention_override,
     size_cap_bytes,
@@ -106,3 +107,31 @@ async def test__metrics_disk_usage__reports_rows(uow, session_maker):
         usage = await metrics_disk_usage(tx.session)
     assert usage["rows"]["traffic_samples"] == 1
     assert usage["totalBytes"] is None  # sqlite — размер неизвестен (size-cap только на Postgres)
+
+
+async def _seed_metric_samples(uow, n: int) -> None:
+    async with uow.transaction() as tx:
+        for i in range(n):
+            tx.session.add(m.MetricSample(name="vpnhub_test", labels="", at=float(i), value=1.0))
+        await tx.session.flush()
+
+
+async def _metric_count(uow) -> int:
+    async with uow.query() as tx:
+        return len(list((await tx.session.execute(select(m.MetricSample))).scalars()))
+
+
+async def test__chunked_delete__removes_all_matching_across_batches(uow):
+    await _seed_metric_samples(uow, 25)
+    # at < 20 → 20 строк, пачками по 4 (несколько пачек)
+    deleted = await chunked_delete(uow, m.MetricSample, m.MetricSample.at < 20, batch=4)
+    assert deleted == 20
+    assert await _metric_count(uow) == 5  # остались at 20..24
+
+
+async def test__chunked_delete__max_batches_caps_one_run(uow):
+    await _seed_metric_samples(uow, 10)
+    # batch=2, max_batches=2 → не больше 4 строк за прогон, остальное добьёт следующий вызов
+    deleted = await chunked_delete(uow, m.MetricSample, m.MetricSample.at < 10, batch=2, max_batches=2)
+    assert deleted == 4
+    assert await _metric_count(uow) == 6

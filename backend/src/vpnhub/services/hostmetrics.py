@@ -35,7 +35,7 @@ from vpnhub.infra.provisioning.script_runner import list_known_containers
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.provisioning.stats import STATS_PROTOS, enable_stats
 from vpnhub.infra.uow import Uow
-from vpnhub.services.metrics_retention import raw_retention_override
+from vpnhub.services.metrics_retention import chunked_delete, raw_retention_override
 from vpnhub.services.traffic import (
     TRAFFIC_CONTAINER_DOWN,
     TRAFFIC_OK,
@@ -477,14 +477,15 @@ class HostMetricsService:
         Дни хранения сырья — из UI-override (`raw_retention_override`), иначе env `server_metrics_retention_days`.
         """
         hourly_cutoff = now - self.settings.server_metrics_hourly_retention_days * 86400
-        async with self.uow.transaction() as tx:
+        async with self.uow.query() as tx:
             raw_days = await raw_retention_override(tx.session) or self.settings.server_metrics_retention_days
-            raw_cutoff = now - raw_days * 86400
-            raw: Any = await tx.session.execute(sa_delete(m.ServerMetric).where(m.ServerMetric.at < raw_cutoff))
-            hourly: Any = await tx.session.execute(
-                sa_delete(m.ServerMetricHourly).where(m.ServerMetricHourly.bucket < hourly_cutoff)
-            )
-        return {"purged_raw": int(raw.rowcount or 0), "purged_hourly": int(hourly.rowcount or 0)}
+        raw_cutoff = now - raw_days * 86400
+        # пачками: сырьё хоста тоже высокочурновое (см. chunked_delete)
+        purged_raw = await chunked_delete(self.uow, m.ServerMetric, m.ServerMetric.at < raw_cutoff)
+        purged_hourly = await chunked_delete(
+            self.uow, m.ServerMetricHourly, m.ServerMetricHourly.bucket < hourly_cutoff
+        )
+        return {"purged_raw": purged_raw, "purged_hourly": purged_hourly}
 
     async def enable_stats(self, owner_id: str, sid: str) -> dict[str, str]:
         """Включить точную онлайн-статистику на сервере (owner-scoped).

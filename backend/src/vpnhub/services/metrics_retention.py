@@ -31,6 +31,26 @@ _METRIC_TABLES = (
 _DAY = 86400.0
 
 
+async def chunked_delete(uow: Any, model: Any, condition: Any, *, batch: int = 10_000, max_batches: int = 1_000) -> int:
+    """Удалять строки пачками (каждая — отдельная транзакция), а не одним гигантским DELETE.
+
+    Зачем: ретеншн-DELETE по большой таблице создаёт много мёртвых кортежей разом, держит длинный лок и
+    раздувает индексы. Пачками — короткие локи, autovacuum успевает между ними, место сходится. Порт на
+    PG и SQLite: `DELETE ... WHERE id IN (SELECT id ... LIMIT batch)`. `max_batches` — предохранитель: за
+    прогон срезаем не больше `batch*max_batches`, остаток добьёт следующий тик. Возвращает всего удалено.
+    """
+    total = 0
+    for _ in range(max_batches):
+        async with uow.transaction() as tx:
+            ids = select(model.id).where(condition).limit(batch)
+            res: Any = await tx.session.execute(sa_delete(model).where(model.id.in_(ids)))
+            deleted = int(res.rowcount or 0)
+        total += deleted
+        if deleted < batch:
+            break
+    return total
+
+
 async def raw_retention_override(session: Any) -> int | None:
     """UI-override дней хранения сырья (>0) или None (использовать env-дефолт per-tier)."""
     row = await session.get(m.Setting, SETTING_RAW_RETENTION)

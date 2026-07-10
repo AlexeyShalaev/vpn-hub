@@ -27,7 +27,7 @@ from sqlalchemy import func, select
 from vpnhub.api.config import Settings
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.uow import Uow
-from vpnhub.services.metrics_retention import enforce_size_cap, raw_retention_override
+from vpnhub.services.metrics_retention import chunked_delete, enforce_size_cap, raw_retention_override
 from vpnhub.services.traffic import effective_online_window
 
 log = structlog.get_logger(__name__)
@@ -229,25 +229,17 @@ class TrafficRollupService:
     async def purge_old(self, now: float) -> dict[str, int]:
         """Удалить просроченное по трём ярусам. daily_retention_days=0 → daily хранится вечно.
 
-        Дни хранения сырья берутся из UI-override (`raw_retention_override`), иначе из env.
+        Дни хранения сырья берутся из UI-override (`raw_retention_override`), иначе из env. Удаляем
+        пачками (`chunked_delete`) — ретеншн большого сырья не делает один гигантский DELETE.
         """
-        hourly_cutoff = now - self.settings.traffic_hourly_retention_days * _DAY
-        async with self.uow.transaction() as tx:
+        async with self.uow.query() as tx:
             raw_days = await raw_retention_override(tx.session) or self.settings.traffic_raw_retention_days
-            raw_cutoff = now - raw_days * _DAY
-            raw: Any = await tx.session.execute(sa_delete(m.TrafficSample).where(m.TrafficSample.at < raw_cutoff))
-            hourly: Any = await tx.session.execute(
-                sa_delete(m.TrafficHourly).where(m.TrafficHourly.bucket < hourly_cutoff)
-            )
-            daily_n = 0
-            if self.settings.traffic_daily_retention_days > 0:
-                daily_cutoff = now - self.settings.traffic_daily_retention_days * _DAY
-                daily: Any = await tx.session.execute(
-                    sa_delete(m.TrafficDaily).where(m.TrafficDaily.bucket < daily_cutoff)
-                )
-                daily_n = int(daily.rowcount or 0)
-        return {
-            "purged_raw": int(raw.rowcount or 0),
-            "purged_hourly": int(hourly.rowcount or 0),
-            "purged_daily": daily_n,
-        }
+        raw_cutoff = now - raw_days * _DAY
+        hourly_cutoff = now - self.settings.traffic_hourly_retention_days * _DAY
+        purged_raw = await chunked_delete(self.uow, m.TrafficSample, m.TrafficSample.at < raw_cutoff)
+        purged_hourly = await chunked_delete(self.uow, m.TrafficHourly, m.TrafficHourly.bucket < hourly_cutoff)
+        purged_daily = 0
+        if self.settings.traffic_daily_retention_days > 0:
+            daily_cutoff = now - self.settings.traffic_daily_retention_days * _DAY
+            purged_daily = await chunked_delete(self.uow, m.TrafficDaily, m.TrafficDaily.bucket < daily_cutoff)
+        return {"purged_raw": purged_raw, "purged_hourly": purged_hourly, "purged_daily": purged_daily}
