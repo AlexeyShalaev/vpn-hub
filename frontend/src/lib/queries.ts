@@ -10,6 +10,7 @@ import type {
   Device,
   DeviceLimit,
   FinanceOverview,
+  FxRates,
   Group,
   InvitePeek,
   Me,
@@ -140,6 +141,8 @@ export const deleteChain = (sid: string, chainId: string) =>
 export const listProviders = () => http.get<Provider[]>("/providers");
 // справочные тарифные планы провайдера (для автозаполнения цены/квоты при создании сервера)
 export const providerPlans = (pid: string) => http.get<ProviderPlan[]>(`/providers/${pid}/plans`);
+// курсы валют (кэш ЦБ РФ) — чтобы подбор тарифов сводил цены разных провайдеров к одной валюте
+export const fxRates = () => http.get<FxRates>("/fx/rates");
 
 // per-server ресурсы хоста (CPU/RAM/диск/load/uptime/TCP + онлайн-клиенты) — последние + история за период
 export const serverMetrics = (sid: string, period = "24h") =>

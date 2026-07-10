@@ -3,9 +3,9 @@
 // в monitor-тике по SSH (wg dump / xray statsquery / hysteria trafficStats). Сводка сверху +
 // фильтр по серверу/протоколу + сортировка + честный диагноз сбора. Поллинг как у остального owner-UI.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { LineChart } from "../components/chart";
-import { Btn, Empty, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
+import { Btn, Empty, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { CollectionHealth, MonitoringClient } from "../lib/types";
@@ -201,151 +201,6 @@ export function ClientTrafficModal({
         </div>
       </div>
     </Modal>
-  );
-}
-
-// Мультивыбор через выпадашку с чекбоксами и поиском (удобно, когда вариантов много):
-// пустой набор = «все». Закрывается по клику вне и по Esc.
-function toggleIn(arr: string[], v: string): string[] {
-  return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
-}
-function MultiSelect({
-  label,
-  options,
-  selected,
-  onChange,
-}: {
-  label: string;
-  options: [string, string][]; // [value, human label]
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const shown = query.trim()
-    ? options.filter(([, l]) => l.toLowerCase().includes(query.trim().toLowerCase()))
-    : options;
-  const summary = selected.length === 0 ? "все" : `выбрано ${selected.length}`;
-
-  const trigger: React.CSSProperties = {
-    padding: "6px 10px",
-    borderRadius: "var(--r-sm)",
-    border: `1px solid ${selected.length ? "var(--accent, #3b82f6)" : "var(--border-strong)"}`,
-    background: "var(--surface)",
-    fontSize: 13,
-    color: "var(--text)",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  };
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button type="button" style={trigger} onClick={() => setOpen((o) => !o)}>
-        {label}: <b>{summary}</b> ▾
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            zIndex: 30,
-            top: "100%",
-            left: 0,
-            marginTop: 4,
-            minWidth: 240,
-            maxWidth: 340,
-            background: "var(--surface)",
-            border: "1px solid var(--border-strong)",
-            borderRadius: 10,
-            boxShadow: "var(--shadow, 0 8px 24px rgba(0,0,0,.18))",
-            padding: 6,
-          }}
-        >
-          {options.length > 8 && (
-            <input
-              autoFocus
-              placeholder="Поиск…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "6px 8px",
-                marginBottom: 4,
-                borderRadius: 7,
-                border: "1px solid var(--border)",
-                background: "var(--surface-2)",
-                fontSize: 13,
-                color: "var(--text)",
-              }}
-            />
-          )}
-          <div style={{ maxHeight: 260, overflowY: "auto" }}>
-            {shown.length === 0 ? (
-              <div className="muted-3" style={{ padding: 8, fontSize: 12.5 }}>
-                ничего не найдено
-              </div>
-            ) : (
-              shown.map(([v, l]) => (
-                <label
-                  key={v}
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    padding: "6px 8px",
-                    borderRadius: 7,
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(v)}
-                    onChange={() => onChange(toggleIn(selected, v))}
-                  />
-                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{l}</span>
-                </label>
-              ))
-            )}
-          </div>
-          {selected.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="muted-3"
-              style={{
-                width: "100%",
-                textAlign: "left",
-                padding: "6px 8px",
-                marginTop: 2,
-                fontSize: 12.5,
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              Сбросить «{label.toLowerCase()}»
-            </button>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 

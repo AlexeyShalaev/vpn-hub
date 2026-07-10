@@ -83,6 +83,13 @@ export interface ProviderPlan {
   sourceUrl?: string; // страница провайдера, с которой распарсен тариф
 }
 
+export interface FxRates {
+  base: string; // валюта-база курсов (RUB)
+  rates: Record<string, number>; // сколько base за 1 единицу валюты X (base → 1); напр. rates.USD = RUB за $1
+  at: number; // epoch получения курса
+  source: string; // cbr | cbr-stale | fallback — насколько актуален курс
+}
+
 export interface ServerPrice {
   amount: number; // цена в единицах валюты за период
   currency: string; // RUB | USD | EUR | ...

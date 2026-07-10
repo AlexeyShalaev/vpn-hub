@@ -51,6 +51,14 @@ async def provider_plans(pid: str, _: Identity = Depends(require_user)) -> list[
     return await plans_for(pid)
 
 
+@router.get("/fx/rates")
+async def fx_rates(_: Identity = Depends(require_user)) -> dict[str, Any]:
+    # курсы валют к RUB (кэш ЦБ РФ) — чтобы подбор тарифов сводил цены разных провайдеров к одной валюте
+    from vpnhub.infra.fx import get_rates  # noqa: PLC0415 — лёгкий локальный импорт
+
+    return await get_rates()
+
+
 # ---------- servers ----------
 
 

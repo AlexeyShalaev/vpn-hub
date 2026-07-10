@@ -19,6 +19,49 @@ export function planSpecs(p: ProviderPlan): string {
   return `${p.cpu}vCPU/${p.ramGb}ГБ RAM · ${p.diskGb}ГБ ${p.diskType} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb)}`;
 }
 
+// --- приведение цен тарифов к одной валюте за месяц (для подбора по всем провайдерам) ---
+
+// множитель «цена за период → цена за месяц»: месяц как ~30.44 дня (365.25/12), чтобы день/минута
+// (если провайдер вдруг тарифицирует не помесячно) честно сравнивались с помесячными тарифами.
+const DAYS_PER_MONTH = 365.25 / 12;
+const MONTHLY_FACTOR: Record<string, number> = {
+  month: 1,
+  day: DAYS_PER_MONTH,
+  minute: DAYS_PER_MONTH * 24 * 60,
+};
+
+// цена плана, приведённая к месяцу (в его собственной валюте); неизвестный период считаем месячным
+export function monthlyPrice(price: number, period: string): number {
+  return price * (MONTHLY_FACTOR[period] ?? 1);
+}
+
+// перевод суммы между валютами по курсам ЦБ (rates[X] = сколько base за 1 единицу X, base = 1).
+// Возвращает null, если курс любой из валют неизвестен/некорректен — тогда сравнивать нельзя.
+export function convertAmount(amount: number, from: string, to: string, rates: Record<string, number>): number | null {
+  if (from === to) return amount; // одинаковые валюты — курс не нужен
+  const rFrom = rates[from];
+  const rTo = rates[to];
+  if (!rFrom || !rTo || rFrom <= 0 || rTo <= 0) return null;
+  return (amount * rFrom) / rTo;
+}
+
+// месячная цена плана в выбранной валюте (null, если пересчёт невозможен из-за отсутствия курса)
+export function monthlyPriceIn(plan: ProviderPlan, currency: string, rates: Record<string, number>): number | null {
+  return convertAmount(monthlyPrice(plan.price, plan.period), plan.currency, currency, rates);
+}
+
+const CURRENCY_SYMBOL: Record<string, string> = { RUB: "₽", USD: "$", EUR: "€" };
+export function currencySymbol(code: string): string {
+  return CURRENCY_SYMBOL[code] ?? code;
+}
+
+// сумма с разделителями разрядов и символом валюты; дробные знаки — только для мелких сумм
+export function fmtMoney(amount: number, currency: string): string {
+  const digits = amount >= 100 ? 0 : amount >= 10 ? 1 : 2;
+  const num = amount.toLocaleString("ru-RU", { maximumFractionDigits: digits });
+  return `${num} ${currencySymbol(currency)}`;
+}
+
 export const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
   ahost: "AHost",
   firstbyte: "FirstByte",

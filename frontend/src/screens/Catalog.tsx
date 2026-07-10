@@ -1,12 +1,15 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, useMemo, useState } from "react";
-import { Btn, Empty, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
+import { Btn, Empty, Field, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import {
+  currencySymbol,
   DYNAMIC_PLAN_PROVIDER_LABELS,
   dynamicPlanProviderId,
+  fmtMoney,
   fmtPrice,
   isDynamicPlanProviderId,
+  monthlyPriceIn,
   planProviderDisplayName,
   planSpecs,
 } from "../lib/providerPlans";
@@ -132,9 +135,25 @@ function PlansModal({
 
 // план + к какому провайдеру относится (для агрегированного подбора по всем провайдерам)
 type FinderPlan = ProviderPlan & { providerId: string; providerLabel: string };
+// плюс месячная цена, приведённая к выбранной валюте (null = пересчёт невозможен — нет курса)
+type RankedPlan = FinderPlan & { monthly: number | null };
 
-// Подбор тарифа по всем провайдерам: агрегирует их тарифы и фильтрует по локации, бюджету и RAM.
-// Валюты у провайдеров разные (RUB/USD/EUR) — бюджет применяется в рамках выбранной валюты.
+// число из инпута диапазона; пустое/некорректное → значение по умолчанию (граница «без ограничения»)
+function numOr(text: string, fallback: number): number {
+  const n = Number(text);
+  return text.trim() !== "" && Number.isFinite(n) ? n : fallback;
+}
+
+// честная подпись про актуальность курса, которым сводим цены к одной валюте
+const FX_SOURCE_NOTE: Record<string, string> = {
+  cbr: "Цены сведены к выбранной валюте по курсу ЦБ РФ.",
+  "cbr-stale": "Цены сведены по последнему сохранённому курсу ЦБ РФ.",
+  fallback: "Курс ЦБ РФ недоступен — пересчёт приблизительный.",
+};
+
+// Подбор тарифа по всем провайдерам: агрегирует их тарифы и фильтрует по локациям, провайдерам, RAM и
+// бюджету. Валюты у провайдеров разные (RUB/USD/EUR) — все цены сводятся к одной валюте за месяц по
+// курсу ЦБ РФ (кэшируется на бэкенде), поэтому бюджет и сортировка работают через провайдеров разом.
 function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) => void; onClose: () => void }) {
   const providerIds = Object.keys(DYNAMIC_PLAN_PROVIDER_LABELS);
   const results = useQueries({
@@ -158,80 +177,155 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
     [dataVersion],
   );
 
-  const [region, setRegion] = useState("");
-  const [currency, setCurrency] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
-  const [minRam, setMinRam] = useState("");
+  // курсы к RUB (кэш ЦБ РФ на бэкенде): держим свежими полдня — повторные фетчи ни к чему
+  const fx = useQuery({ queryKey: ["fxRates"], queryFn: q.fxRates, staleTime: 6 * 60 * 60 * 1000, retry: 1 });
+  const rates = fx.data?.rates ?? {};
+
+  const [regions, setRegions] = useState<string[]>([]);
+  const [providerSel, setProviderSel] = useState<string[]>([]);
+  const [ramMin, setRamMin] = useState("");
+  const [ramMax, setRamMax] = useState("");
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
+  const [priceCur, setPriceCur] = useState("RUB");
   const [onlyAvailable, setOnlyAvailable] = useState(true);
 
-  const regions = useMemo(() => [...new Set(all.map((p) => p.region).filter(Boolean))].sort(), [all]);
-  const currencies = useMemo(() => [...new Set(all.map((p) => p.currency).filter(Boolean))].sort(), [all]);
+  const regionOpts = useMemo<[string, string][]>(
+    () =>
+      [...new Set(all.map((p) => p.region).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "ru"))
+        .map((r) => [r, r]),
+    [all],
+  );
+  const providerOpts = useMemo<[string, string][]>(
+    () =>
+      providerIds.filter((id) => all.some((p) => p.providerId === id)).map((id) => [id, planProviderDisplayName(id)]),
+    [all],
+  );
+  // валюты для бюджета: встречающиеся у тарифов + RUB (база), чтобы всегда было к чему сводить
+  const currencyOpts = useMemo(
+    () => [...new Set(["RUB", ...all.map((p) => p.currency).filter(Boolean)])].sort(),
+    [all],
+  );
 
-  const rows = useMemo(() => {
-    const budget = Number(maxPrice) || 0;
-    const ram = Number(minRam) || 0;
+  const rows = useMemo<RankedPlan[]>(() => {
+    const ramLo = numOr(ramMin, 0);
+    const ramHi = numOr(ramMax, Number.POSITIVE_INFINITY);
+    const priceLo = numOr(priceMin, 0);
+    const priceHi = numOr(priceMax, Number.POSITIVE_INFINITY);
+    const hasPriceBound = priceMin.trim() !== "" || priceMax.trim() !== "";
     return all
       .filter((p) => (onlyAvailable ? p.available !== false : true))
-      .filter((p) => (region ? p.region === region : true))
-      .filter((p) => (currency ? p.currency === currency : true))
-      .filter((p) => (budget > 0 && currency ? p.price <= budget : true))
-      .filter((p) => (ram > 0 ? p.ramGb >= ram : true))
-      .sort((a, b) => a.currency.localeCompare(b.currency) || a.price - b.price);
-  }, [all, region, currency, maxPrice, minRam, onlyAvailable]);
+      .filter((p) => (regions.length === 0 ? true : regions.includes(p.region)))
+      .filter((p) => (providerSel.length === 0 ? true : providerSel.includes(p.providerId)))
+      .filter((p) => p.ramGb >= ramLo && p.ramGb <= ramHi)
+      .map((p) => ({ ...p, monthly: monthlyPriceIn(p, priceCur, rates) }))
+      .filter((p) => (hasPriceBound ? p.monthly != null && p.monthly >= priceLo && p.monthly <= priceHi : true))
+      .sort((a, b) => {
+        // дешёвые сверху; тарифы без пересчёта (нет курса валюты) — в конец списка
+        if (a.monthly == null || b.monthly == null) return (a.monthly == null ? 1 : 0) - (b.monthly == null ? 1 : 0);
+        return a.monthly - b.monthly;
+      });
+    // rates берём по версии fx-запроса, чтобы не пересобирать на каждый рендер из-за нового {}-дефолта
+  }, [all, regions, providerSel, ramMin, ramMax, priceMin, priceMax, priceCur, onlyAvailable, fx.dataUpdatedAt]);
 
   // спиннер — только пока данных совсем нет; дальше показываем результаты по мере подгрузки провайдеров
   const loading = all.length === 0 && results.some((r) => r.isLoading);
+  const fxNote = FX_SOURCE_NOTE[fx.data?.source ?? ""] ?? "";
+  const rangeInput: CSSProperties = { width: "100%", minWidth: 0 };
+  const groupLabel: CSSProperties = { fontSize: 12, marginBottom: 5 };
   const filterGrid: CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gap: 10,
   };
   return (
     <Modal title="Подбор тарифа по всем провайдерам" onClose={onClose} wide>
       <div className="stack" style={{ gap: 12 }}>
-        {/* фильтры — адаптивная сетка (используем родной .input, без форс-высоты, иначе текст обрезается) */}
-        <div style={filterGrid}>
-          <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
-            <option value="">Все локации</option>
-            {regions.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="">Любая валюта</option>
-            {currencies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <input
-            className="input"
-            type="number"
-            min={0}
-            placeholder={currency ? `Бюджет, ${currency}` : "Бюджет"}
-            value={maxPrice}
-            disabled={!currency}
-            title={currency ? "" : "Сначала выберите валюту"}
-            onChange={(e) => setMaxPrice(e.target.value)}
-          />
-          <select className="input" value={minRam} onChange={(e) => setMinRam(e.target.value)}>
-            <option value="">RAM любой</option>
-            {[1, 2, 4, 8, 16].map((g) => (
-              <option key={g} value={g}>
-                от {g} ГБ
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-          <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
+        {/* мультивыборы локаций/провайдеров (с поиском) + переключатель наличия */}
+        <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <MultiSelect label="Локации" options={regionOpts} selected={regions} onChange={setRegions} />
+          <MultiSelect label="Провайдеры" options={providerOpts} selected={providerSel} onChange={setProviderSel} />
+          <label
+            className="rowflex"
+            style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center", marginLeft: "auto" }}
+          >
             <input type="checkbox" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
             только в наличии
           </label>
+        </div>
+
+        {/* числовые диапазоны: RAM и бюджет за месяц в выбранной валюте */}
+        <div style={filterGrid}>
+          <div>
+            <div className="muted-3" style={groupLabel}>
+              RAM, ГБ
+            </div>
+            <div className="rowflex" style={{ gap: 6 }}>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                placeholder="от"
+                value={ramMin}
+                onChange={(e) => setRamMin(e.target.value)}
+                style={rangeInput}
+              />
+              <input
+                className="input"
+                type="number"
+                min={0}
+                placeholder="до"
+                value={ramMax}
+                onChange={(e) => setRamMax(e.target.value)}
+                style={rangeInput}
+              />
+            </div>
+          </div>
+          <div style={{ gridColumn: "span 2" }}>
+            <div className="muted-3" style={groupLabel}>
+              Бюджет за месяц
+            </div>
+            <div className="rowflex" style={{ gap: 6 }}>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                placeholder="от"
+                value={priceMin}
+                onChange={(e) => setPriceMin(e.target.value)}
+                style={rangeInput}
+              />
+              <input
+                className="input"
+                type="number"
+                min={0}
+                placeholder="до"
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+                style={rangeInput}
+              />
+              <select
+                className="input"
+                value={priceCur}
+                onChange={(e) => setPriceCur(e.target.value)}
+                style={{ width: "auto", flex: "none" }}
+              >
+                {currencyOpts.map((c) => (
+                  <option key={c} value={c}>
+                    {currencySymbol(c)} {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <span className="muted-3" style={{ fontSize: 12 }}>
+            {fxNote}
+          </span>
+          <span className="muted-3" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
             Найдено: {rows.length}
           </span>
         </div>
@@ -241,9 +335,9 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
             <Spinner />
           </div>
         ) : rows.length === 0 ? (
-          <Empty title="Под фильтры ничего не нашлось" sub="Смягчите условия — например, бюджет или локацию." />
+          <Empty title="Под фильтры ничего не нашлось" sub="Смягчите условия — например, бюджет, RAM или локации." />
         ) : (
-          <div className="stack" style={{ gap: 8, maxHeight: "60vh", overflowY: "auto" }}>
+          <div className="stack" style={{ gap: 8, maxHeight: "56vh", overflowY: "auto" }}>
             {rows.map((p) => (
               <div
                 key={`${p.providerId}:${p.id}:${p.region}:${p.name}`}
@@ -269,7 +363,14 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
                   </div>
                 </div>
                 <div className="rowflex" style={{ gap: 10, alignItems: "center", marginLeft: "auto" }}>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{fmtPrice(p)}</div>
+                  <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{fmtPrice(p)}</div>
+                    {p.monthly != null && p.currency !== priceCur && (
+                      <div className="muted-3" style={{ fontSize: 11.5 }}>
+                        ≈ {fmtMoney(p.monthly, priceCur)}/мес
+                      </div>
+                    )}
+                  </div>
                   {p.sourceUrl && (
                     <a href={p.sourceUrl} target="_blank" rel="noopener">
                       <Btn variant="ghost" sm>
