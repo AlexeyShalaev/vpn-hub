@@ -34,6 +34,7 @@ from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.remediation import FIXES
 from vpnhub.infra.provisioning.script_runner import already_installed_containers, remove_container
 from vpnhub.infra.provisioning.ssh import ServerCreds, SshClient, SshError
+from vpnhub.infra.provisioning.stats import STATS_PROTOS, enable_stats
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
 
@@ -187,12 +188,9 @@ class ProvisioningService:
                 # точная статистика (Stats API/trafficStats) — включаем сразу при установке, чтобы
                 # per-client трафик/онлайн собирался с первого клиента (не дожидаясь ручной кнопки).
                 # best-effort: провал не роняет установку; рестарт незаметен — клиентов ещё нет.
-                if spec.kind in ("xray", "hysteria2") and self.settings.stats_auto_enable:
+                if spec.id in STATS_PROTOS and self.settings.stats_auto_enable:
                     try:
-                        if spec.kind == "xray":
-                            await XrayProvisioner(spec).enable_stats(ssh)
-                        else:
-                            await HysteriaProvisioner(spec).enable_stats(ssh)
+                        await enable_stats(spec, ssh)
                     except Exception as e:
                         log.warning("enable_stats on install failed", server=server_id, proto=proto_id, error=str(e))
             async with self.uow.transaction() as tx:

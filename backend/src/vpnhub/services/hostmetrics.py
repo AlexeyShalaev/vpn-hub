@@ -37,10 +37,9 @@ from vpnhub.infra.hostmetrics import (
 )
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.creds import server_creds
-from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
-from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.script_runner import list_known_containers
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
+from vpnhub.infra.provisioning.stats import STATS_PROTOS, enable_stats
 from vpnhub.infra.uow import Uow
 from vpnhub.services.traffic import (
     TRAFFIC_CONTAINER_DOWN,
@@ -56,9 +55,7 @@ from vpnhub.services.traffic_rollup import bucket_start
 
 log = structlog.get_logger(__name__)
 
-# протоколы с включаемым stats-API (точный per-user online): xray/xray_xhttp — Xray Stats API,
-# hysteria2 — trafficStats. awg/awg_legacy считаются по handshakes (включать нечего), outline/openvpn — нет.
-_STATS_PROTOS = ("xray", "xray_xhttp", "hysteria2")
+# STATS_PROTOS — единый список протоколов с включаемой статистикой (см. infra.provisioning.stats)
 
 # авто-heal точной статистики: если при сборе stats выключены, включаем их (идемпотентно) прямо в
 # monitor-тике. Троттлинг попыток per (server, proto), чтобы не рестартить контейнер каждый тик.
@@ -288,17 +285,14 @@ class HostMetricsService:
         Троттлинг per (server, proto) на `_STATS_HEAL_RETRY_SECONDS`, чтобы не рестартить контейнер
         каждый тик. Возвращает True, если попытка сделана (данные появятся со следующего сбора).
         """
-        if spec.id not in _STATS_PROTOS or not self.settings.stats_auto_enable:
+        if spec.id not in STATS_PROTOS or not self.settings.stats_auto_enable:
             return False
         key = (server_id, spec.id)
         if now - _STATS_HEAL_ATTEMPTS.get(key, 0.0) < _STATS_HEAL_RETRY_SECONDS:
             return False
         _STATS_HEAL_ATTEMPTS[key] = now
         try:
-            if spec.kind == "xray":
-                await XrayProvisioner(spec).enable_stats(ssh)
-            else:
-                await HysteriaProvisioner(spec).enable_stats(ssh)
+            await enable_stats(spec, ssh)
         except (SshError, OSError) as e:  # heal best-effort — следующая попытка через TTL
             log.warning("stats auto-enable failed", server=server_id, proto=spec.id, error=str(e))
             return False
@@ -526,21 +520,16 @@ class HostMetricsService:
             server = await tx.servers.get(sid)
             if not server or server.owner_user_id != owner_id:
                 raise NotFound("Сервер не найден")
-            protos = [sp.proto for sp in server.protocols if sp.installed and sp.proto in _STATS_PROTOS]
+            protos = [sp.proto for sp in server.protocols if sp.installed and sp.proto in STATS_PROTOS]
             creds = server_creds(server, self.settings.secret_key)
         result: dict[str, str] = {}
         if not protos:
             return result
         async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
             for proto in protos:
-                spec = pc.spec_by_id(proto)
                 try:
-                    if proto in ("xray", "xray_xhttp"):
-                        changed = await XrayProvisioner(spec).enable_stats(ssh)
-                        result[proto] = "enabled" if changed else "already"
-                    else:  # hysteria2
-                        await HysteriaProvisioner(spec).enable_stats(ssh)
-                        result[proto] = "enabled"
+                    changed = await enable_stats(pc.spec_by_id(proto), ssh)
+                    result[proto] = "enabled" if changed else "already"
                 except (SshError, OSError) as e:
                     log.warning("enable_stats failed", server=sid, proto=proto, error=str(e))
                     result[proto] = "error"
