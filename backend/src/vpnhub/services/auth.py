@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from vpnhub.api.config import Settings
 from vpnhub.common.serializers import session_to_dict
+from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound, Unauthorized
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.security import (
@@ -22,7 +23,6 @@ from vpnhub.infra.security import (
     verify_password,
 )
 from vpnhub.infra.uow import Uow, UowTransaction
-from vpnhub.services import audit_types
 
 _SEEN_THROTTLE = 60  # не чаще раза в минуту обновляем «последняя активность» сессии
 

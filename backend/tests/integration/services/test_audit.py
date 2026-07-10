@@ -18,7 +18,7 @@ from tests.factories.orm import (
     make_user,
     seed,
 )
-from vpnhub.services import audit_types
+from vpnhub.core import audit_types
 from vpnhub.services.audit import AuditService
 from vpnhub.services.auth import AuthService, Identity
 from vpnhub.services.groups import GroupService

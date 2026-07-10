@@ -12,6 +12,7 @@ import time
 from sqlalchemy import select
 
 from vpnhub.api.config import Settings
+from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
@@ -19,7 +20,6 @@ from vpnhub.infra.provisioning.provisioners.base import read_clients_table
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.security import decrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
-from vpnhub.services import audit_types
 from vpnhub.services.limits import used_clients
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 

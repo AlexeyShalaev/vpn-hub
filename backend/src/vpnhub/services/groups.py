@@ -7,11 +7,11 @@ import time
 
 from vpnhub.api.config import Settings
 from vpnhub.common.serializers import group_to_dict
+from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.security import gen_token, normalize_phone
 from vpnhub.infra.uow import Uow, UowTransaction
-from vpnhub.services import audit_types
 from vpnhub.services.provisioning import ProvisioningService
 
 

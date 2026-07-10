@@ -13,6 +13,7 @@ from typing import Any
 
 from vpnhub.api.config import Settings
 from vpnhub.common.catalog import PROTOS, clients_for
+from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, Forbidden, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
@@ -22,7 +23,6 @@ from vpnhub.infra.provisioning.provisioners import ClientMaterial
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
-from vpnhub.services import audit_types
 from vpnhub.services.access import effective_access
 from vpnhub.services.limits import (
     effective_byte_limit,

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import time
 
+from vpnhub.core import audit_types
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import component_versions, remediation
-from vpnhub.services import audit_types
 
 
 def rel_time(epoch: float | None) -> str | None:
