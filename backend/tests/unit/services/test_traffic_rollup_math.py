@@ -11,9 +11,22 @@ from vpnhub.services.traffic_rollup import (
     aggregate_rollups,
     aggregate_samples,
     bucket_start,
+    recompute_from,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test__recompute_from__clamps_both_sides() -> None:
+    # источник пуст → нечего пересчитывать
+    assert recompute_from(None, None, _HOUR) is None
+    assert recompute_from(100, None, _HOUR) is None
+    # ярус пуст (watermark None) → от начала бакета старейшего сырья
+    assert recompute_from(None, 3700.0, _HOUR) == 3600
+    # watermark свежее oldest → берём watermark (двигаем окно вперёд)
+    assert recompute_from(7200, 100.0, _HOUR) == 7200
+    # oldest свежее watermark (сырьё спуржено) → не занижаем ниже oldest-бакета
+    assert recompute_from(0, 100000.0, _HOUR) == bucket_start(100000.0, _HOUR)
 
 
 def _sample(**kw):

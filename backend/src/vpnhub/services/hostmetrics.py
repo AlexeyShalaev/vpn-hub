@@ -51,7 +51,7 @@ from vpnhub.services.traffic import (
     TrafficService,
     effective_online_window,
 )
-from vpnhub.services.traffic_rollup import bucket_start
+from vpnhub.services.traffic_rollup import bucket_start, recompute_from
 
 log = structlog.get_logger(__name__)
 
@@ -475,17 +475,13 @@ class HostMetricsService:
                 await tx.session.execute(select(func.max(m.ServerMetricHourly.bucket)))
             ).scalar_one_or_none()
             oldest_at = (await tx.session.execute(select(func.min(m.ServerMetric.at)))).scalar_one_or_none()
-            if oldest_at is None:
+            rf = recompute_from(watermark, oldest_at, 3600)
+            if rf is None:
                 return 0
-            recompute_from = max(watermark or 0, bucket_start(oldest_at, 3600))
-            await tx.session.execute(
-                sa_delete(m.ServerMetricHourly).where(m.ServerMetricHourly.bucket >= recompute_from)
-            )
+            await tx.session.execute(sa_delete(m.ServerMetricHourly).where(m.ServerMetricHourly.bucket >= rf))
             rows = list(
                 (
-                    await tx.session.execute(
-                        select(m.ServerMetric).where(m.ServerMetric.at >= recompute_from)
-                    )
+                    await tx.session.execute(select(m.ServerMetric).where(m.ServerMetric.at >= rf))
                 )
                 .scalars()
                 .all()

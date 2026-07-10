@@ -41,6 +41,18 @@ def bucket_start(at: float, size: int) -> int:
     return ts - ts % size
 
 
+def recompute_from(watermark: int | None, oldest_source: float | None, size: int) -> int | None:
+    """Нижняя граница «пересчёта хвоста» delete+insert: `max(watermark, bucket_start(oldest))`.
+
+    Двусторонний кламп: watermark двигает окно вперёд, oldest_source не даёт пересчитать бакеты,
+    чьё сырьё уже удалено ретеншном (иначе delete+insert занулил бы историю). Источник пуст
+    (`oldest_source is None`) → None (пересчитывать нечего). Общая для всех ярусных rollup-ов.
+    """
+    if oldest_source is None:
+        return None
+    return max(watermark or 0, bucket_start(oldest_source, size))
+
+
 def _sample_online(online: bool | None, last_handshake: float | None, at: float, window: int) -> bool:
     """Считать ли сырой сэмпл онлайном: флаг движка (xray/hysteria) или свежесть handshake (wg)."""
     if online is not None:
@@ -138,10 +150,10 @@ class TrafficRollupService:
                 await tx.session.execute(select(func.max(m.TrafficHourly.bucket)))
             ).scalar_one_or_none()
             oldest_at = (await tx.session.execute(select(func.min(m.TrafficSample.at)))).scalar_one_or_none()
-            if oldest_at is None:
+            rf = recompute_from(watermark, oldest_at, _HOUR)
+            if rf is None:
                 return 0  # сырья нет — нечего сворачивать
-            recompute_from = max(watermark or 0, bucket_start(oldest_at, _HOUR))
-            await tx.session.execute(sa_delete(m.TrafficHourly).where(m.TrafficHourly.bucket >= recompute_from))
+            await tx.session.execute(sa_delete(m.TrafficHourly).where(m.TrafficHourly.bucket >= rf))
             rows = (
                 await tx.session.execute(
                     select(
@@ -156,7 +168,7 @@ class TrafficRollupService:
                         m.TrafficSample.online,
                         m.TrafficSample.last_handshake,
                     ).where(
-                        m.TrafficSample.at >= recompute_from,
+                        m.TrafficSample.at >= rf,
                         m.TrafficSample.client_id.isnot(None),
                     )
                 )
@@ -172,15 +184,15 @@ class TrafficRollupService:
             oldest_bucket = (
                 await tx.session.execute(select(func.min(m.TrafficHourly.bucket)))
             ).scalar_one_or_none()
-            if oldest_bucket is None:
+            rf = recompute_from(watermark, oldest_bucket, _DAY)
+            if rf is None:
                 return 0
-            recompute_from = max(watermark or 0, bucket_start(oldest_bucket, _DAY))
-            await tx.session.execute(sa_delete(m.TrafficDaily).where(m.TrafficDaily.bucket >= recompute_from))
+            await tx.session.execute(sa_delete(m.TrafficDaily).where(m.TrafficDaily.bucket >= rf))
             rows = (
-                await tx.session.execute(
-                    select(m.TrafficHourly).where(m.TrafficHourly.bucket >= recompute_from)
-                )
-            ).scalars().all()
+                (await tx.session.execute(select(m.TrafficHourly).where(m.TrafficHourly.bucket >= rf)))
+                .scalars()
+                .all()
+            )
             aggs = aggregate_rollups(rows, _DAY)
             await self._insert(tx, m.TrafficDaily, aggs)
             return len(aggs)
