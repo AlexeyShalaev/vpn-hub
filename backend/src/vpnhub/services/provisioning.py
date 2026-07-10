@@ -24,6 +24,7 @@ from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning import errors, templates
 from vpnhub.infra.provisioning.awg_params import AwgParams
+from vpnhub.infra.provisioning.creds import server_creds
 from vpnhub.infra.provisioning.provisioners import ClientMaterial, ConfigArtifact, ServerMaterial
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
@@ -68,13 +69,7 @@ class ProvisioningService:
     # ------------------------------------------------------------ helpers ---
 
     def creds(self, server: m.Server) -> ServerCreds:
-        return ServerCreds(
-            host=server.ip,
-            port=int(server.ssh_port or 22),
-            username=server.ssh_user or "root",
-            auth=server.ssh_auth or "key",
-            secret=decrypt_secret(self.settings.secret_key, server.ssh_secret_encrypted or ""),
-        )
+        return server_creds(server, self.settings.secret_key)
 
     def _enc(self, obj: dict) -> str:
         return encrypt_secret(self.settings.secret_key, json.dumps(obj))

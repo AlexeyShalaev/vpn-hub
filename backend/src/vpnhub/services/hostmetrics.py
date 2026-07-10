@@ -36,11 +36,11 @@ from vpnhub.infra.hostmetrics import (
     parse_online_clients,
 )
 from vpnhub.infra.provisioning import constants as pc
+from vpnhub.infra.provisioning.creds import server_creds
 from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.script_runner import list_known_containers
-from vpnhub.infra.provisioning.ssh import ServerCreds, SshClient, SshError
-from vpnhub.infra.security import decrypt_secret
+from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.uow import Uow
 from vpnhub.services.traffic import (
     TRAFFIC_CONTAINER_DOWN,
@@ -70,16 +70,6 @@ _STATS_HEAL_RETRY_SECONDS = 3600.0
 def _hourly_id() -> str:
     """id для строки server_metrics_hourly (как models._id, без импорта приватного хелпера)."""
     return uuid.uuid4().hex[:16]
-
-
-def _creds(settings: Settings, server: m.Server) -> ServerCreds:
-    return ServerCreds(
-        host=server.ip,
-        port=int(server.ssh_port or 22),
-        username=server.ssh_user or "root",
-        auth=server.ssh_auth or "key",
-        secret=decrypt_secret(settings.secret_key, server.ssh_secret_encrypted or ""),
-    )
 
 
 async def collect_host_metrics(ssh: Any, *, count_clients: bool = True) -> HostMetrics:
@@ -239,7 +229,7 @@ class HostMetricsService:
         ok-протоколам и health-статусы. Сбой SSH → сервер недоступен: метрики не пишем, health всех
         installed-протоколов = unreachable (чтобы UI показал «сервер недоступен», а не «нет данных»).
         """
-        creds = _creds(self.settings, server)
+        creds = server_creds(server, self.settings.secret_key)
         now = time.time()
         window = effective_online_window(self.settings)
         try:
@@ -537,7 +527,7 @@ class HostMetricsService:
             if not server or server.owner_user_id != owner_id:
                 raise NotFound("Сервер не найден")
             protos = [sp.proto for sp in server.protocols if sp.installed and sp.proto in _STATS_PROTOS]
-            creds = _creds(self.settings, server)
+            creds = server_creds(server, self.settings.secret_key)
         result: dict[str, str] = {}
         if not protos:
             return result
