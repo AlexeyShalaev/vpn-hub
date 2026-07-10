@@ -48,28 +48,31 @@ function groupByDevice(configs: ServerClientConfig[]): [string, ServerClientConf
   return [...m];
 }
 
+// подпись групповой кнопки — явная по области (устройство / пользователь), чтобы было понятно, что затронет
+const GROUP_LABEL = {
+  device: { pause: "Пауза всех конфигов на устройстве", resume: "Продолжить все конфиги на устройстве" },
+  user: { pause: "Пауза всех конфигов пользователя", resume: "Продолжить все конфиги пользователя" },
+} as const;
+
 // Кнопка групповой паузы/продолжения (для устройства или всего пользователя). Скрыта, если нечего делать.
 function GroupPauseBtn({
   configs,
+  scope,
   disabled,
   onRun,
 }: {
   configs: ServerClientConfig[];
+  scope: "device" | "user";
   disabled: boolean;
   onRun: (a: GroupPause) => void;
 }) {
   const action = groupPauseAction(configs);
   if (!action) return null;
+  const label = GROUP_LABEL[scope][action.pause ? "pause" : "resume"];
   return (
-    <Btn
-      variant="ghost"
-      sm
-      disabled={disabled}
-      title={action.pause ? "Приостановить все протоколы" : "Возобновить все протоколы"}
-      onClick={() => onRun(action)}
-    >
+    <Btn variant="ghost" sm disabled={disabled} title={label} onClick={() => onRun(action)}>
       <Icon name={action.pause ? "stop" : "play"} size={14} />
-      {action.pause ? "Пауза всех" : "Продолжить все"}
+      {label}
     </Btn>
   );
 }
@@ -246,8 +249,13 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                       ))}
                       {!u.hasAccess && <span style={{ ...chip, color: "var(--warn)" }}>нет доступа</span>}
                     </div>
-                    {/* пауза/продолжение всех протоколов всего пользователя */}
-                    <GroupPauseBtn configs={u.configs} disabled={bulkPauseMut.isPending} onRun={bulkPauseMut.mutate} />
+                    {/* пауза/продолжение всех конфигов всего пользователя */}
+                    <GroupPauseBtn
+                      configs={u.configs}
+                      scope="user"
+                      disabled={bulkPauseMut.isPending}
+                      onRun={bulkPauseMut.mutate}
+                    />
                   </div>
                 </div>
 
@@ -285,6 +293,7 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                           </div>
                           <GroupPauseBtn
                             configs={configs}
+                            scope="device"
                             disabled={bulkPauseMut.isPending}
                             onRun={bulkPauseMut.mutate}
                           />
