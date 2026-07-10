@@ -37,6 +37,7 @@ from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.script_runner import list_known_containers
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
+from vpnhub.infra.provisioning.stats import STATS_PROTOS, enable_stats
 from vpnhub.infra.security import encrypt_secret
 from vpnhub.infra.uow import Uow
 from vpnhub.services.limits import effective_byte_limit, period_start, period_usage
@@ -108,6 +109,10 @@ class SyncService:
             pending_by_proto = {
                 p.proto: parse_pending(p.pending_revoke_json) for p in server.protocols if p.pending_revoke_json
             }
+            # протоколы, у которых мониторинг УЖЕ работает (последний сбор был ok) — их sync не трогает.
+            # Для остальных stats-протоколов sync доводит мониторинг (включает точную статистику), чтобы
+            # усыновлённые/внешне поставленные протоколы не остались без метрик (см. _ensure_monitoring).
+            stats_ok = {p.proto for p in server.protocols if p.traffic_status == "ok"}
 
         # ── фаза 2: чтение реального состояния сервера по SSH (best-effort) ──
         adopted: dict[str, tuple[dict, str | None]] = {}
@@ -142,6 +147,9 @@ class SyncService:
                                 version_by_proto[pid] = ver
                         except Exception as e:
                             log.warning("sync: version read failed", server=server_id, proto=pid, error=str(e))
+                        # доводим мониторинг: включаем точную статистику, если её ещё нет (усыновлённые/
+                        # внешне поставленные протоколы через _install_one не проходили). Идемпотентно.
+                        await self._ensure_monitoring(ssh, server_id, spec, stats_ok)
                     obs = ProtocolObservation(pid, present, running, readable, client_ids)
                     observations[pid] = obs
                     # гасим долг на снятие для протокола в рамках уже открытой SSH-сессии
@@ -273,6 +281,21 @@ class SyncService:
         material = await XrayProvisioner(spec).adopt(ssh)
         adopted[spec.id] = (material.as_dict(), None)
         return XrayProvisioner(spec, material=material)
+
+    async def _ensure_monitoring(self, ssh: SshClient, server_id: str, spec: Any, stats_ok: set[str]) -> None:
+        """Доводит мониторинг протокола: включает точную статистику, если её ещё нет (best-effort).
+
+        Гарантия «система всегда доделывает мониторинг»: усыновлённые/внешне поставленные stats-протоколы
+        не проходили `_install_one` — здесь sync их подхватывает. Пропускаем, если мониторинг уже работал
+        (`traffic_status == "ok"`), чтобы не дёргать контейнер каждый тик. Гейт `stats_auto_enable`.
+        `enable_stats` идемпотентен: рестарт только при реальном изменении конфига.
+        """
+        if spec.id not in STATS_PROTOS or spec.id in stats_ok or not self.settings.stats_auto_enable:
+            return
+        try:
+            await enable_stats(spec, ssh)
+        except Exception as e:
+            log.warning("sync: ensure monitoring failed", server=server_id, proto=spec.id, error=str(e))
 
     async def _apply(
         self,
