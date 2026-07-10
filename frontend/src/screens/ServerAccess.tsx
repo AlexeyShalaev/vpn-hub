@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Btn, Field, Icon, Modal, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import * as q from "../lib/queries";
+import type { ServerClientConfig } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
 
@@ -20,6 +21,58 @@ const chip = {
   background: "var(--surface-2)",
   color: "var(--text-2)",
 };
+
+interface GroupPause {
+  pause: boolean; // true — приостановить активные, false — возобновить приостановленные
+  ids: string[];
+}
+
+// групповое действие паузы: есть активные → «приостановить все»; иначе есть на паузе → «возобновить все».
+// suspended (лимит трафика) и revoked не трогаем — ими управляет система/владелец отдельно.
+function groupPauseAction(configs: ServerClientConfig[]): GroupPause | null {
+  const pausable = configs.filter((c) => c.status === "active").map((c) => c.id);
+  if (pausable.length) return { pause: true, ids: pausable };
+  const resumable = configs.filter((c) => c.status === "paused").map((c) => c.id);
+  if (resumable.length) return { pause: false, ids: resumable };
+  return null;
+}
+
+// конфиги пользователя, сгруппированные по устройству (порядок первого появления устройства)
+function groupByDevice(configs: ServerClientConfig[]): [string, ServerClientConfig[]][] {
+  const m = new Map<string, ServerClientConfig[]>();
+  for (const c of configs) {
+    const list = m.get(c.device);
+    if (list) list.push(c);
+    else m.set(c.device, [c]);
+  }
+  return [...m];
+}
+
+// Кнопка групповой паузы/продолжения (для устройства или всего пользователя). Скрыта, если нечего делать.
+function GroupPauseBtn({
+  configs,
+  disabled,
+  onRun,
+}: {
+  configs: ServerClientConfig[];
+  disabled: boolean;
+  onRun: (a: GroupPause) => void;
+}) {
+  const action = groupPauseAction(configs);
+  if (!action) return null;
+  return (
+    <Btn
+      variant="ghost"
+      sm
+      disabled={disabled}
+      title={action.pause ? "Приостановить все протоколы" : "Возобновить все протоколы"}
+      onClick={() => onRun(action)}
+    >
+      <Icon name={action.pause ? "stop" : "play"} size={14} />
+      {action.pause ? "Пауза всех" : "Продолжить все"}
+    </Btn>
+  );
+}
 
 export function ServerAccessSections({ serverId }: { serverId: string }) {
   const toast = useStore((s) => s.toast);
@@ -64,6 +117,20 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
     onSuccess: (_r, v) => {
       invalidate();
       toast(v.pause ? "Конфиг приостановлен" : "Конфиг возобновлён");
+    },
+    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+  });
+  // групповая пауза/продолжение (устройство или весь пользователь) — те же suspend/resume, но пачкой.
+  // Последовательно: конфиг-файловые протоколы (xray/hysteria2) правят один server.json — параллель бы гонялась.
+  const bulkPauseMut = useMutation({
+    mutationFn: async (v: GroupPause) => {
+      for (const id of v.ids) {
+        await (v.pause ? q.pauseServerClient(serverId, id) : q.resumeServerClient(serverId, id));
+      }
+    },
+    onSuccess: (_r, v) => {
+      invalidate();
+      toast(v.pause ? `Приостановлено: ${v.ids.length}` : `Возобновлено: ${v.ids.length}`);
     },
     onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
   });
@@ -163,23 +230,24 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                 className="stack"
                 style={{ border: "1px solid var(--border)", borderRadius: 13, padding: 13, gap: 10 }}
               >
-                <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>{u.name}</div>
                     <div className="muted-3" style={{ fontSize: 12.5 }}>
                       {u.phone}
                     </div>
                   </div>
-                  <div
-                    className="rowflex"
-                    style={{ gap: 6, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "55%" }}
-                  >
-                    {u.groups.map((gn) => (
-                      <span key={gn} style={chip}>
-                        {gn}
-                      </span>
-                    ))}
-                    {!u.hasAccess && <span style={{ ...chip, color: "var(--warn)" }}>нет доступа</span>}
+                  <div className="stack" style={{ gap: 6, alignItems: "flex-end", maxWidth: "60%" }}>
+                    <div className="rowflex" style={{ gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {u.groups.map((gn) => (
+                        <span key={gn} style={chip}>
+                          {gn}
+                        </span>
+                      ))}
+                      {!u.hasAccess && <span style={{ ...chip, color: "var(--warn)" }}>нет доступа</span>}
+                    </div>
+                    {/* пауза/продолжение всех протоколов всего пользователя */}
+                    <GroupPauseBtn configs={u.configs} disabled={bulkPauseMut.isPending} onRun={bulkPauseMut.mutate} />
                   </div>
                 </div>
 
@@ -188,61 +256,95 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                     конфигов ещё нет
                   </div>
                 ) : (
-                  <div className="stack" style={{ gap: 6 }}>
-                    {u.configs.map((c) => (
-                      <div
-                        key={c.id}
-                        className="rowflex"
-                        style={{
-                          justifyContent: "space-between",
-                          background: "var(--surface-2)",
-                          borderRadius: 10,
-                          padding: "8px 11px",
-                          flexWrap: "nowrap",
-                        }}
-                      >
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 600, wordBreak: "break-word" }}>
-                            {c.clientName || c.device}
-                          </div>
-                          <div className="muted-3" style={{ fontSize: 12 }}>
-                            {c.device} · {c.proto}
-                            {c.status === "paused"
-                              ? " · на паузе"
-                              : c.status === "suspended"
-                                ? " · лимит трафика"
-                                : c.status === "revoked"
-                                  ? " · отозван"
-                                  : ""}
-                          </div>
-                        </div>
-                        <div className="rowflex" style={{ flexWrap: "nowrap" }}>
-                          {c.status !== "revoked" && (
-                            <Btn
-                              variant="ghost"
-                              sm
-                              disabled={pauseMut.isPending}
-                              title={c.status === "active" ? "Приостановить конфиг" : "Возобновить конфиг"}
-                              onClick={() => pauseMut.mutate({ cid: c.id, pause: c.status === "active" })}
-                            >
-                              <Icon name={c.status === "active" ? "stop" : "play"} size={15} />
-                            </Btn>
-                          )}
-                          <Btn
-                            variant="ghost"
-                            sm
-                            onClick={() => setRename({ cid: c.id, name: c.clientName || c.device })}
+                  <div className="stack" style={{ gap: 12 }}>
+                    {groupByDevice(u.configs).map(([device, configs]) => (
+                      <div key={device} className="stack" style={{ gap: 6 }}>
+                        {/* дивайдер устройства + пауза/продолжение всех протоколов этого устройства */}
+                        <div
+                          className="rowflex"
+                          style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}
+                        >
+                          <div
+                            className="muted-3"
+                            style={{
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              textTransform: "uppercase",
+                              letterSpacing: ".04em",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              minWidth: 0,
+                            }}
                           >
-                            <Icon name="edit" size={15} />
-                          </Btn>
-                          <Btn
-                            variant="ghost"
-                            sm
-                            onClick={() => setRevoke({ cid: c.id, label: c.clientName || c.device })}
-                          >
-                            <Icon name="trash" size={15} />
-                          </Btn>
+                            <Icon name="devices" size={13} />
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {device}
+                            </span>
+                            <span style={{ opacity: 0.7 }}>· {configs.length}</span>
+                          </div>
+                          <GroupPauseBtn
+                            configs={configs}
+                            disabled={bulkPauseMut.isPending}
+                            onRun={bulkPauseMut.mutate}
+                          />
                         </div>
+                        {configs.map((c) => (
+                          <div
+                            key={c.id}
+                            className="rowflex"
+                            style={{
+                              justifyContent: "space-between",
+                              background: "var(--surface-2)",
+                              borderRadius: 10,
+                              padding: "8px 11px",
+                              flexWrap: "nowrap",
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13.5, fontWeight: 600, wordBreak: "break-word" }}>
+                                {c.clientName || c.device}
+                              </div>
+                              <div className="muted-3" style={{ fontSize: 12 }}>
+                                {c.proto}
+                                {c.status === "paused"
+                                  ? " · на паузе"
+                                  : c.status === "suspended"
+                                    ? " · лимит трафика"
+                                    : c.status === "revoked"
+                                      ? " · отозван"
+                                      : ""}
+                              </div>
+                            </div>
+                            <div className="rowflex" style={{ flexWrap: "nowrap" }}>
+                              {c.status !== "revoked" && (
+                                <Btn
+                                  variant="ghost"
+                                  sm
+                                  disabled={pauseMut.isPending}
+                                  title={c.status === "active" ? "Приостановить конфиг" : "Возобновить конфиг"}
+                                  onClick={() => pauseMut.mutate({ cid: c.id, pause: c.status === "active" })}
+                                >
+                                  <Icon name={c.status === "active" ? "stop" : "play"} size={15} />
+                                </Btn>
+                              )}
+                              <Btn
+                                variant="ghost"
+                                sm
+                                onClick={() => setRename({ cid: c.id, name: c.clientName || c.device })}
+                              >
+                                <Icon name="edit" size={15} />
+                              </Btn>
+                              <Btn
+                                variant="ghost"
+                                sm
+                                onClick={() => setRevoke({ cid: c.id, label: c.clientName || c.device })}
+                              >
+                                <Icon name="trash" size={15} />
+                              </Btn>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
