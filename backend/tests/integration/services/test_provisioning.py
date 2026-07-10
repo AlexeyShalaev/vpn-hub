@@ -179,6 +179,96 @@ async def test__install_one__ssh_failure__marks_protocol_error(uow, settings, se
 # ---- remove_protocol (пер-протокольное удаление + отзыв конфигов) ---------
 
 
+async def test__install_one__xray__enables_stats_in_same_session(uow, settings, session_maker, monkeypatch):
+    """Успешная установка xray включает точную статистику (Stats API) в той же SSH-сессии."""
+    from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
+    from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
+
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79003330001")
+        server = await make_server(s, owner_id=owner.id)
+
+    calls: list[str] = []
+
+    async def fake_install(self, ssh, ip, port, site=None):
+        return ServerMaterial(xray_public_key="PUB", short_id="SID", bootstrap_uuid="UU")
+
+    async def fake_enable(self, ssh):
+        calls.append("enable")
+        return True
+
+    monkeypatch.setattr(prov_mod, "SshClient", _NoopSsh)
+    monkeypatch.setattr(XrayProvisioner, "install", fake_install)
+    monkeypatch.setattr(XrayProvisioner, "enable_stats", fake_enable)
+
+    svc = ProvisioningService(uow, settings)
+    creds = svc.creds(server)
+    await svc._install_one(server.id, "xray", creds, server.ip, server.name)
+
+    sp = await _fetch_sp(uow, server.id, "xray")
+    assert sp is not None and sp.state == "installed"
+    assert calls == ["enable"]  # stats включены сразу при установке
+
+
+async def test__install_one__enable_stats_failure__still_installed(uow, settings, session_maker, monkeypatch):
+    """Провал enable_stats не роняет установку — протокол остаётся installed (сбор включит heal)."""
+    from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
+    from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
+
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79003330002")
+        server = await make_server(s, owner_id=owner.id)
+
+    async def fake_install(self, ssh, ip, port, site=None):
+        return ServerMaterial(xray_public_key="PUB", short_id="SID", bootstrap_uuid="UU")
+
+    async def boom_enable(self, ssh):
+        raise SshError("stats boom")
+
+    monkeypatch.setattr(prov_mod, "SshClient", _NoopSsh)
+    monkeypatch.setattr(XrayProvisioner, "install", fake_install)
+    monkeypatch.setattr(XrayProvisioner, "enable_stats", boom_enable)
+
+    svc = ProvisioningService(uow, settings)
+    creds = svc.creds(server)
+    await svc._install_one(server.id, "xray", creds, server.ip, server.name)
+
+    sp = await _fetch_sp(uow, server.id, "xray")
+    assert sp is not None and sp.state == "installed" and sp.error is None
+
+
+async def test__install_one__stats_auto_enable_off__skips_enable(uow, settings, session_maker, monkeypatch):
+    """stats_auto_enable=False → enable_stats при установке не вызывается (opt-out от рестарта)."""
+    from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
+    from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
+
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79003330003")
+        server = await make_server(s, owner_id=owner.id)
+
+    calls: list[str] = []
+
+    async def fake_install(self, ssh, ip, port, site=None):
+        return ServerMaterial(xray_public_key="PUB", short_id="SID", bootstrap_uuid="UU")
+
+    async def fake_enable(self, ssh):
+        calls.append("enable")
+        return True
+
+    monkeypatch.setattr(prov_mod, "SshClient", _NoopSsh)
+    monkeypatch.setattr(XrayProvisioner, "install", fake_install)
+    monkeypatch.setattr(XrayProvisioner, "enable_stats", fake_enable)
+    settings.stats_auto_enable = False
+
+    svc = ProvisioningService(uow, settings)
+    creds = svc.creds(server)
+    await svc._install_one(server.id, "xray", creds, server.ip, server.name)
+
+    sp = await _fetch_sp(uow, server.id, "xray")
+    assert sp is not None and sp.state == "installed"
+    assert calls == []  # включение пропущено
+
+
 async def test__remove_protocol__marks_absent_and_revokes_only_its_configs(uow, settings, session_maker, monkeypatch):
     """remove_protocol(xray): контейнер снесён, конфиги Xray удалены, конфиги другого протокола целы."""
     # Arrange

@@ -186,6 +186,93 @@ async def test__collect_for__writes_metrics_traffic_and_health(svc, session_make
     assert protos["xray"].traffic_status == "container_down" and protos["xray"].traffic_collected_at is None
 
 
+async def test__collect_for__auto_heals_stats_when_disabled(svc, session_maker, uow, monkeypatch):
+    """stats_disabled у xray → enable_stats вызывается раз; повтор в пределах TTL — не вызывается."""
+    from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
+    from vpnhub.services.traffic import TRAFFIC_STATS_DISABLED
+
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79002220110")
+        srv = await make_server(s, owner_id=owner.id)
+        await make_server_protocol(
+            s, server_id=srv.id, proto="xray", container="amnezia-xray", installed=True, running=True
+        )
+
+    hm._STATS_HEAL_ATTEMPTS.clear()
+    calls: list[str] = []
+
+    async def fake_host_metrics(ssh: Any, *, count_clients: bool = True) -> HostMetrics:
+        return HostMetrics(cpu_pct=1.0)
+
+    async def fake_containers(ssh: Any) -> dict[str, bool]:
+        return {"amnezia-xray": True}
+
+    async def fake_collect(ssh: Any, spec: pc.ProtoSpec, provo: Any = None) -> ProtoTraffic:
+        return ProtoTraffic(spec.id, TRAFFIC_STATS_DISABLED, error="off")
+
+    async def fake_enable(self: Any, ssh: Any) -> bool:
+        calls.append("enable")
+        return True
+
+    monkeypatch.setattr(hm, "SshClient", _FakeSshCM)
+    monkeypatch.setattr(hm, "collect_host_metrics", fake_host_metrics)
+    monkeypatch.setattr(hm, "list_known_containers", fake_containers)
+    monkeypatch.setattr(hm.TrafficCollector, "collect", staticmethod(fake_collect))
+    monkeypatch.setattr(XrayProvisioner, "enable_stats", fake_enable)
+
+    async with uow.query() as tx:
+        server = await tx.servers.get(srv.id)
+    await svc.collect_for(server)
+    await svc.collect_for(server)  # второй тик в пределах TTL
+    assert calls == ["enable"]  # только одна попытка включения
+
+    # health: статус stats_disabled с подсказкой про авто-включение
+    async with uow.query() as tx:
+        sp = (await tx.session.execute(select(m.ServerProtocol))).scalar_one()
+    assert sp.traffic_status == "stats_disabled"
+
+
+async def test__collect_for__no_auto_heal_when_disabled_by_setting(svc, session_maker, uow, monkeypatch):
+    """stats_auto_enable=False → enable_stats не вызывается даже при stats_disabled."""
+    from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
+    from vpnhub.services.traffic import TRAFFIC_STATS_DISABLED
+
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79002220111")
+        srv = await make_server(s, owner_id=owner.id)
+        await make_server_protocol(
+            s, server_id=srv.id, proto="xray", container="amnezia-xray", installed=True, running=True
+        )
+
+    hm._STATS_HEAL_ATTEMPTS.clear()
+    svc.settings.stats_auto_enable = False
+    calls: list[str] = []
+
+    async def fake_host_metrics(ssh: Any, *, count_clients: bool = True) -> HostMetrics:
+        return HostMetrics(cpu_pct=1.0)
+
+    async def fake_containers(ssh: Any) -> dict[str, bool]:
+        return {"amnezia-xray": True}
+
+    async def fake_collect(ssh: Any, spec: pc.ProtoSpec, provo: Any = None) -> ProtoTraffic:
+        return ProtoTraffic(spec.id, TRAFFIC_STATS_DISABLED, error="off")
+
+    async def fake_enable(self: Any, ssh: Any) -> bool:
+        calls.append("enable")
+        return True
+
+    monkeypatch.setattr(hm, "SshClient", _FakeSshCM)
+    monkeypatch.setattr(hm, "collect_host_metrics", fake_host_metrics)
+    monkeypatch.setattr(hm, "list_known_containers", fake_containers)
+    monkeypatch.setattr(hm.TrafficCollector, "collect", staticmethod(fake_collect))
+    monkeypatch.setattr(XrayProvisioner, "enable_stats", fake_enable)
+
+    async with uow.query() as tx:
+        server = await tx.servers.get(srv.id)
+    await svc.collect_for(server)
+    assert calls == []
+
+
 async def test__collect_for__ssh_failure_marks_unreachable(svc, session_maker, uow, monkeypatch):
     """Сбой SSH → метрики не пишем, health всех installed-протоколов = unreachable."""
     from vpnhub.infra.provisioning.ssh import SshError

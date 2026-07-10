@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     # клиент считается онлайн, если последний handshake свежее этого окна (сек). Эффективное окно —
     # не короче двух интервалов сбора + запас на rekey WG (см. traffic.effective_online_window).
     traffic_online_window_seconds: int = 300
+    # точная статистика xray/hysteria2 (Stats API / trafficStats) включается автоматически: при
+    # установке протокола и авто-починкой в monitor-тике (если stats выключены). Включение рестартит
+    # контейнер — opt-out для тех, кому это нежелательно. False → сбор идёт только там, где включено вручную.
+    stats_auto_enable: bool = True
 
     # per-server мониторинг ресурсов хоста (CPU/RAM/диск/load/uptime/TCP) — сбор в monitor-тике по SSH
     server_metrics_retention_days: int = 14  # сколько дней хранить хост-сэмплы (фоновой purge)

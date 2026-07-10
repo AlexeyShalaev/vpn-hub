@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
 from typing import Any
 
 import structlog
@@ -42,6 +43,7 @@ from vpnhub.infra.uow import Uow
 from vpnhub.services.traffic import (
     TRAFFIC_CONTAINER_DOWN,
     TRAFFIC_OK,
+    TRAFFIC_STATS_DISABLED,
     TRAFFIC_UNREACHABLE,
     ProtoTraffic,
     TrafficCollector,
@@ -54,6 +56,12 @@ log = structlog.get_logger(__name__)
 # протоколы с включаемым stats-API (точный per-user online): xray/xray_xhttp — Xray Stats API,
 # hysteria2 — trafficStats. awg/awg_legacy считаются по handshakes (включать нечего), outline/openvpn — нет.
 _STATS_PROTOS = ("xray", "xray_xhttp", "hysteria2")
+
+# авто-heal точной статистики: если при сборе stats выключены, включаем их (идемпотентно) прямо в
+# monitor-тике. Троттлинг попыток per (server, proto), чтобы не рестартить контейнер каждый тик.
+# In-memory достаточно: рестарт панели разрешит одну лишнюю идемпотентную попытку.
+_STATS_HEAL_ATTEMPTS: dict[tuple[str, str], float] = {}
+_STATS_HEAL_RETRY_SECONDS = 3600.0
 
 
 def _creds(settings: Settings, server: m.Server) -> ServerCreds:
@@ -166,7 +174,7 @@ class HostMetricsService:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
                 metrics = await collect_host_metrics(ssh, count_clients=False)
                 containers = await list_known_containers(ssh)
-                results = await self._collect_protocols(ssh, server, containers)
+                results = await self._collect_protocols(ssh, server, containers, now)
         except (SshError, OSError) as e:
             log.info("host_metrics collect skipped", server=server.id, error=str(e))
             await self._mark_unreachable(server.id)
@@ -178,12 +186,13 @@ class HostMetricsService:
         return metrics
 
     async def _collect_protocols(
-        self, ssh: SshClient, server: m.Server, containers: dict[str, bool]
+        self, ssh: SshClient, server: m.Server, containers: dict[str, bool], now: float
     ) -> dict[str, ProtoTraffic]:
         """Собрать per-proto трафик по installed-протоколам сервера в уже открытой SSH-сессии.
 
         Контейнер отсутствует/не запущен → container_down (движок не трогаем). Для outline подгружаем
-        провизионер с материалом (нужен apiUrl). Каждый протокол изолирован внутри TrafficCollector.
+        провизионер с материалом (нужен apiUrl). Если stats выключены (stats_disabled) — авто-heal в
+        той же сессии. Каждый протокол изолирован внутри TrafficCollector.
         """
         from vpnhub.services.provisioning import ProvisioningService  # noqa: PLC0415 — избегаем цикла import
 
@@ -205,8 +214,34 @@ class HostMetricsService:
                     provo = prov.loaded_provisioner(sp)
                 except Exception:
                     provo = None
-            out[sp.proto] = await TrafficCollector.collect(ssh, spec, provo)
+            res = await TrafficCollector.collect(ssh, spec, provo)
+            if res.status == TRAFFIC_STATS_DISABLED and await self._maybe_heal_stats(ssh, sp.server_id, spec, now):
+                res = replace(res, error="точная статистика включается автоматически, данные со следующего сбора")
+            out[sp.proto] = res
         return out
+
+    async def _maybe_heal_stats(self, ssh: SshClient, server_id: str, spec: pc.ProtoSpec, now: float) -> bool:
+        """Авто-включить точную статистику (idempotent), если протокол поддерживает и она выключена.
+
+        Троттлинг per (server, proto) на `_STATS_HEAL_RETRY_SECONDS`, чтобы не рестартить контейнер
+        каждый тик. Возвращает True, если попытка сделана (данные появятся со следующего сбора).
+        """
+        if spec.id not in _STATS_PROTOS or not self.settings.stats_auto_enable:
+            return False
+        key = (server_id, spec.id)
+        if now - _STATS_HEAL_ATTEMPTS.get(key, 0.0) < _STATS_HEAL_RETRY_SECONDS:
+            return False
+        _STATS_HEAL_ATTEMPTS[key] = now
+        try:
+            if spec.kind == "xray":
+                await XrayProvisioner(spec).enable_stats(ssh)
+            else:
+                await HysteriaProvisioner(spec).enable_stats(ssh)
+        except (SshError, OSError) as e:  # heal best-effort — следующая попытка через TTL
+            log.warning("stats auto-enable failed", server=server_id, proto=spec.id, error=str(e))
+            return False
+        log.info("stats auto-enabled", server=server_id, proto=spec.id)
+        return True
 
     async def _record_traffic(self, server_id: str, results: dict[str, ProtoTraffic]) -> None:
         """Записать сэмплы трафика по ok-протоколам (best-effort, изоляция на протокол)."""

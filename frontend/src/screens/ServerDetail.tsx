@@ -81,28 +81,18 @@ const ONLINE_NA_HINT: Record<string, string> = {
   outline: "Shadowsocks не поддерживает счётчик онлайн-сессий",
   openvpn: "Онлайн для OpenVPN пока не поддержан",
 };
-// протоколы, для которых точную статистику можно включить (Xray Stats API / Hysteria2 trafficStats)
+// протоколы с точной статистикой (Xray Stats API / Hysteria2 trafficStats) — включается автоматически
 const STATS_ENABLABLE = ["xray", "xray_xhttp", "hysteria2"];
 
 // Карточка «Ресурсы сервера»: текущие CPU/RAM/диск/load/uptime/TCP + честный online по протоколам + мини-графики.
 // Сбор — в monitor-тике по SSH (best-effort); поллинг здесь — как и остальной ServerDetail.
 function ServerMetricsCard({ serverId, online }: { serverId: string; online: boolean }) {
-  const toast = useStore((s) => s.toast);
-  const qc = useQueryClient();
   const mq = useQuery({
     queryKey: ["serverMetrics", serverId],
     queryFn: () => q.serverMetrics(serverId),
     enabled: !!serverId,
     refetchInterval: 60000, // как страховочный поллинг всего ServerDetail
     retry: 2, // глобально retry=false → разовый сбой оставлял бы карточку пустой
-  });
-  const enableStatsMut = useMutation({
-    mutationFn: () => q.enableServerStats(serverId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["serverMetrics", serverId] });
-      toast("Точная онлайн-статистика включена — цифры появятся после ближайшего цикла мониторинга");
-    },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось включить статистику"),
   });
 
   const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
@@ -162,7 +152,9 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
                   key={proto}
                   className={`badge ${n == null ? "" : "ok"}`}
                   title={
-                    n == null ? (ONLINE_NA_HINT[proto] ?? "Точная статистика не включена — нажмите «Включить»") : ""
+                    n == null
+                      ? (ONLINE_NA_HINT[proto] ?? "Точная статистика включается автоматически при ближайшем сборе")
+                      : ""
                   }
                 >
                   {PROTO_ONLINE_LABEL[proto] ?? proto}: {n == null ? "—" : n}
@@ -175,15 +167,9 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
               )}
             </div>
             {Object.entries(cur.onlineByProto ?? {}).some(([p, n]) => STATS_ENABLABLE.includes(p) && n == null) && (
-              <Btn
-                variant="ghost"
-                sm
-                disabled={enableStatsMut.isPending}
-                title="Включит Xray Stats API / Hysteria2 trafficStats. Контейнеры xray/hysteria2 будут перезапущены (короткий обрыв сессий)."
-                onClick={() => enableStatsMut.mutate()}
-              >
-                {enableStatsMut.isPending ? <Spinner /> : "Включить точную онлайн-статистику"}
-              </Btn>
+              <div className="muted-3" style={{ fontSize: 12 }}>
+                Точная статистика Xray/Hysteria2 включается автоматически — цифры появятся после ближайшего сбора.
+              </div>
             )}
           </div>
 
@@ -272,7 +258,7 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
       ) : clients.length === 0 ? (
         <p className="muted" style={{ fontSize: 13 }}>
           {online
-            ? "Данных о клиентах ещё нет — статистика собирается в фоне. Для Xray/Hysteria2 включите точную статистику выше."
+            ? "Данных о клиентах ещё нет — статистика собирается в фоне по SSH и появится после ближайшего сбора."
             : "Сервер офлайн — статистика клиентов не собирается."}
         </p>
       ) : (

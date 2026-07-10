@@ -189,6 +189,17 @@ class ProvisioningService:
                     material = await XrayProvisioner(spec).install(
                         ssh, server_ip, spec.default_port, pc.XRAY_DEFAULT_SITE
                     )
+                # точная статистика (Stats API/trafficStats) — включаем сразу при установке, чтобы
+                # per-client трафик/онлайн собирался с первого клиента (не дожидаясь ручной кнопки).
+                # best-effort: провал не роняет установку; рестарт незаметен — клиентов ещё нет.
+                if spec.kind in ("xray", "hysteria2") and self.settings.stats_auto_enable:
+                    try:
+                        if spec.kind == "xray":
+                            await XrayProvisioner(spec).enable_stats(ssh)
+                        else:
+                            await HysteriaProvisioner(spec).enable_stats(ssh)
+                    except Exception as e:
+                        log.warning("enable_stats on install failed", server=server_id, proto=proto_id, error=str(e))
             async with self.uow.transaction() as tx:
                 sp = await self._get_or_create_sp(tx, server_id, proto_id)
                 sp.state, sp.installed, sp.running, sp.error, sp.error_code = "installed", True, True, None, None
