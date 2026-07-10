@@ -449,10 +449,22 @@ export interface MonitoringSummary {
   rxTotal: number; // суммарный upload за период
   txTotal: number; // суммарный download за период
 }
+// здоровье сбора трафика — честный диагноз вместо общей фразы «нет данных»
+export interface CollectionProto {
+  proto: string;
+  status: string | null; // ok | stats_disabled | container_down | unreachable | error | null (ещё не собирали)
+  lastCollectedAt: number | null; // epoch последнего успешного сбора
+  error: string | null;
+}
+export interface CollectionHealth {
+  lastCollectedAt: number | null; // max по протоколам сервера
+  protocols: CollectionProto[];
+}
 export interface Monitoring {
   period: "1h" | "24h" | "7d";
   onlineWindowSeconds: number;
   summary: MonitoringSummary;
+  collection: Record<string, CollectionHealth>; // ключ — serverId
   clients: MonitoringClient[];
 }
 // per-server overview (тот же endpoint, что и раньше, но с online/speed на клиентах)
@@ -460,6 +472,7 @@ export interface ServerTraffic {
   serverId: string;
   period: "1h" | "24h" | "7d";
   onlineWindowSeconds: number;
+  collection: CollectionHealth;
   clients: MonitoringClient[];
   series: { at: number; proto: string; clientId: string | null; rx: number; tx: number }[];
 }

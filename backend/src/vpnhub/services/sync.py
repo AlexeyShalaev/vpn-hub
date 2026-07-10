@@ -50,7 +50,6 @@ from vpnhub.services.sync_logic import (
     parse_pending,
     plan_drain,
 )
-from vpnhub.services.traffic import PeerStat, TrafficCollector, TrafficService
 
 log = structlog.get_logger()
 
@@ -114,7 +113,6 @@ class SyncService:
         adopted: dict[str, tuple[dict, str | None]] = {}
         observations: dict[str, ProtocolObservation] = {}
         drained_by_proto: dict[str, set[str]] = {}  # погашенный долг на снятие (для записи в фазе 3)
-        traffic_by_proto: dict[str, list[PeerStat]] = {}  # собранная статистика трафика (best-effort)
         version_by_proto: dict[str, str] = {}  # версия бинарника компонента в контейнере (best-effort)
         try:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
@@ -138,13 +136,6 @@ class SyncService:
                             readable = True
                         except Exception as e:  # чтение клиентов не удалось — не рискуем revoke
                             log.warning("sync: read clients failed", server=server_id, proto=pid, error=str(e))
-                        try:  # сбор трафика строго best-effort: НЕ влияет на решения sync/revoke
-                            # provs[pid] уже загружен/адаптирован выше — outline берёт из него apiUrl
-                            stats = await TrafficCollector.collect(ssh, spec, provs.get(pid))
-                            if stats:
-                                traffic_by_proto[pid] = stats
-                        except Exception as e:
-                            log.warning("sync: traffic collect failed", server=server_id, proto=pid, error=str(e))
                         try:  # версия компонента: best-effort, поддержано только для xray/hysteria2
                             ver = await component_versions.read_running_version(ssh, spec)
                             if ver:
@@ -167,16 +158,10 @@ class SyncService:
         # ── фаза 3: сверка и запись в БД ──
         result = await self._apply(server_id, installing, observations, adopted, drained_by_proto, version_by_proto)
 
-        # ── фаза 4: запись сэмплов трафика ОТДЕЛЬНОЙ транзакцией (изолируем от sync-инвариантов) ──
-        if traffic_by_proto:
-            traffic = TrafficService(self.uow, self.settings)
-            for pid, stats in traffic_by_proto.items():
-                try:
-                    await traffic.record(server_id, pid, stats)
-                except Exception as e:  # запись статистики не должна ронять результат sync
-                    log.warning("sync: traffic record failed", server=server_id, proto=pid, error=str(e))
+        # Сбор трафика перенесён в monitor-тик (HostMetricsService.collect_for) — та же SSH-сессия, что
+        # и хост-метрики, чаще (monitor_interval) и с честным health-статусом. Здесь трафик не собираем.
 
-        # ── фаза 5: честная отсечка по лимиту трафика (suspend/resume; Этап 3b) ──
+        # ── фаза 4: честная отсечка по лимиту трафика (suspend/resume; Этап 3b) ──
         try:
             await self._reconcile_byte_limits(server_id, prov)
         except Exception as e:  # отсечка best-effort — не роняет результат sync

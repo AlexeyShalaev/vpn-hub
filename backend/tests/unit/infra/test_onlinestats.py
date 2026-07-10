@@ -1,13 +1,21 @@
-"""Тесты честного online-счётчика: парсеры (xray/hysteria/openvpn) + агрегация + диспетч сбора."""
+"""Тесты честного online-счётчика: парсеры (xray/hysteria/openvpn) + вывод online из трафика.
+
+Раньше online опрашивался отдельными SSH-запросами (`collect_online_by_proto`); теперь выводится из
+уже собранного трафика чистой функцией `online_from_traffic` (без доп. вызовов движка)."""
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-from types import SimpleNamespace
 
 from vpnhub.infra.onlinestats import parse_hysteria_online, parse_openvpn_online, parse_xray_online
-from vpnhub.services.hostmetrics import _sum_known, collect_online_by_proto
+from vpnhub.services.hostmetrics import _sum_known, online_from_traffic
+from vpnhub.services.traffic import (
+    TRAFFIC_CONTAINER_DOWN,
+    TRAFFIC_OK,
+    TRAFFIC_STATS_DISABLED,
+    PeerStat,
+    ProtoTraffic,
+)
 
 
 def test_parse_xray_online() -> None:
@@ -50,49 +58,65 @@ def test_sum_known() -> None:
     assert _sum_known({"a": 0}) == 0
 
 
-@dataclass
-class _Res:
-    stdout: str = ""
-    stderr: str = ""
-    exit_status: int = 0
-
-    @property
-    def output(self) -> str:
-        return (self.stdout or "") + (self.stderr or "")
+# --------------------------------------------------------------------------- online_from_traffic
 
 
-class _FakeSsh:
-    """Отдаёт заранее заготовленный вывод по подстроке команды (эмулирует stats-API протоколов)."""
-
-    def __init__(self, now: float) -> None:
-        self.now = now
-
-    async def run(self, cmd: str) -> _Res:
-        if "statsquery" in cmd:  # xray Stats API
-            return _Res(stdout='{"stat":[{"name":"user>>>a>>>online","value":"1"}]}')
-        if "trafficStats" in cmd:  # hysteria _read_stats_secret (awk по config.yaml)
-            return _Res(stdout="0123456789abcdef0123456789abcdef")
-        if "/online" in cmd:  # hysteria trafficStats GET /online
-            return _Res(stdout='{"u1":1,"u2":1}')
-        if "latest-handshakes" in cmd:  # awg/awg_legacy wg
-            return _Res(stdout=f"awg0 PUBKEYAAA {int(self.now)}\n")
-        return _Res(stdout="")
-
-
-async def test_collect_online_by_proto_dispatch() -> None:
+def test__online_from_traffic__wireguard_counts_fresh_handshakes() -> None:
     now = time.time()
-    ssh = _FakeSsh(now)
-    protos = [
-        SimpleNamespace(proto="xray", installed=True),
-        SimpleNamespace(proto="hysteria2", installed=True),
-        SimpleNamespace(proto="awg", installed=True),
-        SimpleNamespace(proto="outline", installed=True),
-        SimpleNamespace(proto="xray_xhttp", installed=False),  # не installed → пропускается
-    ]
-    out = await collect_online_by_proto(ssh, protos)  # type: ignore[arg-type]
-    assert out["xray"] == 1  # Stats API: один online-пользователь
-    assert out["hysteria2"] == 2  # /online: u1,u2 > 0
-    assert out["awg"] == 1  # свежий handshake
-    assert out["outline"] is None  # Shadowsocks без сессий
-    assert "xray_xhttp" not in out  # не installed
-    assert _sum_known(out) == 4  # 1 + 2 + 1 (None не считается)
+    window = 300
+    res = {
+        "awg": ProtoTraffic(
+            "awg",
+            TRAFFIC_OK,
+            stats=[
+                PeerStat(client_id="A", rx=1, tx=1, last_handshake=now - 10),  # свежий → онлайн
+                PeerStat(client_id="B", rx=1, tx=1, last_handshake=now - 999),  # устарел → офлайн
+                PeerStat(client_id="C", rx=1, tx=1, last_handshake=None),  # рукопожатий не было
+            ],
+        )
+    }
+    assert online_from_traffic(res, now, window) == {"awg": 1}
+
+
+def test__online_from_traffic__stats_protocols_use_online_flag() -> None:
+    now = time.time()
+    res = {
+        "xray": ProtoTraffic(
+            "xray",
+            TRAFFIC_OK,
+            stats=[
+                PeerStat(client_id="U1", rx=1, tx=1, last_handshake=None, online=True),
+                PeerStat(client_id="U2", rx=1, tx=1, last_handshake=None, online=False),
+            ],
+        ),
+        "hysteria2": ProtoTraffic(
+            "hysteria2", TRAFFIC_OK, stats=[PeerStat(client_id="H", rx=1, tx=1, last_handshake=None, online=True)]
+        ),
+    }
+    out = online_from_traffic(res, now, 300)
+    assert out == {"xray": 1, "hysteria2": 1}
+
+
+def test__online_from_traffic__outline_and_non_ok_are_unknown() -> None:
+    now = time.time()
+    res = {
+        "outline": ProtoTraffic(
+            "outline", TRAFFIC_OK, stats=[PeerStat(client_id="K", rx=0, tx=100, last_handshake=None, online=None)]
+        ),
+        "xray": ProtoTraffic("xray", TRAFFIC_STATS_DISABLED, error="off"),  # не собрано → None
+        "awg": ProtoTraffic("awg", TRAFFIC_CONTAINER_DOWN, error="down"),  # контейнер лёг → None
+    }
+    out = online_from_traffic(res, now, 300)
+    assert out == {"outline": None, "xray": None, "awg": None}
+    assert _sum_known(out) is None  # всё неизвестно → сумма None
+
+
+def test__online_from_traffic__mixed_sum_known() -> None:
+    now = time.time()
+    res = {
+        "awg": ProtoTraffic("awg", TRAFFIC_OK, stats=[PeerStat(client_id="A", rx=1, tx=1, last_handshake=now)]),
+        "xray": ProtoTraffic("xray", TRAFFIC_STATS_DISABLED, error="off"),
+    }
+    out = online_from_traffic(res, now, 300)
+    assert out == {"awg": 1, "xray": None}
+    assert _sum_known(out) == 1  # None-протокол не портит сумму известных

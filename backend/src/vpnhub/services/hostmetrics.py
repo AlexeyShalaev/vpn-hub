@@ -35,9 +35,19 @@ from vpnhub.infra.hostmetrics import (
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
+from vpnhub.infra.provisioning.script_runner import list_known_containers
 from vpnhub.infra.provisioning.ssh import ServerCreds, SshClient, SshError
 from vpnhub.infra.security import decrypt_secret
 from vpnhub.infra.uow import Uow
+from vpnhub.services.traffic import (
+    TRAFFIC_CONTAINER_DOWN,
+    TRAFFIC_OK,
+    TRAFFIC_UNREACHABLE,
+    ProtoTraffic,
+    TrafficCollector,
+    TrafficService,
+    effective_online_window,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -97,39 +107,33 @@ async def _online_clients(ssh: Any) -> int | None:
     return None
 
 
-async def collect_online_by_proto(ssh: Any, protocols: list[m.ServerProtocol]) -> dict[str, int | None]:
-    """Честный online по каждому installed-протоколу сервера (read-only, в одной SSH-сессии).
+def online_from_traffic(results: dict[str, ProtoTraffic], now: float, window: int) -> dict[str, int | None]:
+    """Онлайн-счёт per installed-протокол из уже собранного трафика (без доп. SSH-запросов).
 
-    Контракт значения: int>=0 — известно; None — «неизвестно» (stats не включён / нет счётчика /
-    ошибка). Сбой на одном протоколе → его значение None, не роняет остальные.
-    - awg/awg_legacy: свежие handshakes в контейнере протокола (`wg show latest-handshakes`);
-    - xray/xray_xhttp: `XrayProvisioner.query_online` (Xray Stats API);
-    - hysteria2: `HysteriaProvisioner.query_online` с секретом из config.yaml (trafficStats);
-    - openvpn: пока None (status-лог — на будущее); outline: None (Shadowsocks без сессий).
+    Раньше online опрашивался отдельно (`collect_online_by_proto` — дублирующие вызовы движка); теперь
+    выводится из тех же PeerStat, что дают трафик. Контракт значения: int>=0 — известно; None —
+    неизвестно (сбор не ok / протокол без сессий).
+    - wireguard (awg/awg_legacy): пиры со свежим handshake (now - last_handshake < window);
+    - xray/xray_xhttp/hysteria2/openvpn: пиры с online-флагом движка;
+    - outline: None (Shadowsocks без концепции сессии).
     """
-    now = time.time()
     out: dict[str, int | None] = {}
-    for sp in protocols:
-        if not sp.installed:
+    for proto, res in results.items():
+        if res.status != TRAFFIC_OK:
+            out[proto] = None  # сбор не удался — честно «неизвестно», не 0
             continue
-        proto = sp.proto
         try:
-            spec = pc.spec_by_id(proto)
+            kind = pc.spec_by_id(proto).kind
         except (KeyError, ValueError):
+            out[proto] = None
             continue
-        try:
-            if proto in ("xray", "xray_xhttp"):
-                out[proto] = await XrayProvisioner(spec).query_online(ssh)
-            elif proto == "hysteria2":
-                prov = HysteriaProvisioner(spec)
-                out[proto] = await prov.query_online(ssh, await prov._read_stats_secret(ssh))
-            elif proto in ("awg", "awg_legacy"):
-                res = await ssh.run(f"sudo docker exec -i {spec.container} wg show all latest-handshakes 2>/dev/null")
-                raw = res.output.strip()
-                out[proto] = parse_online_clients(raw, now) if raw and any(c.isdigit() for c in raw) else None
-            else:  # openvpn (status-лог — TODO), outline (Shadowsocks без сессий)
-                out[proto] = None
-        except (SshError, OSError):
+        if kind == "wireguard":
+            out[proto] = sum(
+                1 for st in res.stats if st.last_handshake is not None and (now - st.last_handshake) < window
+            )
+        elif kind in ("xray", "hysteria2", "openvpn"):
+            out[proto] = sum(1 for st in res.stats if st.online)
+        else:  # outline — сессий нет
             out[proto] = None
     return out
 
@@ -148,21 +152,117 @@ class HostMetricsService:
         self.settings = settings
 
     async def collect_for(self, server: m.Server) -> HostMetrics | None:
-        """Собрать метрики одного сервера отдельной короткой SSH-сессией и записать сэмпл.
+        """Собрать метрики + трафик одного сервера ОДНОЙ SSH-сессией и записать (best-effort).
 
-        Best-effort: сбой SSH/парсинга → None (лог + пропуск), тик не роняем.
+        Одна сессия: host-метрики + список контейнеров + per-proto трафик (диспетч TrafficCollector).
+        Затем вне SSH: сэмпл ServerMetric (online — из собранного трафика), сэмплы трафика по
+        ok-протоколам и health-статусы. Сбой SSH → сервер недоступен: метрики не пишем, health всех
+        installed-протоколов = unreachable (чтобы UI показал «сервер недоступен», а не «нет данных»).
         """
         creds = _creds(self.settings, server)
+        now = time.time()
+        window = effective_online_window(self.settings)
         try:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
-                # host-метрики + честный online по протоколам — одной SSH-сессией
                 metrics = await collect_host_metrics(ssh, count_clients=False)
-                by_proto = await collect_online_by_proto(ssh, list(server.protocols))
+                containers = await list_known_containers(ssh)
+                results = await self._collect_protocols(ssh, server, containers)
         except (SshError, OSError) as e:
             log.info("host_metrics collect skipped", server=server.id, error=str(e))
+            await self._mark_unreachable(server.id)
             return None
+        by_proto = online_from_traffic(results, now, window)
         await self.record(server.id, metrics, by_proto)
+        await self._record_traffic(server.id, results)
+        await self._save_health(server.id, results, now)
         return metrics
+
+    async def _collect_protocols(
+        self, ssh: SshClient, server: m.Server, containers: dict[str, bool]
+    ) -> dict[str, ProtoTraffic]:
+        """Собрать per-proto трафик по installed-протоколам сервера в уже открытой SSH-сессии.
+
+        Контейнер отсутствует/не запущен → container_down (движок не трогаем). Для outline подгружаем
+        провизионер с материалом (нужен apiUrl). Каждый протокол изолирован внутри TrafficCollector.
+        """
+        from vpnhub.services.provisioning import ProvisioningService  # noqa: PLC0415 — избегаем цикла import
+
+        prov = ProvisioningService(self.uow, self.settings)
+        out: dict[str, ProtoTraffic] = {}
+        for sp in server.protocols:
+            if not sp.installed:
+                continue
+            try:
+                spec = pc.spec_by_id(sp.proto)
+            except (KeyError, ValueError):
+                continue
+            if not containers.get(spec.container, False):
+                out[sp.proto] = ProtoTraffic(sp.proto, TRAFFIC_CONTAINER_DOWN, error="контейнер не запущен")
+                continue
+            provo = None
+            if spec.kind == "outline" and sp.material_encrypted:
+                try:
+                    provo = prov.loaded_provisioner(sp)
+                except Exception:
+                    provo = None
+            out[sp.proto] = await TrafficCollector.collect(ssh, spec, provo)
+        return out
+
+    async def _record_traffic(self, server_id: str, results: dict[str, ProtoTraffic]) -> None:
+        """Записать сэмплы трафика по ok-протоколам (best-effort, изоляция на протокол)."""
+        traffic = TrafficService(self.uow, self.settings)
+        for proto, res in results.items():
+            if res.status != TRAFFIC_OK or not res.stats:
+                continue
+            try:
+                await traffic.record(server_id, proto, res.stats)
+            except Exception as e:
+                log.warning("traffic record failed", server=server_id, proto=proto, error=str(e))
+
+    async def _save_health(self, server_id: str, results: dict[str, ProtoTraffic], now: float) -> None:
+        """Сохранить статус сбора в ServerProtocol: ok → collected_at=now, error=None; иначе статус+ошибка."""
+        if not results:
+            return
+        async with self.uow.transaction() as tx:
+            rows = (
+                (
+                    await tx.session.execute(
+                        select(m.ServerProtocol).where(m.ServerProtocol.server_id == server_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            by_proto = {sp.proto: sp for sp in rows}
+            for proto, res in results.items():
+                sp = by_proto.get(proto)
+                if sp is None:
+                    continue
+                sp.traffic_status = res.status
+                if res.status == TRAFFIC_OK:
+                    sp.traffic_collected_at = now
+                    sp.traffic_error = None
+                else:
+                    sp.traffic_error = res.error
+
+    async def _mark_unreachable(self, server_id: str) -> None:
+        """SSH недоступен → health всех installed-протоколов = unreachable (collected_at не трогаем)."""
+        async with self.uow.transaction() as tx:
+            rows = (
+                (
+                    await tx.session.execute(
+                        select(m.ServerProtocol).where(
+                            m.ServerProtocol.server_id == server_id,
+                            m.ServerProtocol.installed.is_(True),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for sp in rows:
+                sp.traffic_status = TRAFFIC_UNREACHABLE
+                sp.traffic_error = "сервер недоступен по SSH"
 
     async def record(self, server_id: str, metrics: HostMetrics, by_proto: dict[str, int | None] | None = None) -> None:
         """Записать один сэмпл ресурсов хоста (отдельная транзакция).

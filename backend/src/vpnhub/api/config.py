@@ -130,8 +130,9 @@ class Settings(BaseSettings):
 
     # дашборд трафика (owner): сколько дней хранить сэмплы трафика (фоновой purge traffic-retention)
     traffic_retention_days: int = 30
-    # клиент считается онлайн, если последний handshake свежее этого окна (сек)
-    traffic_online_window_seconds: int = 180
+    # клиент считается онлайн, если последний handshake свежее этого окна (сек). Эффективное окно —
+    # не короче двух интервалов сбора + запас на rekey WG (см. traffic.effective_online_window).
+    traffic_online_window_seconds: int = 300
 
     # per-server мониторинг ресурсов хоста (CPU/RAM/диск/load/uptime/TCP) — сбор в monitor-тике по SSH
     server_metrics_retention_days: int = 14  # сколько дней хранить хост-сэмплы (фоновой purge)

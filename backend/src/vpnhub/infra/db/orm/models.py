@@ -150,6 +150,11 @@ class ServerProtocol(BaseTable, DatetimeColumnsMixin):
     # долг на снятие: JSON list[str] client_id, которые обязаны снять на этом (server, proto).
     # Пишется при удалении устройства/потере доступа, дренится фоновым sync (идемпотентно). None = долгов нет.
     pending_revoke_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # здоровье сбора трафика (monitor-тик, services/traffic.ProtoTraffic): даёт UI честный диагноз
+    # вместо общей фразы «нет данных». collected_at обновляется только при успешном сборе (status=ok).
+    traffic_collected_at: Mapped[float | None] = mapped_column(nullable=True)  # epoch последнего ok-сбора
+    traffic_status: Mapped[str | None] = mapped_column(String(24), nullable=True)  # ok|stats_disabled|…
+    traffic_error: Mapped[str | None] = mapped_column(Text, nullable=True)  # причина не-ok статуса
 
     server: Mapped[Server] = relationship(back_populates="protocols")
 

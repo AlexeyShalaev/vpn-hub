@@ -1,7 +1,10 @@
 """Супер-мониторинг клиентов (owner): per-client трафик+онлайн по ВСЕМ протоколам.
 
-Сбор врезан в sync-тик (SSH-сессия уже открыта, материал загружен) и строго best-effort:
-любой сбой глотается на стороне SyncService и НЕ влияет на решения sync (никаких ложных revoke).
+Сбор врезан в monitor-тик (`HostMetricsService.collect_for`, та же SSH-сессия, что и
+хост-метрики; интервал `monitor_interval`) и строго best-effort: сбой сбора не роняет тик и
+не влияет на sync/revoke. Результат по протоколу — `ProtoTraffic` (замеры + статус сбора:
+ok | stats_disabled | container_down | unreachable | error) — статус пишется в health-поля
+ServerProtocol и показывается в UI мониторинга (честный диагноз вместо «нет данных»).
 Диспетч по `spec.kind` (см. `TrafficCollector.collect`):
 - wireguard (awg/awg_legacy): `{bin} show {iface} dump` (rx/tx кумулятивно, online — свежесть handshake);
 - xray (kind=="xray"): `xray api statsquery -reset=false` → per-uuid uplink/downlink/online;
@@ -23,7 +26,7 @@ xray/hysteria2 — поле `online` из stats движка (у них handshak
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import structlog
@@ -53,6 +56,25 @@ log = structlog.get_logger(__name__)
 # whitelist периодов дашборда → длительность в секундах
 _PERIODS: dict[str, int] = {"1h": 3600, "24h": 86400, "7d": 7 * 86400}
 _DEFAULT_PERIOD = "24h"
+
+# статусы сбора трафика по протоколу (health; пишутся в ServerProtocol.traffic_status)
+TRAFFIC_OK = "ok"
+TRAFFIC_STATS_DISABLED = "stats_disabled"  # stats-API/status-лог не включён — данных нет by design
+TRAFFIC_CONTAINER_DOWN = "container_down"  # контейнер протокола не запущен
+TRAFFIC_UNREACHABLE = "unreachable"  # сервер недоступен по SSH (проставляет вызывающая сторона)
+TRAFFIC_ERROR = "error"  # сбой сбора/парсинга
+
+# заглушка health-меты сервера без installed-протоколов (или ещё не собранного)
+_EMPTY_COLLECTION: dict[str, Any] = {"lastCollectedAt": None, "protocols": []}
+
+
+def effective_online_window(settings: Settings) -> int:
+    """Честное окно онлайна: не короче двух интервалов сбора + запас на rekey WG (~120с).
+
+    WG-онлайн определяется свежестью handshake в последнем замере; замер устаревает на
+    monitor_interval, а активный пир рукопожимается раз в ~2 мин — окно короче даёт ложный офлайн.
+    """
+    return max(settings.traffic_online_window_seconds, 2 * settings.monitor_interval + 60)
 
 
 def _group_by_server(samples: list[m.TrafficSample]) -> dict[str, list[m.TrafficSample]]:
@@ -154,6 +176,16 @@ class PeerStat:
     name: str | None = None  # имя клиента из Amnezia clientsTable (clientName); нужно для external
 
 
+@dataclass(frozen=True)
+class ProtoTraffic:
+    """Результат сбора по одному протоколу: замеры + статус (для health и честного диагноза в UI)."""
+
+    proto: str
+    status: str  # TRAFFIC_OK | TRAFFIC_STATS_DISABLED | TRAFFIC_CONTAINER_DOWN | TRAFFIC_UNREACHABLE | TRAFFIC_ERROR
+    stats: list[PeerStat] = field(default_factory=list)  # только при status == TRAFFIC_OK (может быть пуст)
+    error: str | None = None  # человекочитаемая причина для не-ok статусов
+
+
 def parse_wg_dump(text: str) -> list[PeerStat]:
     """Разобрать вывод `wg show <iface> dump` в список PeerStat.
 
@@ -212,36 +244,44 @@ class TrafficCollector:
     """Читает per-client статистику по уже открытому SSH-каналу (диспетч по kind протокола)."""
 
     @staticmethod
-    async def collect(ssh: Any, spec: pc.ProtoSpec, provo: Any = None) -> list[PeerStat]:
-        """Собрать PeerStat для протокола `spec` (best-effort; сбой/выкл. stats → пусто, не ошибка).
+    async def collect(ssh: Any, spec: pc.ProtoSpec, provo: Any = None) -> ProtoTraffic:
+        """Собрать замеры протокола `spec` + статус сбора (не бросает: исключение → status=error).
 
         - wireguard (awg/awg_legacy): `{spec.bin} show {spec.interface} dump` (rx/tx кумулятивно,
           online — по свежести handshake в overview);
         - xray (VLESS+Reality/XHTTP): `xray api statsquery -reset=false` → per-uuid uplink/downlink/online
-          (кумулятив, счётчики НЕ сбрасываются — дельты считает record());
-        - hysteria2: trafficStats API `/traffic`+`/online` (кумулятив, без ?clear=1);
+          (кумулятив, счётчики НЕ сбрасываются — дельты считает record()); stats выключен → stats_disabled;
+        - hysteria2: trafficStats API `/traffic`+`/online` (кумулятив, без ?clear=1); нет секрета →
+          stats_disabled;
         - openvpn: OpenVPN status-лог → per-CN Bytes Received/Sent (кумулятив) + online по CLIENT_LIST;
-        - outline: `GET <apiUrl>/metrics/transfer` → per-key суммарный трафик (нужен `provo` с apiUrl).
+          лог не найден → stats_disabled;
+        - outline: `GET <apiUrl>/metrics/transfer` → per-key суммарный трафик (нужен `provo` с apiUrl);
+          без материала → stats_disabled.
 
-        `provo` — уже загруженный/адаптированный провизионер этого протокола (из sync-тика); нужен
-        только для outline (взять apiUrl). Для остальных протоколов не требуется.
+        Статусы `container_down`/`unreachable` проставляет вызывающая сторона (ей виден docker ps
+        и доступность SSH). `provo` — уже загруженный провизионер, нужен только для outline (apiUrl).
         """
-        if spec.kind == "wireguard":
-            res = await ssh.container_exec(spec.container, f"{spec.bin} show {spec.interface} dump")
-            stats = parse_wg_dump(res.stdout)
-        elif spec.kind == "xray":
-            stats = await TrafficCollector._collect_xray(ssh, spec)
-        elif spec.kind == "hysteria2":
-            stats = await TrafficCollector._collect_hysteria(ssh, spec)
-        elif spec.kind == "openvpn":
-            stats = await TrafficCollector._collect_openvpn(ssh, spec)
-        elif spec.kind == "outline":
-            stats = await TrafficCollector._collect_outline(ssh, spec, provo)
-        else:
-            return []
-        if stats and spec.kind in _CLIENTS_TABLE_KINDS:
-            stats = await TrafficCollector._attach_names(ssh, spec, stats)
-        return stats
+        try:
+            if spec.kind == "wireguard":
+                res = await ssh.container_exec(spec.container, f"{spec.bin} show {spec.interface} dump")
+                if res.exit_status != 0:
+                    return ProtoTraffic(spec.id, TRAFFIC_ERROR, error="wg dump недоступен")
+                out = ProtoTraffic(spec.id, TRAFFIC_OK, stats=parse_wg_dump(res.stdout))
+            elif spec.kind == "xray":
+                out = await TrafficCollector._collect_xray(ssh, spec)
+            elif spec.kind == "hysteria2":
+                out = await TrafficCollector._collect_hysteria(ssh, spec)
+            elif spec.kind == "openvpn":
+                out = await TrafficCollector._collect_openvpn(ssh, spec)
+            elif spec.kind == "outline":
+                out = await TrafficCollector._collect_outline(ssh, spec, provo)
+            else:
+                return ProtoTraffic(spec.id, TRAFFIC_ERROR, error=f"неизвестный kind: {spec.kind}")
+        except Exception as e:  # сбор best-effort: любой сбой → честный статус, не исключение
+            return ProtoTraffic(spec.id, TRAFFIC_ERROR, error=str(e))
+        if out.stats and spec.kind in _CLIENTS_TABLE_KINDS:
+            out = replace(out, stats=await TrafficCollector._attach_names(ssh, spec, out.stats))
+        return out
 
     @staticmethod
     async def _attach_names(ssh: Any, spec: pc.ProtoSpec, stats: list[PeerStat]) -> list[PeerStat]:
@@ -262,51 +302,53 @@ class TrafficCollector:
     _OVPN_STATUS_PATHS = ("/openvpn-status.log", "/opt/amnezia/openvpn/openvpn-status.log")
 
     @staticmethod
-    async def _collect_openvpn(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
+    async def _collect_openvpn(ssh: Any, spec: pc.ProtoSpec) -> ProtoTraffic:
         """Per-CN трафик+онлайн из OpenVPN status-лога (`status <path>` уже в server.conf).
 
         rx = Bytes Received (client→server), tx = Bytes Sent (server→client), кумулятивно.
-        online = присутствие CN в CLIENT_LIST. Лог не настроен/недоступен → пусто (best-effort).
+        online = присутствие CN в CLIENT_LIST. Непустой лог = ok (даже с нулём клиентов);
+        ни один кандидат-путь не читается → stats_disabled (status-лог не настроен).
         """
         for path in TrafficCollector._OVPN_STATUS_PATHS:
             res = await ssh.run(f"sudo docker exec {spec.container} cat {path} 2>/dev/null")
-            if res.exit_status != 0:
+            if res.exit_status != 0 or not res.output.strip():
                 continue
-            rows = parse_openvpn_traffic(res.output)
-            if rows:
-                return [
-                    PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
-                    for c in rows
-                ]
-        return []
+            stats = [
+                PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
+                for c in parse_openvpn_traffic(res.output)
+            ]
+            return ProtoTraffic(spec.id, TRAFFIC_OK, stats=stats)
+        return ProtoTraffic(spec.id, TRAFFIC_STATS_DISABLED, error="OpenVPN status-лог не найден в контейнере")
 
     @staticmethod
-    async def _collect_outline(ssh: Any, spec: pc.ProtoSpec, provo: Any) -> list[PeerStat]:
+    async def _collect_outline(ssh: Any, spec: pc.ProtoSpec, provo: Any) -> ProtoTraffic:
         """Per-key суммарный трафик через Outline Management API `GET /metrics/transfer`.
 
         Ходим curl-ом по SSH на localhost сервера (как сам провизионер). Материал (apiUrl) берём из
-        `provo`; без провизионера/материала → пусто. Outline даёт только суммарные байты: tx=total,
-        rx=0, online не поддержан (None). Недоступность API → пусто (best-effort).
+        `provo`; без провизионера/материала → stats_disabled. Outline даёт только суммарные байты:
+        tx=total, rx=0, online не поддержан (None).
         """
         if not isinstance(provo, OutlineProvisioner):
-            return []
+            return ProtoTraffic(spec.id, TRAFFIC_STATS_DISABLED, error="нет материала Outline (apiUrl)")
         try:
             url = f"{provo._local_api()}/metrics/transfer"
         except ValueError:  # нет материала (apiUrl)
-            return []
+            return ProtoTraffic(spec.id, TRAFFIC_STATS_DISABLED, error="нет материала Outline (apiUrl)")
         res = await ssh.run(f'curl -sfk --max-time 20 "{url}" 2>/dev/null')
         if res.exit_status != 0:
-            return []
-        return [
+            return ProtoTraffic(spec.id, TRAFFIC_ERROR, error="Outline Management API недоступен")
+        stats = [
             PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
             for c in parse_outline_transfer(res.output)
         ]
+        return ProtoTraffic(spec.id, TRAFFIC_OK, stats=stats)
 
     @staticmethod
-    async def _collect_xray(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
+    async def _collect_xray(ssh: Any, spec: pc.ProtoSpec) -> ProtoTraffic:
         """Per-uuid трафик+онлайн через Xray Stats API. `-reset=false` → счётчики кумулятивны.
 
-        stats не включён / бинарь недоступен → statsquery падает/пусто → пусто (не ошибка).
+        stats не включён / бинарь недоступен → statsquery падает → stats_disabled (авто-включение
+        сделает monitor-тик; см. hostmetrics).
         """
         cmd = (
             f"sudo docker exec {spec.container} xray api statsquery "
@@ -314,33 +356,35 @@ class TrafficCollector:
         )
         res = await ssh.run(cmd)
         if res.exit_status != 0:
-            return []
-        return [
+            return ProtoTraffic(spec.id, TRAFFIC_STATS_DISABLED, error="Xray Stats API не включён")
+        stats = [
             PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
             for c in parse_xray_stats(res.output)
         ]
+        return ProtoTraffic(spec.id, TRAFFIC_OK, stats=stats)
 
     @staticmethod
-    async def _collect_hysteria(ssh: Any, spec: pc.ProtoSpec) -> list[PeerStat]:
+    async def _collect_hysteria(ssh: Any, spec: pc.ProtoSpec) -> ProtoTraffic:
         """Per-authid трафик (/traffic) + онлайн (/online) через Hysteria2 trafficStats API.
 
-        Секрет читаем из config.yaml (`_read_stats_secret`); без него (stats не включён) → пусто.
-        `/traffic` БЕЗ ?clear=1 → счётчики кумулятивны (дельты считает record()).
+        Секрет читаем из config.yaml (`_read_stats_secret`); нет секрета (stats не включён) →
+        stats_disabled. `/traffic` БЕЗ ?clear=1 → счётчики кумулятивны (дельты считает record()).
         """
         prov = HysteriaProvisioner(spec)
         secret = await prov._read_stats_secret(ssh)
         if not secret:
-            return []
+            return ProtoTraffic(spec.id, TRAFFIC_STATS_DISABLED, error="Hysteria2 trafficStats не включён")
         base = f'sudo docker exec {spec.container} curl -s -H "Authorization: {secret}" http://{_STATS_LISTEN}'
         traffic = await ssh.run(f"{base}/traffic 2>/dev/null")
         online = await ssh.run(f"{base}/online 2>/dev/null")
         if traffic.exit_status != 0:
-            return []
+            return ProtoTraffic(spec.id, TRAFFIC_ERROR, error="Hysteria2 trafficStats API недоступен")
         online_text = online.output if online.exit_status == 0 else None
-        return [
+        stats = [
             PeerStat(client_id=c.client_id, rx=c.rx, tx=c.tx, last_handshake=None, online=c.online)
             for c in parse_hysteria_traffic(traffic.output, online_text)
         ]
+        return ProtoTraffic(spec.id, TRAFFIC_OK, stats=stats)
 
 
 class TrafficService:
@@ -525,7 +569,7 @@ class TrafficService:
         window = _PERIODS.get(period, _PERIODS[_DEFAULT_PERIOD])
         now = time.time()
         since = now - window
-        online_window = self.settings.traffic_online_window_seconds
+        online_window = effective_online_window(self.settings)
         async with self.uow.query() as tx:
             server = await tx.servers.get(sid)
             if not server or server.owner_user_id != owner_id:
@@ -542,6 +586,7 @@ class TrafficService:
                 .all()
             )
             names = await self._names(tx, samples)
+            collection = (await self._collection_meta(tx, [sid])).get(sid, _EMPTY_COLLECTION)
 
         clients = _aggregate_clients(samples, names, now, online_window)
         series = [
@@ -551,6 +596,7 @@ class TrafficService:
             "serverId": sid,
             "period": period if period in _PERIODS else _DEFAULT_PERIOD,
             "onlineWindowSeconds": online_window,
+            "collection": collection,
             "clients": sorted(clients, key=lambda c: c["rxTotal"] + c["txTotal"], reverse=True),
             "series": series,
         }
@@ -565,7 +611,7 @@ class TrafficService:
         window = _PERIODS.get(period, _PERIODS[_DEFAULT_PERIOD])
         now = time.time()
         since = now - window
-        online_window = self.settings.traffic_online_window_seconds
+        online_window = effective_online_window(self.settings)
         async with self.uow.query() as tx:
             server_rows = list(
                 (
@@ -576,6 +622,7 @@ class TrafficService:
             )
             server_names: dict[str, str] = {row[0]: row[1] for row in server_rows}
             samples: list[m.TrafficSample] = []
+            collection: dict[str, dict] = {}
             if server_names:
                 samples = list(
                     (
@@ -591,6 +638,7 @@ class TrafficService:
                     .scalars()
                     .all()
                 )
+                collection = await self._collection_meta(tx, list(server_names))
             names = await self._names(tx, samples)
 
         # агрегируем отдельно по каждому серверу (client_id уникален в рамках сервера-протокола),
@@ -616,8 +664,47 @@ class TrafficService:
                 "rxTotal": rx_total,
                 "txTotal": tx_total,
             },
+            "collection": collection,
             "clients": clients,
         }
+
+    async def _collection_meta(self, tx: Any, server_ids: list[str]) -> dict[str, dict]:
+        """Здоровье сбора трафика per сервер: last-collected + статус каждого installed-протокола.
+
+        Читается из health-полей ServerProtocol (пишутся в monitor-тике). Даёт UI честный диагноз
+        («точная статистика не включена» / «контейнер остановлен» / «сервер недоступен») вместо
+        общей фразы «нет данных». lastCollectedAt сервера = max по его протоколам.
+        """
+        if not server_ids:
+            return {}
+        rows = (
+            (
+                await tx.session.execute(
+                    select(m.ServerProtocol).where(
+                        m.ServerProtocol.server_id.in_(server_ids),
+                        m.ServerProtocol.installed.is_(True),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        out: dict[str, dict] = {}
+        for sp in rows:
+            entry = out.setdefault(sp.server_id, {"lastCollectedAt": None, "protocols": []})
+            entry["protocols"].append(
+                {
+                    "proto": sp.proto,
+                    "status": sp.traffic_status,
+                    "lastCollectedAt": sp.traffic_collected_at,
+                    "error": sp.traffic_error,
+                }
+            )
+            if sp.traffic_collected_at is not None and (
+                entry["lastCollectedAt"] is None or sp.traffic_collected_at > entry["lastCollectedAt"]
+            ):
+                entry["lastCollectedAt"] = sp.traffic_collected_at
+        return out
 
     async def _names(self, tx: Any, samples: list[m.TrafficSample]) -> dict[str, tuple[str, str, str]]:
         """DeviceConfig.id → (имя устройства, имя пользователя, статус конфига) для нон-external клиентов."""

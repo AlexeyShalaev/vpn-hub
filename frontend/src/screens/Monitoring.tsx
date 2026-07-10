@@ -1,15 +1,42 @@
 // Супер-мониторинг клиентов (владелец): единая таблица per-client трафика+онлайна по ВСЕМ
 // серверам и протоколам. Данные — GET /monitoring (TrafficService.global_overview), собранные
-// в sync-тике по SSH (wg dump / xray statsquery / hysteria trafficStats). Сводка сверху +
-// фильтр по серверу/протоколу + сортировка. Поллинг как у остального owner-UI.
+// в monitor-тике по SSH (wg dump / xray statsquery / hysteria trafficStats). Сводка сверху +
+// фильтр по серверу/протоколу + сортировка + честный диагноз сбора. Поллинг как у остального owner-UI.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LineChart } from "../components/chart";
 import { Btn, Empty, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
-import type { MonitoringClient } from "../lib/types";
+import type { CollectionHealth, MonitoringClient } from "../lib/types";
 import { useStore } from "../store";
+
+// свежесть данных сбора: max lastCollectedAt по всем серверам (для «обновлено N назад»)
+function collectionFreshness(collection?: Record<string, CollectionHealth>): number | null {
+  if (!collection) return null;
+  let max: number | null = null;
+  for (const c of Object.values(collection)) {
+    if (c.lastCollectedAt != null && (max == null || c.lastCollectedAt > max)) max = c.lastCollectedAt;
+  }
+  return max;
+}
+
+// честный диагноз пустого мониторинга вместо общей фразы «нет данных» — по статусам сбора
+function collectionDiagnosis(collection?: Record<string, CollectionHealth>): string {
+  const servers = collection ? Object.values(collection) : [];
+  if (servers.length === 0)
+    return "Добавьте сервер и установите протокол — статистика начнёт собираться автоматически.";
+  const protos = servers.flatMap((c) => c.protocols);
+  if (protos.length === 0) return "На серверах нет установленных протоколов. Установите протокол — сбор включится сам.";
+  const statuses = new Set(protos.map((p) => p.status));
+  if (statuses.has("ok")) return "Данные собираются, но за выбранный период трафика ещё нет.";
+  if (statuses.has("unreachable"))
+    return "Серверы недоступны по SSH — проверьте доступ. Как только связь появится, сбор возобновится.";
+  if (statuses.has("container_down")) return "Контейнеры протоколов остановлены. Запустите их — сбор возобновится.";
+  if (statuses.has("stats_disabled"))
+    return "Точная статистика включается автоматически — данные появятся при ближайшем сборе (обычно пара минут).";
+  return "Статистика собирается в фоне по SSH — данные появятся при ближайшем сборе.";
+}
 
 const PERIODS = ["1h", "24h", "7d"] as const;
 type Period = (typeof PERIODS)[number];
@@ -345,6 +372,7 @@ export function MonitoringScreen() {
 
   const clients = mq.data?.clients ?? [];
   const summary = mq.data?.summary;
+  const freshness = collectionFreshness(mq.data?.collection);
 
   // варианты для фильтров — из полученных данных (мультивыбор)
   const serverOpts = useMemo(() => {
@@ -406,6 +434,11 @@ export function MonitoringScreen() {
         sub="Кто онлайн, по какому протоколу и сколько трафика — по всем вашим серверам"
         action={
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {freshness != null && (
+              <span className="muted-3" style={{ fontSize: 12 }} title="Свежесть последнего сбора по SSH">
+                обновлено {fmtAgo(freshness)}
+              </span>
+            )}
             {PERIODS.map((p) => (
               <Btn key={p} variant={p === period ? "primary" : "ghost"} sm onClick={() => setPeriod(p)}>
                 {PERIOD_LABEL[p]}
@@ -493,9 +526,7 @@ export function MonitoringScreen() {
             <Empty
               title="Пока нет данных о трафике"
               sub={
-                clients.length === 0
-                  ? "Статистика собирается в фоне по SSH. Для Xray/Hysteria2 включите точную статистику в карточке сервера."
-                  : "Под текущие фильтры нет клиентов."
+                clients.length === 0 ? collectionDiagnosis(mq.data?.collection) : "Под текущие фильтры нет клиентов."
               }
             />
           </div>

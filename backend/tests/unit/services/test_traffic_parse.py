@@ -72,10 +72,11 @@ def test__clients_table_names__empty_and_broken_rows_are_skipped() -> None:
 
 async def test__collect__wireguard__attaches_name_from_clients_table() -> None:
     """Для amnezia-протоколов PeerStat.name берётся из clientsTable (по clientId)."""
-    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("awg"))
-    assert len(stats) == 1
-    assert stats[0].client_id == "PEERA"
-    assert stats[0].name == "Alex Xiaomi"
+    res = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("awg"))
+    assert res.status == "ok"
+    assert len(res.stats) == 1
+    assert res.stats[0].client_id == "PEERA"
+    assert res.stats[0].name == "Alex Xiaomi"
 
 
 @dataclass
@@ -130,30 +131,34 @@ class _FakeSsh:
 
 
 async def test__collect__wireguard_dispatch() -> None:
-    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("awg"))
-    assert len(stats) == 1
-    assert (stats[0].client_id, stats[0].rx, stats[0].tx) == ("PEERA", 111, 222)
+    res = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("awg"))
+    assert res.status == "ok"
+    assert len(res.stats) == 1
+    assert (res.stats[0].client_id, res.stats[0].rx, res.stats[0].tx) == ("PEERA", 111, 222)
 
 
 async def test__collect__xray_dispatch__per_uuid_with_online() -> None:
-    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("xray"))
-    assert len(stats) == 1
-    s = stats[0]
+    res = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("xray"))
+    assert res.status == "ok"
+    assert len(res.stats) == 1
+    s = res.stats[0]
     assert (s.client_id, s.rx, s.tx, s.online) == ("UU", 10, 20, True)
     assert s.last_handshake is None  # у xray handshake нет
 
 
 async def test__collect__hysteria_dispatch__per_authid_with_online() -> None:
-    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("hysteria2"))
-    assert len(stats) == 1
-    s = stats[0]
+    res = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("hysteria2"))
+    assert res.status == "ok"
+    assert len(res.stats) == 1
+    s = res.stats[0]
     assert (s.client_id, s.rx, s.tx, s.online) == ("AUTH", 5, 50, True)
 
 
 async def test__collect__openvpn_dispatch__per_cn_from_status_log() -> None:
-    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("openvpn"))
-    assert len(stats) == 1
-    s = stats[0]
+    res = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("openvpn"))
+    assert res.status == "ok"
+    assert len(res.stats) == 1
+    s = res.stats[0]
     assert (s.client_id, s.rx, s.tx, s.online) == ("CN1", 333, 444, True)
     assert s.last_handshake is None  # у openvpn handshake-эпоху не читаем
 
@@ -162,13 +167,30 @@ async def test__collect__outline_dispatch__per_key_total_bytes() -> None:
     prov = OutlineProvisioner(
         pc.spec_by_id("outline"), material=ServerMaterial(outline_api_url="https://1.2.3.4:9000/x")
     )
-    stats = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("outline"), prov)
-    assert len(stats) == 1
-    s = stats[0]
+    res = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("outline"), prov)
+    assert res.status == "ok"
+    assert len(res.stats) == 1
+    s = res.stats[0]
     # Outline: суммарный трафик в tx, rx=0, online не поддержан (None)
     assert (s.client_id, s.rx, s.tx, s.online) == ("0", 0, 9000, None)
 
 
-async def test__collect__outline_without_provisioner__returns_empty() -> None:
-    # без провизионера (нет apiUrl) → пусто, не падаем
-    assert await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("outline")) == []
+async def test__collect__outline_without_provisioner__reports_stats_disabled() -> None:
+    # без провизионера (нет apiUrl) → status=stats_disabled, замеров нет
+    res = await TrafficCollector.collect(_FakeSsh(), pc.spec_by_id("outline"))
+    assert res.status == "stats_disabled"
+    assert res.stats == []
+
+
+async def test__collect__xray_stats_disabled_when_query_fails() -> None:
+    """statsquery с ненулевым exit (stats не включён) → status=stats_disabled (не error)."""
+
+    class _NoStatsSsh(_FakeSsh):
+        async def run(self, cmd: str) -> _Res:
+            if "statsquery" in cmd:
+                return _Res(stderr="unavailable", exit_status=1)
+            return await super().run(cmd)
+
+    res = await TrafficCollector.collect(_NoStatsSsh(), pc.spec_by_id("xray"))
+    assert res.status == "stats_disabled"
+    assert res.stats == []
