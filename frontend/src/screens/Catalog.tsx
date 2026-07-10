@@ -181,12 +181,17 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
 
   // спиннер — только пока данных совсем нет; дальше показываем результаты по мере подгрузки провайдеров
   const loading = all.length === 0 && results.some((r) => r.isLoading);
-  const sel: CSSProperties = { height: 34, fontSize: 13 };
+  const filterGrid: CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gap: 8,
+  };
   return (
     <Modal title="Подбор тарифа по всем провайдерам" onClose={onClose} wide>
       <div className="stack" style={{ gap: 12 }}>
-        <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <select className="input" style={sel} value={region} onChange={(e) => setRegion(e.target.value)}>
+        {/* фильтры — адаптивная сетка (используем родной .input, без форс-высоты, иначе текст обрезается) */}
+        <div style={filterGrid}>
+          <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
             <option value="">Все локации</option>
             {regions.map((r) => (
               <option key={r} value={r}>
@@ -194,7 +199,7 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
               </option>
             ))}
           </select>
-          <select className="input" style={sel} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+          <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
             <option value="">Любая валюта</option>
             {currencies.map((c) => (
               <option key={c} value={c}>
@@ -204,15 +209,15 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
           </select>
           <input
             className="input"
-            style={{ ...sel, width: 150 }}
             type="number"
             min={0}
-            placeholder={currency ? `Бюджет, ${currency}` : "Бюджет (выберите валюту)"}
+            placeholder={currency ? `Бюджет, ${currency}` : "Бюджет"}
             value={maxPrice}
             disabled={!currency}
+            title={currency ? "" : "Сначала выберите валюту"}
             onChange={(e) => setMaxPrice(e.target.value)}
           />
-          <select className="input" style={sel} value={minRam} onChange={(e) => setMinRam(e.target.value)}>
+          <select className="input" value={minRam} onChange={(e) => setMinRam(e.target.value)}>
             <option value="">RAM любой</option>
             {[1, 2, 4, 8, 16].map((g) => (
               <option key={g} value={g}>
@@ -220,11 +225,12 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
               </option>
             ))}
           </select>
-          <label className="rowflex" style={{ gap: 6, fontSize: 12.5, cursor: "pointer", alignItems: "center" }}>
+        </div>
+        <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
             <input type="checkbox" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
             только в наличии
           </label>
-          <div style={{ flex: 1 }} />
           <span className="muted-3" style={{ fontSize: 12 }}>
             Найдено: {rows.length}
           </span>
@@ -245,12 +251,13 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
                 style={{
                   gap: 12,
                   alignItems: "center",
+                  flexWrap: "wrap",
                   padding: "10px 12px",
                   borderRadius: 10,
                   background: "var(--surface-2)",
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13.5 }}>
                     <span className="badge" style={{ marginRight: 6 }}>
                       {p.providerLabel}
@@ -261,8 +268,8 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
                     {planSpecs(p)}
                   </div>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{fmtPrice(p)}</div>
-                <div className="rowflex" style={{ gap: 6 }}>
+                <div className="rowflex" style={{ gap: 10, alignItems: "center", marginLeft: "auto" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{fmtPrice(p)}</div>
                   {p.sourceUrl && (
                     <a href={p.sourceUrl} target="_blank" rel="noopener">
                       <Btn variant="ghost" sm>
