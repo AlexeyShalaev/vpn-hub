@@ -38,9 +38,16 @@ function collectionDiagnosis(collection?: Record<string, CollectionHealth>): str
   return "Статистика собирается в фоне по SSH — данные появятся при ближайшем сборе.";
 }
 
-const PERIODS = ["1h", "24h", "7d"] as const;
+const PERIODS = ["1h", "24h", "7d", "30d", "90d", "365d"] as const;
 type Period = (typeof PERIODS)[number];
-const PERIOD_LABEL: Record<Period, string> = { "1h": "1 час", "24h": "24 часа", "7d": "7 дней" };
+const PERIOD_LABEL: Record<Period, string> = {
+  "1h": "1 час",
+  "24h": "24 часа",
+  "7d": "7 дней",
+  "30d": "30 дней",
+  "90d": "90 дней",
+  "365d": "Год",
+};
 
 const PROTO_LABEL: Record<string, string> = {
   awg: "AmneziaWG",
@@ -159,13 +166,16 @@ export function ClientTrafficModal({
   }, [tq.data, client.clientId, client.proto]);
 
   const hasData = rxPoints.length > 0 || txPoints.length > 0;
+  // подпись интервала точки графика по ярусу series (0 = сырьё/интервал сбора)
+  const bucket = tq.data?.seriesBucketSeconds ?? 0;
+  const bucketLabel = bucket >= 86400 ? "за сутки" : bucket >= 3600 ? "за час" : "за интервал";
 
   return (
     <Modal title={`Трафик клиента · ${clientName(client)}`} onClose={onClose} wide>
       <div className="stack" style={{ gap: 12 }}>
         <div className="muted-3" style={{ fontSize: 12.5 }}>
           {PROTO_LABEL[client.proto] ?? client.proto}
-          {client.serverName ? ` · ${client.serverName}` : ""} · за {periodLabel} · значения в МБ за интервал
+          {client.serverName ? ` · ${client.serverName}` : ""} · за {periodLabel} · значения в МБ {bucketLabel}
         </div>
         {tq.isLoading ? (
           <div style={{ padding: 24, textAlign: "center" }}>

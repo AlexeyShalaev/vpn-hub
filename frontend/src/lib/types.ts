@@ -460,8 +460,9 @@ export interface CollectionHealth {
   lastCollectedAt: number | null; // max по протоколам сервера
   protocols: CollectionProto[];
 }
+export type TrafficPeriod = "1h" | "24h" | "7d" | "30d" | "90d" | "365d";
 export interface Monitoring {
-  period: "1h" | "24h" | "7d";
+  period: TrafficPeriod;
   onlineWindowSeconds: number;
   summary: MonitoringSummary;
   collection: Record<string, CollectionHealth>; // ключ — serverId
@@ -470,8 +471,9 @@ export interface Monitoring {
 // per-server overview (тот же endpoint, что и раньше, но с online/speed на клиентах)
 export interface ServerTraffic {
   serverId: string;
-  period: "1h" | "24h" | "7d";
+  period: TrafficPeriod;
   onlineWindowSeconds: number;
+  seriesBucketSeconds: number; // 0 = сырьё; иначе размер бакета series (час/сутки)
   collection: CollectionHealth;
   clients: MonitoringClient[];
   series: { at: number; proto: string; clientId: string | null; rx: number; tx: number }[];

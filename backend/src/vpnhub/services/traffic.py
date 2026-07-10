@@ -30,7 +30,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from vpnhub.api.config import Settings
@@ -53,7 +53,14 @@ from vpnhub.services.limits import add_period_usage, period_start
 log = structlog.get_logger(__name__)
 
 # whitelist периодов дашборда → длительность в секундах
-_PERIODS: dict[str, int] = {"1h": 3600, "24h": 86400, "7d": 7 * 86400}
+_PERIODS: dict[str, int] = {
+    "1h": 3600,
+    "24h": 86400,
+    "7d": 7 * 86400,
+    "30d": 30 * 86400,
+    "90d": 90 * 86400,
+    "365d": 365 * 86400,
+}
 _DEFAULT_PERIOD = "24h"
 
 # статусы сбора трафика по протоколу (health; пишутся в ServerProtocol.traffic_status)
@@ -76,91 +83,77 @@ def effective_online_window(settings: Settings) -> int:
     return max(settings.traffic_online_window_seconds, 2 * settings.monitor_interval + 60)
 
 
-def _group_by_server(samples: list[m.TrafficSample]) -> dict[str, list[m.TrafficSample]]:
-    """Разложить сэмплы по server_id, сохраняя порядок (для аккуратной агрегации per-server)."""
-    out: dict[str, list[m.TrafficSample]] = {}
-    for s in samples:
-        out.setdefault(s.server_id, []).append(s)
-    return out
+# Ярус хранения для СУММ трафика за период и для временного ряда (series). Свежее — из сырья
+# (детально), старое — из rollup-агрегатов (дёшево). «Онлайн/скорость/кумулятив» — ВСЕГДА из
+# peer_state, независимо от периода. series для длинных периодов — крупнее (меньше объём ответа).
+_TOTALS_TIER = {"1h": "raw", "24h": "raw", "7d": "hourly", "30d": "hourly", "90d": "hourly", "365d": "daily"}
+_SERIES_TIER = {"1h": "raw", "24h": "raw", "7d": "hourly", "30d": "daily", "90d": "daily", "365d": "daily"}
+_SERIES_BUCKET_SECONDS = {"raw": 0, "hourly": 3600, "daily": 86400}
 
 
-def _aggregate_clients(
-    samples: list[m.TrafficSample], names: dict[str, tuple[str, str, str]], now: float, online_window: int
-) -> list[dict]:
-    """Свернуть сэмплы в per-(proto,client) агрегаты: суммарный трафик, онлайн, скорость.
+def _client_dict(
+    state: m.TrafficPeerState,
+    totals: tuple[int, int],
+    names: dict[str, tuple[str, str, str]],
+    server_names: dict[str, str],
+    now: float,
+    window: int,
+) -> dict:
+    """Собрать per-client запись дашборда: трафик за период (из яруса) + «сейчас» (из peer_state).
 
-    Чистая (без IO) — общая для per-server `overview` и глобального `global_overview`.
-    - rxTotal/txTotal — сумма дельт за окно (потрачено за период);
-    - rxBytes/txBytes — последний кумулятив;
-    - online — `online`-флаг из последнего сэмпла (xray/hysteria) ИЛИ свежесть handshake (wg);
-    - rxSpeed/txSpeed — байт/сек из последней дельты (delta / интервал между двумя последними сэмплами);
-    - lastSeen — max(at по свежему трафику/handshake) для сортировки «последний онлайн».
-    `samples` предполагаются в порядке возрастания `at`.
+    rxTotal/txTotal — из выбранного яруса (totals); online/скорость/кумулятив/handshake — из peer_state
+    (не зависят от периода). external — клиент без нашего DeviceConfig (заведён мимо панели).
     """
-    clients: dict[tuple[str, str | None], dict] = {}
-    prev_at: dict[tuple[str, str | None], float] = {}
-    for s in samples:
-        key = (s.proto, s.client_id)
-        agg = clients.get(key)
-        if agg is None:
-            dev, usr, cfg_status = names.get(s.device_config_id or "", ("", "", "active"))
-            agg = {
-                "proto": s.proto,
-                "clientId": s.client_id,
-                "configId": s.device_config_id,  # для ручной паузы/старта из мониторинга (null у external)
-                "status": cfg_status,  # active | paused | suspended | revoked
-                "deviceName": dev,
-                "userName": usr,
-                "external": s.device_config_id is None,
-                "extName": "",  # имя из Amnezia clientsTable (только для external; ниже добираем непустое)
-                "rxTotal": 0,
-                "txTotal": 0,
-                "rxBytes": s.rx_bytes,
-                "txBytes": s.tx_bytes,
-                "lastHandshake": s.last_handshake,
-                "onlineFlag": s.online,
-                "rxSpeed": 0.0,
-                "txSpeed": 0.0,
-                "lastSeen": None,
-                "online": False,
-            }
-            clients[key] = agg
-        agg["rxTotal"] += s.rx_delta
-        agg["txTotal"] += s.tx_delta
-        agg["rxBytes"] = s.rx_bytes
-        agg["txBytes"] = s.tx_bytes
-        agg["onlineFlag"] = s.online
-        # extName — имя external-клиента из clientsTable; берём непустое (у части сэмплов может быть пусто)
-        if agg["external"] and not agg["extName"] and s.ext_name:
-            agg["extName"] = s.ext_name
-        lh = agg["lastHandshake"]
-        if s.last_handshake is not None and (lh is None or s.last_handshake > lh):
-            agg["lastHandshake"] = s.last_handshake
-        # скорость — по интервалу между двумя последними сэмплами этого клиента
-        pa = prev_at.get(key)
-        interval = (s.at - pa) if pa is not None else 0.0
-        if interval > 0:
-            agg["rxSpeed"] = s.rx_delta / interval
-            agg["txSpeed"] = s.tx_delta / interval
-        prev_at[key] = s.at
-        # lastSeen — свежесть контакта: handshake (wg) или at при активной сессии/трафике
-        seen_at = s.last_handshake
-        if s.online or s.rx_delta or s.tx_delta:
-            seen_at = s.at if seen_at is None else max(seen_at, s.at)
-        if seen_at is not None and (agg["lastSeen"] is None or seen_at > agg["lastSeen"]):
-            agg["lastSeen"] = seen_at
+    dev, usr, cfg_status = names.get(state.device_config_id or "", ("", "", "active"))
+    if state.online is not None:  # stats-протоколы (xray/hysteria2) — доверяем движку
+        online = bool(state.online)
+    else:  # wg — по свежести handshake
+        online = state.last_handshake is not None and (now - state.last_handshake) < window
+    return {
+        "proto": state.proto,
+        "clientId": state.client_id,
+        "configId": state.device_config_id,  # для ручной паузы/старта (null у external)
+        "status": cfg_status,  # active | paused | suspended | revoked
+        "deviceName": dev,
+        "userName": usr,
+        "external": state.device_config_id is None,
+        "extName": state.ext_name or "" if state.device_config_id is None else "",
+        "rxTotal": totals[0],
+        "txTotal": totals[1],
+        "rxBytes": state.rx_bytes,
+        "txBytes": state.tx_bytes,
+        "lastHandshake": state.last_handshake,
+        "rxSpeed": state.rx_speed if online else 0.0,  # скорость показываем только у активных
+        "txSpeed": state.tx_speed if online else 0.0,
+        "lastSeen": state.last_handshake,  # свежесть контакта (wg); у stats-протоколов handshake нет
+        "online": online,
+        "serverId": state.server_id,
+        "serverName": server_names.get(state.server_id, ""),
+    }
 
-    for agg in clients.values():
-        flag = agg.pop("onlineFlag")
-        if flag is not None:  # stats-протоколы (xray/hysteria2) — доверяем движку
-            agg["online"] = bool(flag)
-        else:  # wg — по свежести handshake
-            lh = agg["lastHandshake"]
-            agg["online"] = lh is not None and (now - lh) < online_window
-        if not agg["online"]:  # скорость показываем только у активных
-            agg["rxSpeed"] = 0.0
-            agg["txSpeed"] = 0.0
-    return list(clients.values())
+
+def _merge_clients(
+    states: list[m.TrafficPeerState],
+    totals: dict[tuple[str, str, str], tuple[int, int]],
+    names: dict[str, tuple[str, str, str]],
+    server_names: dict[str, str],
+    now: float,
+    window: int,
+    since: float,
+) -> list[dict]:
+    """Список клиентов = peer_state, активные в периоде (last_at>=since) или с трафиком за период.
+
+    Клиент, живой но без трафика за период, виден с нулями; давно снятый (last_at до периода и без
+    трафика) — отсеивается, чтобы список не рос мёртвыми клиентами (peer_state не чистится).
+    """
+    out: list[dict] = []
+    for st in states:
+        key = (st.server_id, st.proto, st.client_id)
+        t = totals.get(key)
+        if t is None and st.last_at < since:
+            continue  # ни трафика за период, ни активности — не показываем
+        out.append(_client_dict(st, t or (0, 0), names, server_names, now, window))
+    return out
 
 
 @dataclass(frozen=True)
@@ -565,36 +558,28 @@ class TrafficService:
 
     async def overview(self, owner_id: str, sid: str, period: str = _DEFAULT_PERIOD) -> dict:
         """Агрегаты по клиентам + временные ряды за период. Владение проверяется как в ServerService."""
-        window = _PERIODS.get(period, _PERIODS[_DEFAULT_PERIOD])
+        period = period if period in _PERIODS else _DEFAULT_PERIOD
+        window = _PERIODS[period]
         now = time.time()
         since = now - window
         online_window = effective_online_window(self.settings)
+        totals_tier, series_tier = _TOTALS_TIER[period], _SERIES_TIER[period]
         async with self.uow.query() as tx:
             server = await tx.servers.get(sid)
             if not server or server.owner_user_id != owner_id:
                 raise NotFound("Сервер не найден")
-            samples = list(
-                (
-                    await tx.session.execute(
-                        select(m.TrafficSample)
-                        .where(m.TrafficSample.server_id == sid, m.TrafficSample.at >= since)
-                        .order_by(m.TrafficSample.at.asc())
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            names = await self._names(tx, samples)
+            states = await self._peer_states_for(tx, [sid])
+            totals = await self._tier_totals(tx, [sid], since, totals_tier)
+            series = await self._tier_series(tx, [sid], since, series_tier)
+            names = await self._names(tx, [st.device_config_id for st in states])
             collection = (await self._collection_meta(tx, [sid])).get(sid, _EMPTY_COLLECTION)
 
-        clients = _aggregate_clients(samples, names, now, online_window)
-        series = [
-            {"at": s.at, "proto": s.proto, "clientId": s.client_id, "rx": s.rx_delta, "tx": s.tx_delta} for s in samples
-        ]
+        clients = _merge_clients(states, totals, names, {}, now, online_window, since)
         return {
             "serverId": sid,
-            "period": period if period in _PERIODS else _DEFAULT_PERIOD,
+            "period": period,
             "onlineWindowSeconds": online_window,
+            "seriesBucketSeconds": _SERIES_BUCKET_SECONDS[series_tier],
             "collection": collection,
             "clients": sorted(clients, key=lambda c: c["rxTotal"] + c["txTotal"], reverse=True),
             "series": series,
@@ -603,14 +588,16 @@ class TrafficService:
     async def global_overview(self, owner_id: str, period: str = _DEFAULT_PERIOD) -> dict:
         """Глобальный супер-мониторинг: агрегаты по клиентам ВСЕХ серверов владельца.
 
-        Одна выборка сэмплов по всем серверам владельца за период → per-(server,proto,client) агрегаты
-        (имя пользователя/устройства, протокол, сервер, онлайн, скачал/отдал, текущая скорость,
-        последний онлайн) + сводка (онлайн-клиентов, суммарный трафик, число серверов).
+        Клиенты берутся из peer_state (онлайн/скорость/кумулятив «сейчас», не зависят от периода),
+        трафик за период — из выбранного по периоду яруса (сырьё/hourly/daily). Плюс сводка
+        (онлайн-клиентов, суммарный трафик, число серверов) и health-мета сбора per сервер.
         """
-        window = _PERIODS.get(period, _PERIODS[_DEFAULT_PERIOD])
+        period = period if period in _PERIODS else _DEFAULT_PERIOD
+        window = _PERIODS[period]
         now = time.time()
         since = now - window
         online_window = effective_online_window(self.settings)
+        totals_tier = _TOTALS_TIER[period]
         async with self.uow.query() as tx:
             server_rows = list(
                 (
@@ -620,41 +607,24 @@ class TrafficService:
                 ).all()
             )
             server_names: dict[str, str] = {row[0]: row[1] for row in server_rows}
-            samples: list[m.TrafficSample] = []
+            states: list[m.TrafficPeerState] = []
+            totals: dict[tuple[str, str, str], tuple[int, int]] = {}
             collection: dict[str, dict] = {}
             if server_names:
-                samples = list(
-                    (
-                        await tx.session.execute(
-                            select(m.TrafficSample)
-                            .where(
-                                m.TrafficSample.server_id.in_(list(server_names)),
-                                m.TrafficSample.at >= since,
-                            )
-                            .order_by(m.TrafficSample.at.asc())
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                collection = await self._collection_meta(tx, list(server_names))
-            names = await self._names(tx, samples)
+                ids = list(server_names)
+                states = await self._peer_states_for(tx, ids)
+                totals = await self._tier_totals(tx, ids, since, totals_tier)
+                collection = await self._collection_meta(tx, ids)
+            names = await self._names(tx, [st.device_config_id for st in states])
 
-        # агрегируем отдельно по каждому серверу (client_id уникален в рамках сервера-протокола),
-        # затем сшиваем в единый список с колонкой «сервер».
-        clients: list[dict] = []
-        for sid, sid_samples in _group_by_server(samples).items():
-            for agg in _aggregate_clients(sid_samples, names, now, online_window):
-                agg["serverId"] = sid
-                agg["serverName"] = server_names.get(sid, "")
-                clients.append(agg)
+        clients = _merge_clients(states, totals, names, server_names, now, online_window, since)
         clients.sort(key=lambda c: c["rxTotal"] + c["txTotal"], reverse=True)
 
         online_now = sum(1 for c in clients if c["online"])
         rx_total = sum(c["rxTotal"] for c in clients)
         tx_total = sum(c["txTotal"] for c in clients)
         return {
-            "period": period if period in _PERIODS else _DEFAULT_PERIOD,
+            "period": period,
             "onlineWindowSeconds": online_window,
             "summary": {
                 "clientsTotal": len(clients),
@@ -666,6 +636,84 @@ class TrafficService:
             "collection": collection,
             "clients": clients,
         }
+
+    async def _peer_states_for(self, tx: Any, server_ids: list[str]) -> list[m.TrafficPeerState]:
+        """Все состояния счётчиков по серверам (источник списка клиентов и «сейчас»-полей)."""
+        if not server_ids:
+            return []
+        return list(
+            (
+                await tx.session.execute(
+                    select(m.TrafficPeerState).where(m.TrafficPeerState.server_id.in_(server_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def _tier_totals(
+        self, tx: Any, server_ids: list[str], since: float, tier: str
+    ) -> dict[tuple[str, str, str], tuple[int, int]]:
+        """Суммы rx/tx per (server, proto, client) за период из нужного яруса (сырьё/hourly/daily)."""
+        if not server_ids:
+            return {}
+        model: Any
+        rx_col: Any
+        tx_col: Any
+        if tier == "raw":
+            model = m.TrafficSample
+            rx_col, tx_col = m.TrafficSample.rx_delta, m.TrafficSample.tx_delta
+            at_filter = m.TrafficSample.at >= since
+        else:
+            model = m.TrafficHourly if tier == "hourly" else m.TrafficDaily
+            rx_col, tx_col = model.rx, model.tx
+            at_filter = model.bucket >= since
+        client_filter = model.client_id.isnot(None)
+        rows = (
+            await tx.session.execute(
+                select(
+                    model.server_id,
+                    model.proto,
+                    model.client_id,
+                    func.sum(rx_col),
+                    func.sum(tx_col),
+                )
+                .where(model.server_id.in_(server_ids), at_filter, client_filter)
+                .group_by(model.server_id, model.proto, model.client_id)
+            )
+        ).all()
+        return {(sid, proto, cid): (int(rx or 0), int(tx or 0)) for sid, proto, cid, rx, tx in rows}
+
+    async def _tier_series(self, tx: Any, server_ids: list[str], since: float, tier: str) -> list[dict]:
+        """Временной ряд (bucket/at, proto, clientId, rx, tx) за период из нужного яруса."""
+        if not server_ids:
+            return []
+        if tier == "raw":
+            rows = (
+                await tx.session.execute(
+                    select(
+                        m.TrafficSample.at,
+                        m.TrafficSample.proto,
+                        m.TrafficSample.client_id,
+                        m.TrafficSample.rx_delta,
+                        m.TrafficSample.tx_delta,
+                    )
+                    .where(m.TrafficSample.server_id.in_(server_ids), m.TrafficSample.at >= since)
+                    .order_by(m.TrafficSample.at.asc())
+                )
+            ).all()
+        else:
+            model = m.TrafficHourly if tier == "hourly" else m.TrafficDaily
+            rows = (
+                await tx.session.execute(
+                    select(model.bucket, model.proto, model.client_id, model.rx, model.tx)
+                    .where(model.server_id.in_(server_ids), model.bucket >= since)
+                    .order_by(model.bucket.asc())
+                )
+            ).all()
+        return [
+            {"at": float(at), "proto": proto, "clientId": cid, "rx": rx, "tx": tx} for at, proto, cid, rx, tx in rows
+        ]
 
     async def _collection_meta(self, tx: Any, server_ids: list[str]) -> dict[str, dict]:
         """Здоровье сбора трафика per сервер: last-collected + статус каждого installed-протокола.
@@ -705,9 +753,9 @@ class TrafficService:
                 entry["lastCollectedAt"] = sp.traffic_collected_at
         return out
 
-    async def _names(self, tx: Any, samples: list[m.TrafficSample]) -> dict[str, tuple[str, str, str]]:
+    async def _names(self, tx: Any, dc_id_list: list[str | None]) -> dict[str, tuple[str, str, str]]:
         """DeviceConfig.id → (имя устройства, имя пользователя, статус конфига) для нон-external клиентов."""
-        dc_ids = {s.device_config_id for s in samples if s.device_config_id}
+        dc_ids = {d for d in dc_id_list if d}
         if not dc_ids:
             return {}
         rows = list(

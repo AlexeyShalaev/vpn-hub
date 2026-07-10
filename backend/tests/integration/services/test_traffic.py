@@ -228,6 +228,90 @@ async def test__overview__online_status_from_handshake_freshness(svc, session_ma
     assert by_client["STALE"]["online"] is False
 
 
+async def test__overview__totals_tier_by_period(svc, session_maker, uow):
+    """1h/24h читают суммы из сырья, 7d/30d/90d — из hourly, 365d — из daily (суммы различимы)."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110072")
+        srv = await make_server(s, owner_id=owner.id)
+
+    now = time.time()
+    async with uow.transaction() as tx:
+        # клиент в peer_state (источник списка), активен только что
+        tx.session.add(m.TrafficPeerState(server_id=srv.id, proto="awg", client_id="C", last_at=now, online=True))
+        # сырьё за последний час: сумма дельт = 11
+        tx.session.add(
+            m.TrafficSample(server_id=srv.id, proto="awg", client_id="C", at=now - 100, rx_delta=1, tx_delta=10)
+        )
+        # hourly-бакет: суммарно 200
+        tx.session.add(
+            m.TrafficHourly(
+                server_id=srv.id, proto="awg", client_id="C", bucket=int(now - 100), rx=100, tx=100,
+                samples_total=1, samples_online=1,
+            )
+        )
+        # daily-бакет: суммарно 5000
+        tx.session.add(
+            m.TrafficDaily(
+                server_id=srv.id, proto="awg", client_id="C", bucket=int(now - 100), rx=2000, tx=3000,
+                samples_total=1, samples_online=1,
+            )
+        )
+        await tx.session.flush()
+
+    raw = await svc.overview(owner.id, srv.id, period="1h")
+    assert raw["seriesBucketSeconds"] == 0
+    assert (raw["clients"][0]["rxTotal"], raw["clients"][0]["txTotal"]) == (1, 10)
+
+    hourly = await svc.overview(owner.id, srv.id, period="7d")
+    assert hourly["seriesBucketSeconds"] == 3600
+    assert (hourly["clients"][0]["rxTotal"], hourly["clients"][0]["txTotal"]) == (100, 100)
+
+    daily = await svc.overview(owner.id, srv.id, period="365d")
+    assert daily["seriesBucketSeconds"] == 86400
+    assert (daily["clients"][0]["rxTotal"], daily["clients"][0]["txTotal"]) == (2000, 3000)
+
+
+async def test__overview__online_and_speed_from_state_regardless_of_period(svc, session_maker, uow):
+    """Онлайн/скорость всегда из peer_state — даже для длинного периода 365d."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110073")
+        srv = await make_server(s, owner_id=owner.id)
+
+    now = time.time()
+    async with uow.transaction() as tx:
+        tx.session.add(
+            m.TrafficPeerState(
+                server_id=srv.id, proto="xray", client_id="C", last_at=now, online=True, rx_speed=50.0
+            )
+        )
+        await tx.session.flush()
+
+    ov = await svc.overview(owner.id, srv.id, period="365d")
+    row = ov["clients"][0]
+    assert row["online"] is True and row["rxSpeed"] == pytest.approx(50.0)
+
+
+async def test__overview__idle_client_shown_dead_client_hidden(svc, session_maker, uow):
+    """Живой клиент без трафика за период виден с нулями; давно снятый (last_at до периода) скрыт."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110074")
+        srv = await make_server(s, owner_id=owner.id)
+
+    now = time.time()
+    async with uow.transaction() as tx:
+        tx.session.add(m.TrafficPeerState(server_id=srv.id, proto="awg", client_id="IDLE", last_at=now, online=False))
+        tx.session.add(
+            m.TrafficPeerState(server_id=srv.id, proto="awg", client_id="DEAD", last_at=now - 2 * 86400, online=False)
+        )
+        await tx.session.flush()
+
+    ov = await svc.overview(owner.id, srv.id, period="24h")
+    ids = {c["clientId"] for c in ov["clients"]}
+    assert ids == {"IDLE"}  # DEAD (last_at 2 дня назад, без трафика) отсеян
+    idle = next(c for c in ov["clients"] if c["clientId"] == "IDLE")
+    assert (idle["rxTotal"], idle["txTotal"]) == (0, 0)
+
+
 async def test__overview__foreign_server__raises_notfound(svc, session_maker):
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79001110040")
@@ -267,38 +351,33 @@ async def test__overview__online_from_stats_flag_overrides_handshake(svc, sessio
     assert by_client["UUOFF"]["online"] is False
 
 
-async def test__overview__reports_speed_for_active_client(svc, session_maker):
-    """Скорость (rxSpeed/txSpeed) считается из последней дельты по интервалу между сэмплами."""
+async def test__overview__reports_speed_for_active_client(svc, session_maker, uow):
+    """Скорость (rxSpeed/txSpeed) берётся из peer_state и показывается только у активных клиентов."""
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79001110071")
         srv = await make_server(s, owner_id=owner.id)
 
     now = time.time()
-    # два сэмпла с явными at: первый (prev) и второй через 10с с приростом 1000 байт rx
-    async with svc.uow.transaction() as tx:
+    # peer_state с известной скоростью: активный клиент (online) и офлайн — скорость гасится
+    async with uow.transaction() as tx:
         tx.session.add(
-            m.TrafficSample(
-                server_id=srv.id, proto="xray", client_id="U", at=now - 10, rx_bytes=0, tx_bytes=0, online=True
+            m.TrafficPeerState(
+                server_id=srv.id, proto="xray", client_id="ON", rx_bytes=1000, rx_speed=100.0, tx_speed=5.0,
+                last_at=now, online=True,
             )
         )
         tx.session.add(
-            m.TrafficSample(
-                server_id=srv.id,
-                proto="xray",
-                client_id="U",
-                at=now,
-                rx_bytes=1000,
-                tx_bytes=0,
-                rx_delta=1000,
-                tx_delta=0,
-                online=True,
+            m.TrafficPeerState(
+                server_id=srv.id, proto="xray", client_id="OFF", rx_bytes=1000, rx_speed=100.0, tx_speed=5.0,
+                last_at=now, online=False,
             )
         )
         await tx.session.flush()
 
     ov = await svc.overview(owner.id, srv.id, period="1h")
-    row = ov["clients"][0]
-    assert row["rxSpeed"] == pytest.approx(100.0, rel=0.01)  # 1000 байт / 10 сек
+    by_client = {c["clientId"]: c for c in ov["clients"]}
+    assert by_client["ON"]["rxSpeed"] == pytest.approx(100.0) and by_client["ON"]["txSpeed"] == pytest.approx(5.0)
+    assert by_client["OFF"]["rxSpeed"] == 0.0 and by_client["OFF"]["txSpeed"] == 0.0  # офлайн → скорость 0
 
 
 # --------------------------------------------------------------------------- global_overview
