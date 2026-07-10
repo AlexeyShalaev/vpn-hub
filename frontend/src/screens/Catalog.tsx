@@ -15,26 +15,33 @@ import type { Provider, ProviderPlan } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
 
-// общие стили кнопок карточки (DRY): основная «купить» на всю ширину + вторичные в ряд
+// общие стили кнопок карточки (DRY): основная «купить» на всю ширину + вторичные в ряд.
+// Все одинаковой высоты (box-sizing: border-box, чтобы 1px-бордер вторичных не сбивал высоту).
+const ACTION_HEIGHT = 44;
 const primaryAction: CSSProperties = {
-  flex: 1,
-  height: 42,
-  display: "inline-flex",
+  width: "100%",
+  height: ACTION_HEIGHT,
+  boxSizing: "border-box",
+  display: "flex",
   alignItems: "center",
   justifyContent: "center",
   gap: 7,
-  borderRadius: 11,
+  borderRadius: 12,
   background: "var(--ink)",
   color: "var(--on-ink)",
-  font: "600 13.5px/1 var(--font)",
+  font: "600 14px/1 var(--font)",
   textDecoration: "none",
 };
 const secondaryAction: CSSProperties = {
   flex: 1,
-  height: 42,
+  height: ACTION_HEIGHT,
+  boxSizing: "border-box",
   padding: "0 14px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   border: "1px solid var(--border-strong)",
-  borderRadius: 11,
+  borderRadius: 12,
   background: "var(--surface)",
   color: "var(--text)",
   font: "600 13px/1 var(--font)",
