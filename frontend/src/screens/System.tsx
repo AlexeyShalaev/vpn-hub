@@ -11,10 +11,30 @@ import {
   type TrafficUnit,
   trafficValueToBytes,
 } from "../lib/trafficUnits";
-import type { MetricSeries, SystemInfo } from "../lib/types";
+import type { MetricSeries, MetricsRetention, SystemInfo } from "../lib/types";
 import { copyText, useStore } from "../store";
 
 const UPGRADE_CMD = "docker compose pull && docker compose up -d";
+
+// человекочитаемые байты (компактно, для строки использования метрик)
+function fmtBytes(n: number | null): string {
+  if (n == null) return "—";
+  const u = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+}
+
+// строка «Сейчас: N строк, ~X на диске» (размер только на Postgres)
+function metricsUsageLine(m: MetricsRetention): string {
+  const rows = Object.values(m.usage.rows).reduce((a, b) => a + b, 0);
+  const size = m.usage.totalBytes != null ? `, ~${fmtBytes(m.usage.totalBytes)} на диске` : "";
+  return `Сейчас: ${rows.toLocaleString("ru-RU")} строк${size}.`;
+}
 
 // как именно применится обновление — зависит от драйвера на бэкенде (updateMode)
 const MODE_HINT: Record<string, string> = {
@@ -207,6 +227,8 @@ export function SystemScreen() {
   const [devLimit, setDevLimit] = useState("");
   const [userBytesValue, setUserBytesValue] = useState("");
   const [userBytesUnit, setUserBytesUnit] = useState<TrafficUnit>("GB");
+  const [metricsDays, setMetricsDays] = useState("");
+  const [metricsCap, setMetricsCap] = useState("");
   useEffect(() => {
     const n = sysQ.data?.defaultDevicesPerUser;
     if (n != null) setDevLimit(String(n));
@@ -217,6 +239,12 @@ export function SystemScreen() {
     setUserBytesValue(limit.value);
     setUserBytesUnit(limit.unit);
   }, [sysQ.data?.defaultUserBytes]);
+  useEffect(() => {
+    const mtr = sysQ.data?.metrics;
+    if (!mtr) return;
+    setMetricsDays(mtr.rawRetentionDays != null ? String(mtr.rawRetentionDays) : "");
+    setMetricsCap(mtr.sizeCapGb > 0 ? String(mtr.sizeCapGb) : "");
+  }, [sysQ.data?.metrics]);
 
   const upgradeMut = useMutation({
     mutationFn: q.adminUpgrade,
@@ -301,6 +329,15 @@ export function SystemScreen() {
     mutationFn: (bytes: number | null) => q.adminSetUserByteLimit(bytes),
     onSuccess: () => {
       toast("Лимит трафика сохранён");
+      qc.invalidateQueries({ queryKey: ["adminSystem"] });
+    },
+    onError: toastErr,
+  });
+
+  const metricsMut = useMutation({
+    mutationFn: (v: { days: number | null; cap: number }) => q.adminSetMetricsRetention(v.days, v.cap),
+    onSuccess: () => {
+      toast("Хранение метрик сохранено");
       qc.invalidateQueries({ queryKey: ["adminSystem"] });
     },
     onError: toastErr,
@@ -587,6 +624,71 @@ export function SystemScreen() {
           </div>
         </div>
       </div>
+
+      {/* (2b) Хранение метрик: ретеншн по времени/размеру + текущее использование */}
+      {sysQ.data?.metrics && (
+        <div className="card">
+          <div
+            style={{
+              font: "700 12px/1 var(--font)",
+              letterSpacing: ".05em",
+              textTransform: "uppercase",
+              color: "var(--text-3)",
+              marginBottom: 12,
+            }}
+          >
+            Хранение метрик
+          </div>
+          <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+            Метрики трафика и ресурсов серверов хранятся ярусно (сырьё → почасовые → посуточные агрегаты). Ограничьте
+            хранение по времени или по размеру диска. {metricsUsageLine(sysQ.data.metrics)}
+          </p>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+              <span className="muted">Хранить подробные метрики, дней</span>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                style={{ width: 200 }}
+                placeholder={`по умолчанию ${sysQ.data.metrics.defaultRawRetentionDays}`}
+                value={metricsDays}
+                onChange={(e) => setMetricsDays(e.target.value)}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+              <span className="muted">Лимит размера, ГБ (0 — без лимита)</span>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step={0.5}
+                style={{ width: 200 }}
+                placeholder="0 — без лимита"
+                value={metricsCap}
+                onChange={(e) => setMetricsCap(e.target.value)}
+              />
+            </label>
+            <Btn
+              onClick={() => {
+                const d = Number.parseInt(metricsDays, 10);
+                const cap = Number.parseFloat(metricsCap);
+                metricsMut.mutate({
+                  days: Number.isFinite(d) && d > 0 ? d : null,
+                  cap: Number.isFinite(cap) && cap > 0 ? cap : 0,
+                });
+              }}
+              disabled={metricsMut.isPending}
+            >
+              Сохранить
+            </Btn>
+          </div>
+          <p className="muted-3" style={{ fontSize: 12, marginTop: 10 }}>
+            «Дней» применяется к сырью (детальные точки); агрегаты хранятся дольше. Лимит по размеру срезает старейшее
+            сырьё, если суммарный размер превышен (доступен на Postgres).
+          </p>
+        </div>
+      )}
 
       {/* (3) Резервные копии БД */}
       <div className="card">

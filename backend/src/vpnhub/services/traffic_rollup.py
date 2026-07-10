@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 from vpnhub.api.config import Settings
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.uow import Uow
+from vpnhub.services.metrics_retention import enforce_size_cap, raw_retention_override
 from vpnhub.services.traffic import effective_online_window
 
 log = structlog.get_logger(__name__)
@@ -138,7 +139,9 @@ class TrafficRollupService:
         hourly = await self.rollup_hourly(now)
         daily = await self.rollup_daily(now)
         purged = await self.purge_old(now)
-        result = {"hourly": hourly, "daily": daily, **purged}
+        # диск-кап метрик (UI-настройка): срезаем старейшее сырьё, если суммарный размер превышен
+        capped = await enforce_size_cap(self.uow, self.settings)
+        result = {"hourly": hourly, "daily": daily, **purged, "size_trimmed": capped["trimmed"]}
         log.info("traffic_rollup_tick", **result)
         return result
 
@@ -224,10 +227,14 @@ class TrafficRollupService:
         )
 
     async def purge_old(self, now: float) -> dict[str, int]:
-        """Удалить просроченное по трём ярусам. daily_retention_days=0 → daily хранится вечно."""
-        raw_cutoff = now - self.settings.traffic_raw_retention_days * _DAY
+        """Удалить просроченное по трём ярусам. daily_retention_days=0 → daily хранится вечно.
+
+        Дни хранения сырья берутся из UI-override (`raw_retention_override`), иначе из env.
+        """
         hourly_cutoff = now - self.settings.traffic_hourly_retention_days * _DAY
         async with self.uow.transaction() as tx:
+            raw_days = await raw_retention_override(tx.session) or self.settings.traffic_raw_retention_days
+            raw_cutoff = now - raw_days * _DAY
             raw: Any = await tx.session.execute(sa_delete(m.TrafficSample).where(m.TrafficSample.at < raw_cutoff))
             hourly: Any = await tx.session.execute(
                 sa_delete(m.TrafficHourly).where(m.TrafficHourly.bucket < hourly_cutoff)

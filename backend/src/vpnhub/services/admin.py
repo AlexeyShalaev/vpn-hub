@@ -25,6 +25,11 @@ from vpnhub.services.limits import (
     global_device_limit,
     global_user_bytes,
 )
+from vpnhub.services.metrics_retention import (
+    SETTING_RAW_RETENTION,
+    SETTING_SIZE_CAP_GB,
+    metrics_disk_usage,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -41,6 +46,15 @@ _FALLBACK_RELEASES = [
     }
 ]
 _CACHE_KEY = "update_feed_cache"
+
+
+def _is_num(s: str) -> bool:
+    """Строка парсится во float (для чтения size-cap из Setting)."""
+    try:
+        float(s)
+    except ValueError:
+        return False
+    return True
 
 
 def _built(settings: Settings) -> str:
@@ -119,6 +133,16 @@ class AdminService:
         async with self.uow.query() as tx:
             default_devices = await global_device_limit(tx.session)
             default_user_bytes = await global_user_bytes(tx.session)
+            raw_row = await tx.settings.get_value(SETTING_RAW_RETENTION)
+            cap_row = await tx.settings.get_value(SETTING_SIZE_CAP_GB)
+            metrics_usage = await metrics_disk_usage(tx.session)
+        # хранение метрик (UI-настройка): дни хранения сырья (override; пусто → env-дефолт) + кап по размеру
+        metrics = {
+            "rawRetentionDays": int(raw_row) if raw_row and raw_row.strip().isdigit() else None,
+            "defaultRawRetentionDays": self.settings.traffic_raw_retention_days,
+            "sizeCapGb": float(cap_row) if cap_row and _is_num(cap_row) else 0.0,
+            "usage": metrics_usage,
+        }
         s = self.settings
         cache = await self._update_cache()
         latest = cache.get("latest") or s.version
@@ -160,6 +184,7 @@ class AdminService:
             "masterKeySet": backup_key_set,
             "defaultDevicesPerUser": default_devices,
             "defaultUserBytes": default_user_bytes,
+            "metrics": metrics,
             "releases": releases,
         }
 
@@ -174,6 +199,18 @@ class AdminService:
         """Глобальный дефолт лимита трафика на пользователя за период; None/≤0 = без лимита."""
         async with self.uow.transaction() as tx:
             await tx.settings.set_value(SETTING_DEFAULT_USER_BYTES, str(int(n)) if (n and n > 0) else "0")
+
+    async def set_metrics_retention(self, raw_days: int | None, size_cap_gb: float | None) -> None:
+        """Хранение метрик из UI: дни хранения сырья (None/≤0 → env-дефолт) и лимит размера, ГБ (0 = без лимита)."""
+        if raw_days is not None and raw_days < 0:
+            raise BadRequest("Дни хранения не могут быть отрицательными")
+        if size_cap_gb is not None and size_cap_gb < 0:
+            raise BadRequest("Лимит размера не может быть отрицательным")
+        raw_val = str(int(raw_days)) if (raw_days and raw_days > 0) else "0"
+        cap_val = f"{size_cap_gb:g}" if (size_cap_gb and size_cap_gb > 0) else "0"
+        async with self.uow.transaction() as tx:
+            await tx.settings.set_value(SETTING_RAW_RETENTION, raw_val)
+            await tx.settings.set_value(SETTING_SIZE_CAP_GB, cap_val)
 
     async def _update_cache(self) -> dict:
         async with self.uow.query() as tx:

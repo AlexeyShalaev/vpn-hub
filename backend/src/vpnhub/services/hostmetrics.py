@@ -35,6 +35,7 @@ from vpnhub.infra.provisioning.script_runner import list_known_containers
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.provisioning.stats import STATS_PROTOS, enable_stats
 from vpnhub.infra.uow import Uow
+from vpnhub.services.metrics_retention import raw_retention_override
 from vpnhub.services.traffic import (
     TRAFFIC_CONTAINER_DOWN,
     TRAFFIC_OK,
@@ -471,10 +472,14 @@ class HostMetricsService:
             return len(aggs)
 
     async def _purge_old(self, now: float) -> dict[str, int]:
-        """Удалить сырьё старше `server_metrics_retention_days` и агрегаты старше hourly-ретеншна."""
-        raw_cutoff = now - self.settings.server_metrics_retention_days * 86400
+        """Удалить сырьё старше ретеншна и агрегаты старше hourly-ретеншна.
+
+        Дни хранения сырья — из UI-override (`raw_retention_override`), иначе env `server_metrics_retention_days`.
+        """
         hourly_cutoff = now - self.settings.server_metrics_hourly_retention_days * 86400
         async with self.uow.transaction() as tx:
+            raw_days = await raw_retention_override(tx.session) or self.settings.server_metrics_retention_days
+            raw_cutoff = now - raw_days * 86400
             raw: Any = await tx.session.execute(sa_delete(m.ServerMetric).where(m.ServerMetric.at < raw_cutoff))
             hourly: Any = await tx.session.execute(
                 sa_delete(m.ServerMetricHourly).where(m.ServerMetricHourly.bucket < hourly_cutoff)

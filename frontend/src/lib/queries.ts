@@ -259,6 +259,8 @@ export const adminSetDeviceLimit = (defaultDevicesPerUser: number) =>
   http.put<{ ok: boolean }>("/admin/system/device-limit", { defaultDevicesPerUser });
 export const adminSetUserByteLimit = (defaultUserBytes: number | null) =>
   http.put<{ ok: boolean }>("/admin/system/user-byte-limit", { defaultUserBytes });
+export const adminSetMetricsRetention = (rawRetentionDays: number | null, sizeCapGb: number) =>
+  http.put<{ ok: boolean }>("/admin/system/metrics-retention", { rawRetentionDays, sizeCapGb });
 
 // admin: providers catalog (YAML-backed)
 export const adminCreateProvider = (b: Record<string, unknown>) => http.post<Provider>("/admin/providers", b);

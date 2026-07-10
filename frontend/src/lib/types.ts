@@ -397,8 +397,19 @@ export interface SystemInfo {
   masterKeySet: boolean;
   defaultDevicesPerUser: number; // глобальный дефолт лимита устройств на пользователя
   defaultUserBytes: number | null; // глобальный дефолт лимита трафика на пользователя (байт/период), null = без лимита
+  metrics: MetricsRetention; // хранение метрик: ретеншн по времени/размеру + текущее использование
   backups: { id: string; at: string; size: string; kind: string }[];
   releases: { v: string; date: string; notes: string[] }[];
+}
+export interface MetricsRetention {
+  rawRetentionDays: number | null; // UI-override дней хранения сырья; null = env-дефолт
+  defaultRawRetentionDays: number; // env-дефолт (подсказка в плейсхолдере)
+  sizeCapGb: number; // лимит суммарного размера метрик, ГБ; 0 = без лимита
+  usage: {
+    rows: Record<string, number>; // строк по каждой таблице метрик
+    sizeBytes: Record<string, number> | null; // размер таблиц, байт (только Postgres; null — неизвестно)
+    totalBytes: number | null; // суммарный размер метрик, байт
+  };
 }
 
 // per-server мониторинг ресурсов хоста (owner): один сэмпл = один monitor-тик по SSH

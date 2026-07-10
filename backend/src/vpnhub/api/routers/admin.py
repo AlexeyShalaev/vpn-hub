@@ -151,6 +151,21 @@ async def set_user_byte_limit(
     return {"ok": True}
 
 
+@router.put("/system/metrics-retention")
+async def set_metrics_retention(
+    body: dict[str, Any] = Body(default={}),
+    _: Identity = Depends(require_admin),
+    svc: AdminService = Depends(service(AdminService)),
+) -> dict:
+    # body: { "rawRetentionDays": int|null (null/0 = env-дефолт), "sizeCapGb": number (0 = без лимита) }
+    raw = body.get("rawRetentionDays") if isinstance(body, dict) else None
+    cap = body.get("sizeCapGb") if isinstance(body, dict) else None
+    raw_days = int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw > 0 else None
+    size_cap = float(cap) if isinstance(cap, (int, float)) and not isinstance(cap, bool) and cap > 0 else None
+    await svc.set_metrics_retention(raw_days, size_cap)
+    return {"ok": True}
+
+
 # ---------- providers (каталог VPS) ----------
 
 
