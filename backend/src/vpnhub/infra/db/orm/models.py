@@ -459,6 +459,39 @@ class ServerMetric(BaseTable):
     __table_args__ = (Index("server_metrics_scope_idx", "server_id", "at"),)
 
 
+class ServerMetricHourly(BaseTable):
+    """Почасовые агрегаты ресурсов хоста (avg/max) — ярусное хранение как у трафика.
+
+    Досчитываются rollup-джобой из `server_metrics`: свежее (сутки) читается из сырья, длинные
+    периоды (недели/месяцы) — отсюда (24 строки/сутки/сервер). avg — по непустым сэмплам бакета;
+    *_total/*_used берутся из последнего сэмпла бакета (моментальные, не усредняются). Daily-ярус
+    не нужен. `bucket` — epoch начала часа (UTC-сетка). Уникум по (server, bucket).
+    """
+
+    __tablename__ = "server_metrics_hourly"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    server_id: Mapped[str] = mapped_column(String(32), index=True)
+    bucket: Mapped[int] = mapped_column(BigInteger, index=True)  # epoch начала часа
+    cpu_pct_avg: Mapped[float | None] = mapped_column(nullable=True)
+    cpu_pct_max: Mapped[float | None] = mapped_column(nullable=True)
+    load1_avg: Mapped[float | None] = mapped_column(nullable=True)
+    load1_max: Mapped[float | None] = mapped_column(nullable=True)
+    mem_used_avg: Mapped[float | None] = mapped_column(nullable=True)  # байт (avg)
+    mem_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт (last)
+    disk_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт (last)
+    disk_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # байт (last)
+    tcp_estab_avg: Mapped[float | None] = mapped_column(nullable=True)
+    tcp_estab_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    online_clients_avg: Mapped[float | None] = mapped_column(nullable=True)
+    online_clients_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    samples_total: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("server_id", "bucket", name="server_metrics_hourly_uq"),
+        Index("server_metrics_hourly_scope_idx", "server_id", "bucket"),
+    )
+
+
 class Setting(BaseTable):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)

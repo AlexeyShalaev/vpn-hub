@@ -146,9 +146,11 @@ class Settings(BaseSettings):
     # контейнер — opt-out для тех, кому это нежелательно. False → сбор идёт только там, где включено вручную.
     stats_auto_enable: bool = True
 
-    # per-server мониторинг ресурсов хоста (CPU/RAM/диск/load/uptime/TCP) — сбор в monitor-тике по SSH
-    server_metrics_retention_days: int = 14  # сколько дней хранить хост-сэмплы (фоновой purge)
-    server_metrics_history_limit: int = 120  # сколько последних сэмплов отдавать для графиков
+    # per-server мониторинг ресурсов хоста (CPU/RAM/диск/load/uptime/TCP) — сбор в monitor-тике по SSH.
+    # Ярусное хранение как у трафика: сырьё (сутки) → почасовые агрегаты (месяцы). Rollup-джоба раз в час.
+    server_metrics_retention_days: int = 14  # сколько дней хранить сырьё (фоновой purge)
+    server_metrics_hourly_retention_days: int = 180  # почасовые агрегаты (0 = вечно — не поддержан, держим >0)
+    server_metrics_history_limit: int = 120  # сколько последних сырых сэмплов отдавать для графиков (24h)
 
     # admin-дашборд здоровья инстанса: скрейп in-process метрик в metric_samples
     metrics_interval: int = 60  # период снятия сэмплов метрик, сек

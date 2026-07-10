@@ -86,10 +86,20 @@ const STATS_ENABLABLE = ["xray", "xray_xhttp", "hysteria2"];
 
 // Карточка «Ресурсы сервера»: текущие CPU/RAM/диск/load/uptime/TCP + честный online по протоколам + мини-графики.
 // Сбор — в monitor-тике по SSH (best-effort); поллинг здесь — как и остальной ServerDetail.
+const METRIC_PERIODS = ["24h", "7d", "30d", "180d"] as const;
+type MetricPeriod = (typeof METRIC_PERIODS)[number];
+const METRIC_PERIOD_LABEL: Record<MetricPeriod, string> = {
+  "24h": "24 часа",
+  "7d": "7 дней",
+  "30d": "30 дней",
+  "180d": "180 дней",
+};
+
 function ServerMetricsCard({ serverId, online }: { serverId: string; online: boolean }) {
+  const [period, setPeriod] = useState<MetricPeriod>("24h");
   const mq = useQuery({
-    queryKey: ["serverMetrics", serverId],
-    queryFn: () => q.serverMetrics(serverId),
+    queryKey: ["serverMetrics", serverId, period],
+    queryFn: () => q.serverMetrics(serverId, period),
     enabled: !!serverId,
     refetchInterval: 60000, // как страховочный поллинг всего ServerDetail
     retry: 2, // глобально retry=false → разовый сбой оставлял бы карточку пустой
@@ -110,8 +120,17 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
 
   return (
     <div className="card stack">
-      <div className="muted-3" style={label}>
-        Ресурсы сервера
+      <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div className="muted-3" style={label}>
+          Ресурсы сервера
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {METRIC_PERIODS.map((p) => (
+            <Btn key={p} variant={p === period ? "primary" : "ghost"} sm onClick={() => setPeriod(p)}>
+              {METRIC_PERIOD_LABEL[p]}
+            </Btn>
+          ))}
+        </div>
       </div>
 
       {mq.isLoading ? (

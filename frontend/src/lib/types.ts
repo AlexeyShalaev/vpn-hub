@@ -417,6 +417,7 @@ export interface ServerMetricSample {
 }
 export interface ServerMetrics {
   serverId: string;
+  period?: string; // 24h — сырьё; 7d/30d/180d — почасовые агрегаты (avg)
   current: ServerMetricSample | null; // последнее значение (гейджи/цифры)
   samples: ServerMetricSample[]; // история (мини-графики), в хронологическом порядке
 }

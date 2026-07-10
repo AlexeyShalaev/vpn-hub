@@ -148,11 +148,12 @@ async def monitoring(
 @router.get("/servers/{sid}/metrics")
 async def server_metrics(
     sid: str,
+    period: str = "24h",
     ident: Identity = Depends(require_user),
     svc: HostMetricsService = Depends(service(HostMetricsService)),
 ) -> dict:
-    # ресурсы хоста этого сервера: последние значения + история сэмплов для мини-графиков
-    return await svc.overview(ident.id, sid)
+    # ресурсы хоста этого сервера: последние значения + история за период (24h — сырьё, длиннее — агрегаты)
+    return await svc.overview(ident.id, sid, period)
 
 
 @router.post("/servers/{sid}/stats/enable")

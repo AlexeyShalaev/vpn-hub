@@ -300,7 +300,8 @@ async def test__collect_for__ssh_failure_marks_unreachable(svc, session_maker, u
     assert sp.traffic_status == "unreachable"
 
 
-async def test__purge_old__drops_only_stale_samples(svc, session_maker, uow):
+async def test__rollup_tick__aggregates_and_purges_raw(svc, session_maker, uow):
+    """rollup_tick сворачивает сырьё в почасовые avg/max и чистит сырьё старше ретеншна."""
     async with seed(session_maker) as s:
         owner = await make_user(s, phone="+79002220007")
         srv = await make_server(s, owner_id=owner.id)
@@ -308,12 +309,57 @@ async def test__purge_old__drops_only_stale_samples(svc, session_maker, uow):
     now = time.time()
     old_at = now - (svc.settings.server_metrics_retention_days + 1) * 86400
     async with uow.transaction() as tx:
-        tx.session.add(m.ServerMetric(server_id=srv.id, at=old_at, cpu_pct=1.0))
-        tx.session.add(m.ServerMetric(server_id=srv.id, at=now, cpu_pct=2.0))
+        # два сэмпла в одном часе → один hourly-бакет (avg cpu 15, max 20)
+        tx.session.add(m.ServerMetric(server_id=srv.id, at=now - 100, cpu_pct=10.0, tcp_estab=5, mem_used=100))
+        tx.session.add(m.ServerMetric(server_id=srv.id, at=now, cpu_pct=20.0, tcp_estab=9, mem_used=200))
+        tx.session.add(m.ServerMetric(server_id=srv.id, at=old_at, cpu_pct=1.0))  # старое сырьё
         await tx.session.flush()
 
-    removed = await svc.purge_old()
-    assert removed == 1
-    ov = await svc.overview(owner.id, srv.id)
-    assert len(ov["samples"]) == 1
-    assert ov["current"]["cpuPct"] == 2.0
+    res = await svc.rollup_tick()
+    assert res["purged_raw"] == 1  # старый сэмпл удалён
+    async with uow.query() as tx:
+        hourly = list((await tx.session.execute(select(m.ServerMetricHourly))).scalars())
+    # старый сэмпл (в своём часе) тоже свернулся до purge — считаем текущий бакет
+    cur = next(h for h in hourly if h.samples_total == 2)
+    assert cur.cpu_pct_avg == pytest.approx(15.0) and cur.cpu_pct_max == 20.0
+    assert cur.tcp_estab_max == 9
+
+
+async def test__rollup_tick__is_idempotent(svc, session_maker, uow):
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79002220008")
+        srv = await make_server(s, owner_id=owner.id)
+
+    svc.settings.server_metrics_retention_days = 3650  # не чистить сырьё
+    now = time.time()
+    async with uow.transaction() as tx:
+        tx.session.add(m.ServerMetric(server_id=srv.id, at=now, cpu_pct=10.0))
+        await tx.session.flush()
+
+    await svc.rollup_tick()
+    await svc.rollup_tick()
+    async with uow.query() as tx:
+        hourly = list((await tx.session.execute(select(m.ServerMetricHourly))).scalars())
+    assert len(hourly) == 1  # повторный прогон не задвоил
+
+
+async def test__overview__long_period_reads_hourly(svc, session_maker, uow):
+    """period=7d читает почасовые агрегаты (avg), 24h — сырьё."""
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79002220009")
+        srv = await make_server(s, owner_id=owner.id)
+
+    now = time.time()
+    async with uow.transaction() as tx:
+        tx.session.add(m.ServerMetric(server_id=srv.id, at=now, cpu_pct=50.0))  # сырьё (24h)
+        tx.session.add(
+            m.ServerMetricHourly(
+                server_id=srv.id, bucket=int(now - 3600), cpu_pct_avg=30.0, cpu_pct_max=40.0, samples_total=5
+            )
+        )
+        await tx.session.flush()
+
+    raw = await svc.overview(owner.id, srv.id, period="24h")
+    assert raw["period"] == "24h" and raw["current"]["cpuPct"] == 50.0
+    agg = await svc.overview(owner.id, srv.id, period="7d")
+    assert agg["period"] == "7d" and agg["current"]["cpuPct"] == 30.0  # avg из hourly

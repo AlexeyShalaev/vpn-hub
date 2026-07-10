@@ -107,10 +107,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     host_metrics = await container.get(HostMetricsService)
     scheduler.add_job(
-        mx.instrument_job("server-metrics-retention", host_metrics.purge_old),
+        mx.instrument_job("server-metrics-rollup", host_metrics.rollup_tick),
         "interval",
-        hours=24,
-        id="server-metrics-retention",
+        hours=1,
+        id="server-metrics-rollup",
         max_instances=1,
         coalesce=True,
     )

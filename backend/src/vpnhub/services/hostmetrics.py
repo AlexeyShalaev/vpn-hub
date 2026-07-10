@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
 import structlog
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import func, insert, select
 
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import NotFound
@@ -50,6 +52,7 @@ from vpnhub.services.traffic import (
     TrafficService,
     effective_online_window,
 )
+from vpnhub.services.traffic_rollup import bucket_start
 
 log = structlog.get_logger(__name__)
 
@@ -62,6 +65,11 @@ _STATS_PROTOS = ("xray", "xray_xhttp", "hysteria2")
 # In-memory достаточно: рестарт панели разрешит одну лишнюю идемпотентную попытку.
 _STATS_HEAL_ATTEMPTS: dict[tuple[str, str], float] = {}
 _STATS_HEAL_RETRY_SECONDS = 3600.0
+
+
+def _hourly_id() -> str:
+    """id для строки server_metrics_hourly (как models._id, без импорта приватного хелпера)."""
+    return uuid.uuid4().hex[:16]
 
 
 def _creds(settings: Settings, server: m.Server) -> ServerCreds:
@@ -150,6 +158,70 @@ def _sum_known(by_proto: dict[str, int | None]) -> int | None:
     """Сумма известных значений (None-протоколы не считаются). Всё неизвестно → None."""
     known = [v for v in by_proto.values() if v is not None]
     return sum(known) if known else None
+
+
+class _HostAgg:
+    """Накопитель хост-метрик одного бакета: avg по непустым, max, last-by-at для моментальных."""
+
+    def __init__(self) -> None:
+        self._sum: dict[str, float] = {}
+        self._cnt: dict[str, int] = {}
+        self._max: dict[str, float] = {}
+        self._last: dict[str, Any] = {}
+        self._last_at = float("-inf")
+        self.samples_total = 0
+
+    def add(self, r: m.ServerMetric) -> None:
+        self.samples_total += 1
+        for field in ("cpu_pct", "load1", "mem_used", "tcp_estab", "online_clients"):
+            v = getattr(r, field)
+            if v is not None:
+                self._sum[field] = self._sum.get(field, 0.0) + v
+                self._cnt[field] = self._cnt.get(field, 0) + 1
+                self._max[field] = v if field not in self._max else max(self._max[field], v)
+        if r.at > self._last_at:  # моментальные (total/used) — из последнего сэмпла бакета
+            self._last_at = r.at
+            for field in ("mem_total", "disk_used", "disk_total"):
+                self._last[field] = getattr(r, field)
+
+    def _avg(self, field: str) -> float | None:
+        c = self._cnt.get(field, 0)
+        return self._sum[field] / c if c else None
+
+    def _max_of(self, field: str) -> float | None:
+        return self._max.get(field)
+
+    def as_row(self, server_id: str, bucket: int) -> dict[str, Any]:
+        return {
+            "server_id": server_id,
+            "bucket": bucket,
+            "cpu_pct_avg": self._avg("cpu_pct"),
+            "cpu_pct_max": self._max_of("cpu_pct"),
+            "load1_avg": self._avg("load1"),
+            "load1_max": self._max_of("load1"),
+            "mem_used_avg": self._avg("mem_used"),
+            "mem_total": self._last.get("mem_total"),
+            "disk_used": self._last.get("disk_used"),
+            "disk_total": self._last.get("disk_total"),
+            "tcp_estab_avg": self._avg("tcp_estab"),
+            "tcp_estab_max": int(v) if (v := self._max_of("tcp_estab")) is not None else None,
+            "online_clients_avg": self._avg("online_clients"),
+            "online_clients_max": int(v) if (v := self._max_of("online_clients")) is not None else None,
+            "samples_total": self.samples_total,
+        }
+
+
+def aggregate_host_metrics(rows: Iterable[m.ServerMetric], size: int) -> dict[tuple[str, int], dict[str, Any]]:
+    """Свернуть сырые ServerMetric в почасовые бакеты (avg по непустым, max, last-by-at)."""
+    aggs: dict[tuple[str, int], _HostAgg] = {}
+    for r in rows:
+        key = (r.server_id, bucket_start(r.at, size))
+        agg = aggs.get(key)
+        if agg is None:
+            agg = _HostAgg()
+            aggs[key] = agg
+        agg.add(r)
+    return {key: agg.as_row(key[0], key[1]) for key, agg in aggs.items()}
 
 
 class HostMetricsService:
@@ -326,29 +398,49 @@ class HostMetricsService:
             )
             await tx.session.flush()
 
-    async def overview(self, owner_id: str, sid: str) -> dict:
-        """Последние значения + история N последних сэмплов для графиков. Владение как в ServerService."""
+    # периоды графика ресурсов: сутки — из сырья (детально), длиннее — из почасовых агрегатов.
+    _RAW_PERIOD = "24h"
+    _PERIODS = {"24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "180d": 180 * 86400}
+
+    async def overview(self, owner_id: str, sid: str, period: str = _RAW_PERIOD) -> dict:
+        """Последние значения + история за период. 24h — сырьё; 7d/30d/180d — почасовые агрегаты."""
+        period = period if period in self._PERIODS else self._RAW_PERIOD
         limit = max(1, self.settings.server_metrics_history_limit)
         async with self.uow.query() as tx:
             server = await tx.servers.get(sid)
             if not server or server.owner_user_id != owner_id:
                 raise NotFound("Сервер не найден")
-            rows = list(
-                (
-                    await tx.session.execute(
-                        select(m.ServerMetric)
-                        .where(m.ServerMetric.server_id == sid)
-                        .order_by(m.ServerMetric.at.desc())
-                        .limit(limit)
+            if period == self._RAW_PERIOD:
+                raw = list(
+                    (
+                        await tx.session.execute(
+                            select(m.ServerMetric)
+                            .where(m.ServerMetric.server_id == sid)
+                            .order_by(m.ServerMetric.at.desc())
+                            .limit(limit)
+                        )
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            )
-        rows.reverse()  # хронологический порядок для графиков (было desc для limit последних)
-        samples = [self._sample_dict(r) for r in rows]
+                raw.reverse()  # хронологический порядок для графиков
+                samples = [self._sample_dict(r) for r in raw]
+            else:
+                since = time.time() - self._PERIODS[period]
+                agg = list(
+                    (
+                        await tx.session.execute(
+                            select(m.ServerMetricHourly)
+                            .where(m.ServerMetricHourly.server_id == sid, m.ServerMetricHourly.bucket >= since)
+                            .order_by(m.ServerMetricHourly.bucket.asc())
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                samples = [self._hourly_dict(r) for r in agg]
         current = samples[-1] if samples else None
-        return {"serverId": sid, "current": current, "samples": samples}
+        return {"serverId": sid, "period": period, "current": current, "samples": samples}
 
     @staticmethod
     def _sample_dict(r: m.ServerMetric) -> dict:
@@ -366,12 +458,72 @@ class HostMetricsService:
             "onlineByProto": json.loads(r.online_by_proto) if r.online_by_proto else {},
         }
 
-    async def purge_old(self) -> int:
-        """Удалить сэмплы старше `server_metrics_retention_days` (идемпотентно)."""
-        cutoff = time.time() - self.settings.server_metrics_retention_days * 86400
+    @staticmethod
+    def _hourly_dict(r: m.ServerMetricHourly) -> dict:
+        """Почасовой агрегат в форму сэмпла (avg-значения) — тот же контракт, что и _sample_dict."""
+        return {
+            "at": float(r.bucket),
+            "cpuPct": r.cpu_pct_avg,
+            "load1": r.load1_avg,
+            "memUsed": int(r.mem_used_avg) if r.mem_used_avg is not None else None,
+            "memTotal": r.mem_total,
+            "diskUsed": r.disk_used,
+            "diskTotal": r.disk_total,
+            "tcpEstab": int(r.tcp_estab_avg) if r.tcp_estab_avg is not None else None,
+            "uptimeS": None,  # аптайм не усредняется
+            "onlineClients": int(r.online_clients_avg) if r.online_clients_avg is not None else None,
+            "onlineByProto": {},
+        }
+
+    async def rollup_tick(self) -> dict[str, int]:
+        """Досчитать почасовые агрегаты хост-метрик и почистить сырьё/агрегаты (фоновая джоба)."""
+        now = time.time()
+        rolled = await self._rollup_hourly(now)
+        purged = await self._purge_old(now)
+        result = {"hourly": rolled, **purged}
+        log.info("server_metrics_rollup_tick", **result)
+        return result
+
+    async def _rollup_hourly(self, now: float) -> int:
+        """Пересчёт хвоста delete+insert с клампом на oldest сырья (как traffic-rollup)."""
         async with self.uow.transaction() as tx:
-            res: Any = await tx.session.execute(sa_delete(m.ServerMetric).where(m.ServerMetric.at < cutoff))
-            return int(res.rowcount or 0)
+            watermark = (
+                await tx.session.execute(select(func.max(m.ServerMetricHourly.bucket)))
+            ).scalar_one_or_none()
+            oldest_at = (await tx.session.execute(select(func.min(m.ServerMetric.at)))).scalar_one_or_none()
+            if oldest_at is None:
+                return 0
+            recompute_from = max(watermark or 0, bucket_start(oldest_at, 3600))
+            await tx.session.execute(
+                sa_delete(m.ServerMetricHourly).where(m.ServerMetricHourly.bucket >= recompute_from)
+            )
+            rows = list(
+                (
+                    await tx.session.execute(
+                        select(m.ServerMetric).where(m.ServerMetric.at >= recompute_from)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            aggs = aggregate_host_metrics(rows, 3600)
+            if aggs:
+                await tx.session.execute(
+                    insert(m.ServerMetricHourly),
+                    [{"id": _hourly_id(), **row} for row in aggs.values()],
+                )
+            return len(aggs)
+
+    async def _purge_old(self, now: float) -> dict[str, int]:
+        """Удалить сырьё старше `server_metrics_retention_days` и агрегаты старше hourly-ретеншна."""
+        raw_cutoff = now - self.settings.server_metrics_retention_days * 86400
+        hourly_cutoff = now - self.settings.server_metrics_hourly_retention_days * 86400
+        async with self.uow.transaction() as tx:
+            raw: Any = await tx.session.execute(sa_delete(m.ServerMetric).where(m.ServerMetric.at < raw_cutoff))
+            hourly: Any = await tx.session.execute(
+                sa_delete(m.ServerMetricHourly).where(m.ServerMetricHourly.bucket < hourly_cutoff)
+            )
+        return {"purged_raw": int(raw.rowcount or 0), "purged_hourly": int(hourly.rowcount or 0)}
 
     async def enable_stats(self, owner_id: str, sid: str) -> dict[str, str]:
         """Включить точную онлайн-статистику на сервере (owner-scoped).

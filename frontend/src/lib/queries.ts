@@ -141,8 +141,9 @@ export const listProviders = () => http.get<Provider[]>("/providers");
 // справочные тарифные планы провайдера (для автозаполнения цены/квоты при создании сервера)
 export const providerPlans = (pid: string) => http.get<ProviderPlan[]>(`/providers/${pid}/plans`);
 
-// per-server ресурсы хоста (CPU/RAM/диск/load/uptime/TCP + онлайн-клиенты) — последние + история
-export const serverMetrics = (sid: string) => http.get<ServerMetrics>(`/servers/${sid}/metrics`);
+// per-server ресурсы хоста (CPU/RAM/диск/load/uptime/TCP + онлайн-клиенты) — последние + история за период
+export const serverMetrics = (sid: string, period = "24h") =>
+  http.get<ServerMetrics>(`/servers/${sid}/metrics?period=${encodeURIComponent(period)}`);
 
 // per-server per-client трафик+онлайн (клиенты этого сервера: скачал/отдал/скорость/онлайн)
 export const serverTraffic = (sid: string, period = "24h") =>
