@@ -30,7 +30,6 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 import structlog
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -726,9 +725,4 @@ class TrafficService:
             out[cfg.id] = (dev.name if dev else "", usr.name if usr else "", cfg.status)
         return out
 
-    async def purge_old(self) -> int:
-        """Удалить сэмплы старше `traffic_retention_days` (идемпотентно)."""
-        cutoff = time.time() - self.settings.traffic_retention_days * 86400
-        async with self.uow.transaction() as tx:
-            res: Any = await tx.session.execute(sa_delete(m.TrafficSample).where(m.TrafficSample.at < cutoff))
-            return int(res.rowcount or 0)
+    # Ретеншн сырья/агрегатов вынесен в TrafficRollupService.purge_old (ярусная джоба traffic-rollup).

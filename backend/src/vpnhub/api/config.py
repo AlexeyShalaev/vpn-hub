@@ -128,8 +128,16 @@ class Settings(BaseSettings):
     # аудит-лог: сколько дней хранить события (фоновая чистка audit-retention)
     audit_retention_days: int = 90
 
-    # дашборд трафика (owner): сколько дней хранить сэмплы трафика (фоновой purge traffic-retention)
-    traffic_retention_days: int = 30
+    # ярусное хранение трафика (фоновая rollup-джоба раз в час): сырьё traffic_samples → почасовые
+    # агрегаты traffic_hourly → посуточные traffic_daily. Свежее читается из сырья, старое — из
+    # агрегатов (на порядки меньше диска). Старый env VPNHUB_TRAFFIC_RETENTION_DAYS теперь задаёт
+    # ретеншн сырья (семантика сменилась). traffic_daily_retention_days=0 → daily хранится вечно.
+    traffic_raw_retention_days: int = Field(
+        default=7,
+        validation_alias=AliasChoices("VPNHUB_TRAFFIC_RAW_RETENTION_DAYS", "VPNHUB_TRAFFIC_RETENTION_DAYS"),
+    )
+    traffic_hourly_retention_days: int = 90
+    traffic_daily_retention_days: int = 0  # 0 = вечно
     # клиент считается онлайн, если последний handshake свежее этого окна (сек). Эффективное окно —
     # не короче двух интервалов сбора + запас на rekey WG (см. traffic.effective_online_window).
     traffic_online_window_seconds: int = 300

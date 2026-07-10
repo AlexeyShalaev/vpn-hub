@@ -31,6 +31,7 @@ from vpnhub.services.server_access import ServerAccessService
 from vpnhub.services.servers import ServerService
 from vpnhub.services.sync import SyncService
 from vpnhub.services.traffic import TrafficService
+from vpnhub.services.traffic_rollup import TrafficRollupService
 
 
 class AppProvider(Provider):
@@ -82,6 +83,7 @@ class AppProvider(Provider):
     audit = provide(AuditService)
     finance = provide(FinanceService)
     traffic = provide(TrafficService)
+    traffic_rollup = provide(TrafficRollupService)
     host_metrics = provide(HostMetricsService)
     metrics = provide(MetricsService)
     chains = provide(ChainService)

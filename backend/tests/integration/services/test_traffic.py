@@ -343,22 +343,4 @@ async def test__global_overview__ignores_other_owners_servers(svc, session_maker
     ov = await svc.global_overview(owner.id)
     assert {c["clientId"] for c in ov["clients"]} == {"M"}
     assert ov["summary"]["serversTotal"] == 1
-
-
-async def test__purge_old__drops_only_stale_samples(svc, session_maker, uow):
-    """purge_old удаляет сэмплы старше traffic_retention_days, свежие остаются."""
-    async with seed(session_maker) as s:
-        owner = await make_user(s, phone="+79001110060")
-        srv = await make_server(s, owner_id=owner.id)
-
-    now = time.time()
-    old_at = now - (svc.settings.traffic_retention_days + 1) * 86400
-    async with uow.transaction() as tx:
-        tx.session.add(m.TrafficSample(server_id=srv.id, proto="awg", client_id="OLD", at=old_at))
-        tx.session.add(m.TrafficSample(server_id=srv.id, proto="awg", client_id="NEW", at=now))
-        await tx.session.flush()
-
-    removed = await svc.purge_old()
-    assert removed == 1
-    ov = await svc.overview(owner.id, srv.id, period="7d")
-    assert {c["clientId"] for c in ov["clients"]} == {"NEW"}
+    # ретеншн сырья/агрегатов теперь в TrafficRollupService (см. test_traffic_rollup)

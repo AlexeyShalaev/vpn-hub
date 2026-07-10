@@ -31,7 +31,7 @@ from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.metrics import MetricsService
 from vpnhub.services.servers import ServerService
 from vpnhub.services.sync import SyncService
-from vpnhub.services.traffic import TrafficService
+from vpnhub.services.traffic_rollup import TrafficRollupService
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -95,12 +95,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         coalesce=True,
     )
 
-    traffic = await container.get(TrafficService)
+    traffic_rollup = await container.get(TrafficRollupService)
     scheduler.add_job(
-        mx.instrument_job("traffic-retention", traffic.purge_old),
+        mx.instrument_job("traffic-rollup", traffic_rollup.run_tick),
         "interval",
-        hours=24,
-        id="traffic-retention",
+        hours=1,
+        id="traffic-rollup",
         max_instances=1,
         coalesce=True,
     )

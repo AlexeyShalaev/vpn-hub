@@ -280,7 +280,8 @@ class TrafficSample(BaseTable):
     вычисляется из свежести `last_handshake` (now - last_handshake < online-окно).
     external-клиенты (без нашего DeviceConfig) пишутся с `device_config_id=None`.
 
-    Ретеншн — фоновой purge-джобой (`traffic_retention_days`). Будущее: даунсэмплинг агрегатов.
+    Ретеншн — ярусная rollup-джоба (`traffic_raw_retention_days`): сырьё сворачивается в
+    `traffic_hourly`/`traffic_daily` и затем чистится (см. services/traffic_rollup).
     """
 
     __tablename__ = "traffic_samples"
@@ -331,6 +332,50 @@ class TrafficPeerState(BaseTable):
     online: Mapped[bool | None] = mapped_column(nullable=True)  # из stats движка; None — по handshake
 
     __table_args__ = (UniqueConstraint("server_id", "proto", "client_id", name="traffic_peer_state_uq"),)
+
+
+class _TrafficRollup:
+    """Общие колонки ярусных агрегатов трафика (hourly/daily). Не таблица — миксин полей.
+
+    Ярусное хранение: сырьё `traffic_samples` (дни) → `traffic_hourly` (недели/месяцы) →
+    `traffic_daily` (годы). Свежие периоды быстро читаются из сырья, старые — из агрегатов
+    (на порядки меньше строк). Заполняются фоновой rollup-джобой (см. services/traffic_rollup).
+    `bucket` — epoch начала часа/суток (UTC-сетка); `samples_online/samples_total` дают долю
+    онлайна (честно переживает смену интервала сбора). Уникум по (server, proto, client, bucket).
+    """
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    server_id: Mapped[str] = mapped_column(String(32), index=True)
+    proto: Mapped[str] = mapped_column(String(24))
+    client_id: Mapped[str] = mapped_column(String(64))
+    device_config_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # None → external
+    ext_name: Mapped[str | None] = mapped_column(String(128), nullable=True)  # имя из clientsTable
+    bucket: Mapped[int] = mapped_column(BigInteger, index=True)  # epoch начала бакета (UTC-сетка)
+    rx: Mapped[int] = mapped_column(BigInteger, default=0)  # сумма rx_delta за бакет
+    tx: Mapped[int] = mapped_column(BigInteger, default=0)  # сумма tx_delta за бакет
+    samples_total: Mapped[int] = mapped_column(Integer, default=0)  # число сэмплов в бакете
+    samples_online: Mapped[int] = mapped_column(Integer, default=0)  # из них с активной сессией
+    last_handshake: Mapped[float | None] = mapped_column(nullable=True)  # max за бакет (wg)
+
+
+class TrafficHourly(_TrafficRollup, BaseTable):
+    """Почасовые агрегаты трафика per (server, proto, client). Досчитываются rollup-джобой из сырья."""
+
+    __tablename__ = "traffic_hourly"
+    __table_args__ = (
+        UniqueConstraint("server_id", "proto", "client_id", "bucket", name="traffic_hourly_uq"),
+        Index("traffic_hourly_scope_idx", "server_id", "proto", "client_id", "bucket"),
+    )
+
+
+class TrafficDaily(_TrafficRollup, BaseTable):
+    """Посуточные агрегаты трафика per (server, proto, client). Досчитываются из traffic_hourly."""
+
+    __tablename__ = "traffic_daily"
+    __table_args__ = (
+        UniqueConstraint("server_id", "proto", "client_id", "bucket", name="traffic_daily_uq"),
+        Index("traffic_daily_scope_idx", "server_id", "proto", "client_id", "bucket"),
+    )
 
 
 class TrafficUsage(BaseTable):
