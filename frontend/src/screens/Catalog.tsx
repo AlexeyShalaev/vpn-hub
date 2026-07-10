@@ -1,12 +1,46 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type CSSProperties, useMemo, useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
-import { dynamicPlanProviderId, fmtPrice, isDynamicPlanProviderId, planSpecs } from "../lib/providerPlans";
+import {
+  DYNAMIC_PLAN_PROVIDER_LABELS,
+  dynamicPlanProviderId,
+  fmtPrice,
+  isDynamicPlanProviderId,
+  planProviderDisplayName,
+  planSpecs,
+} from "../lib/providerPlans";
 import * as q from "../lib/queries";
-import type { Provider } from "../lib/types";
+import type { Provider, ProviderPlan } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
+
+// общие стили кнопок карточки (DRY): основная «купить» на всю ширину + вторичные в ряд
+const primaryAction: CSSProperties = {
+  flex: 1,
+  height: 42,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+  borderRadius: 11,
+  background: "var(--ink)",
+  color: "var(--on-ink)",
+  font: "600 13.5px/1 var(--font)",
+  textDecoration: "none",
+};
+const secondaryAction: CSSProperties = {
+  flex: 1,
+  height: 42,
+  padding: "0 14px",
+  border: "1px solid var(--border-strong)",
+  borderRadius: 11,
+  background: "var(--surface)",
+  color: "var(--text)",
+  font: "600 13px/1 var(--font)",
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
 
 // Модалка «Тарифы провайдера»: распарсенные планы (GET /providers/{pid}/plans). Кнопка «Купить» ведёт
 // на исходную страницу тарифа, «Выбрать» — открывает форму сервера с этим провайдером (автозаполнение).
@@ -89,6 +123,159 @@ function PlansModal({
   );
 }
 
+// план + к какому провайдеру относится (для агрегированного подбора по всем провайдерам)
+type FinderPlan = ProviderPlan & { providerId: string; providerLabel: string };
+
+// Подбор тарифа по всем провайдерам: агрегирует их тарифы и фильтрует по локации, бюджету и RAM.
+// Валюты у провайдеров разные (RUB/USD/EUR) — бюджет применяется в рамках выбранной валюты.
+function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) => void; onClose: () => void }) {
+  const providerIds = Object.keys(DYNAMIC_PLAN_PROVIDER_LABELS);
+  const results = useQueries({
+    queries: providerIds.map((pid) => ({
+      queryKey: ["providerPlans", pid],
+      queryFn: () => q.providerPlans(pid),
+      retry: 1,
+    })),
+  });
+  // пересобираем только когда реально обновились данные (а не на каждый рендер из-за нового массива results)
+  const dataVersion = results.map((r) => r.dataUpdatedAt).join(",");
+  const all: FinderPlan[] = useMemo(
+    () =>
+      results.flatMap((r, i) =>
+        (r.data ?? []).map((p) => ({
+          ...p,
+          providerId: providerIds[i],
+          providerLabel: planProviderDisplayName(providerIds[i]),
+        })),
+      ),
+    [dataVersion],
+  );
+
+  const [region, setRegion] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [minRam, setMinRam] = useState("");
+  const [onlyAvailable, setOnlyAvailable] = useState(true);
+
+  const regions = useMemo(() => [...new Set(all.map((p) => p.region).filter(Boolean))].sort(), [all]);
+  const currencies = useMemo(() => [...new Set(all.map((p) => p.currency).filter(Boolean))].sort(), [all]);
+
+  const rows = useMemo(() => {
+    const budget = Number(maxPrice) || 0;
+    const ram = Number(minRam) || 0;
+    return all
+      .filter((p) => (onlyAvailable ? p.available !== false : true))
+      .filter((p) => (region ? p.region === region : true))
+      .filter((p) => (currency ? p.currency === currency : true))
+      .filter((p) => (budget > 0 && currency ? p.price <= budget : true))
+      .filter((p) => (ram > 0 ? p.ramGb >= ram : true))
+      .sort((a, b) => a.currency.localeCompare(b.currency) || a.price - b.price);
+  }, [all, region, currency, maxPrice, minRam, onlyAvailable]);
+
+  // спиннер — только пока данных совсем нет; дальше показываем результаты по мере подгрузки провайдеров
+  const loading = all.length === 0 && results.some((r) => r.isLoading);
+  const sel: CSSProperties = { height: 34, fontSize: 13 };
+  return (
+    <Modal title="Подбор тарифа по всем провайдерам" onClose={onClose} wide>
+      <div className="stack" style={{ gap: 12 }}>
+        <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select className="input" style={sel} value={region} onChange={(e) => setRegion(e.target.value)}>
+            <option value="">Все локации</option>
+            {regions.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+          <select className="input" style={sel} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            <option value="">Любая валюта</option>
+            {currencies.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input"
+            style={{ ...sel, width: 150 }}
+            type="number"
+            min={0}
+            placeholder={currency ? `Бюджет, ${currency}` : "Бюджет (выберите валюту)"}
+            value={maxPrice}
+            disabled={!currency}
+            onChange={(e) => setMaxPrice(e.target.value)}
+          />
+          <select className="input" style={sel} value={minRam} onChange={(e) => setMinRam(e.target.value)}>
+            <option value="">RAM любой</option>
+            {[1, 2, 4, 8, 16].map((g) => (
+              <option key={g} value={g}>
+                от {g} ГБ
+              </option>
+            ))}
+          </select>
+          <label className="rowflex" style={{ gap: 6, fontSize: 12.5, cursor: "pointer", alignItems: "center" }}>
+            <input type="checkbox" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
+            только в наличии
+          </label>
+          <div style={{ flex: 1 }} />
+          <span className="muted-3" style={{ fontSize: 12 }}>
+            Найдено: {rows.length}
+          </span>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center" }}>
+            <Spinner />
+          </div>
+        ) : rows.length === 0 ? (
+          <Empty title="Под фильтры ничего не нашлось" sub="Смягчите условия — например, бюджет или локацию." />
+        ) : (
+          <div className="stack" style={{ gap: 8, maxHeight: "60vh", overflowY: "auto" }}>
+            {rows.map((p) => (
+              <div
+                key={`${p.providerId}:${p.id}:${p.region}:${p.name}`}
+                className="rowflex"
+                style={{
+                  gap: 12,
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "var(--surface-2)",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+                    <span className="badge" style={{ marginRight: 6 }}>
+                      {p.providerLabel}
+                    </span>
+                    {p.name}
+                  </div>
+                  <div className="muted-3" style={{ fontSize: 12 }}>
+                    {planSpecs(p)}
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{fmtPrice(p)}</div>
+                <div className="rowflex" style={{ gap: 6 }}>
+                  {p.sourceUrl && (
+                    <a href={p.sourceUrl} target="_blank" rel="noopener">
+                      <Btn variant="ghost" sm>
+                        Купить <Icon name="external" size={13} />
+                      </Btn>
+                    </a>
+                  )}
+                  <Btn variant="primary" sm onClick={() => onPick(p.providerLabel)}>
+                    Выбрать
+                  </Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 interface FormState {
   id?: string;
   name: string;
@@ -113,6 +300,7 @@ export function CatalogScreen() {
   const [form, setForm] = useState<FormState | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [plansFor, setPlansFor] = useState<{ pid: string; provider: Provider } | null>(null);
+  const [showFinder, setShowFinder] = useState(false);
   const set = (k: keyof FormState, v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["providers"] });
@@ -159,12 +347,18 @@ export function CatalogScreen() {
         sub="Где арендовать VPS под VPN"
         onBack={() => go("servers")}
         action={
-          isAdmin ? (
-            <Btn variant="primary" onClick={openCreate}>
-              <Icon name="plus" size={16} />
-              Добавить
+          <div className="rowflex" style={{ gap: 8 }}>
+            <Btn variant="ghost" onClick={() => setShowFinder(true)}>
+              <Icon name="search" size={16} />
+              Подобрать тариф
             </Btn>
-          ) : undefined
+            {isAdmin && (
+              <Btn variant="primary" onClick={openCreate}>
+                <Icon name="plus" size={16} />
+                Добавить
+              </Btn>
+            )}
+          </div>
         }
       />
 
@@ -243,67 +437,41 @@ export function CatalogScreen() {
                 ))}
               </div>
 
-              <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
-                <a
-                  href={p.url}
-                  target="_blank"
-                  rel="noopener"
-                  style={{
-                    flex: 1,
-                    height: 42,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 7,
-                    borderRadius: 11,
-                    background: "var(--ink)",
-                    color: "var(--on-ink)",
-                    font: "600 13.5px/1 var(--font)",
-                    textDecoration: "none",
-                  }}
-                >
+              {/* действия: основная — «Перейти и купить» на всю ширину; ниже — второй ряд */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: "auto" }}>
+                <a href={p.url} target="_blank" rel="noopener" style={primaryAction}>
                   Перейти и купить
                   <Icon name="external" size={15} />
                 </a>
-                {isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name)) && (
-                  <button
-                    onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
-                    title="Актуальные тарифы провайдера"
-                    style={{
-                      height: 42,
-                      padding: "0 14px",
-                      border: "1px solid var(--border-strong)",
-                      borderRadius: 11,
-                      background: "var(--surface)",
-                      color: "var(--text)",
-                      font: "600 13px/1 var(--font)",
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Тарифы
+                <div style={{ display: "flex", gap: 8 }}>
+                  {isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name)) && (
+                    <button
+                      type="button"
+                      onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
+                      title="Актуальные тарифы провайдера"
+                      style={secondaryAction}
+                    >
+                      Тарифы
+                    </button>
+                  )}
+                  <button type="button" onClick={() => go("serverForm", { provider: p.name })} style={secondaryAction}>
+                    У меня уже есть
                   </button>
-                )}
-                <button
-                  onClick={() => go("serverForm", { provider: p.name })}
-                  style={{
-                    height: 42,
-                    padding: "0 14px",
-                    border: "1px solid var(--border-strong)",
-                    borderRadius: 11,
-                    background: "var(--surface)",
-                    color: "var(--text)",
-                    font: "600 13px/1 var(--font)",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  У меня уже есть
-                </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {showFinder && (
+        <PlanFinderModal
+          onPick={(providerName) => {
+            setShowFinder(false);
+            go("serverForm", { provider: providerName });
+          }}
+          onClose={() => setShowFinder(false)}
+        />
       )}
 
       {plansFor && (
