@@ -22,6 +22,9 @@ export type Screen =
 
 type Params = Record<string, string | undefined>;
 
+// разделы страницы сервера, адресуемые в URL: /servers/{id}/{tab} (connection — без суффикса)
+const SERVER_TABS = new Set(["connection", "protocols", "monitoring", "access"]);
+
 interface NavState {
   screen: Screen;
   params: Params;
@@ -36,8 +39,10 @@ function screenToPath(screen: Screen, params: Params): string {
       return "/home";
     case "servers":
       return "/servers";
-    case "server":
-      return `/servers/${params.serverId ?? ""}`;
+    case "server": {
+      const tab = params.tab && params.tab !== "connection" && SERVER_TABS.has(params.tab) ? `/${params.tab}` : "";
+      return `/servers/${params.serverId ?? ""}${tab}`;
+    }
     case "serverForm":
       if (params.serverId) return `/servers/${params.serverId}/edit`;
       return params.provider ? `/servers/new?provider=${encodeURIComponent(params.provider)}` : "/servers/new";
@@ -89,7 +94,7 @@ function pathToState(pathname: string, search: string): { screen: Screen; params
       if (!b) return { screen: "servers", params: {} };
       if (b === "new") return { screen: "serverForm", params: { provider: sp.get("provider") ?? undefined } };
       if (c === "edit") return { screen: "serverForm", params: { serverId: b } };
-      return { screen: "server", params: { serverId: b } };
+      return { screen: "server", params: { serverId: b, ...(c && SERVER_TABS.has(c) ? { tab: c } : {}) } };
     case "catalog":
       return { screen: "catalog", params: {} };
     case "monitoring":

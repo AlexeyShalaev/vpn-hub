@@ -21,6 +21,7 @@ import { VpnAdvancedModal } from "./VpnAdvanced";
 
 const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
 type ServerDetailTab = "connection" | "protocols" | "monitoring" | "access";
+const SERVER_TABS: ServerDetailTab[] = ["connection", "protocols", "monitoring", "access"];
 
 // установлен ли на сервере запущенный tcp-Reality Xray (условие мультихопа для entry/exit)
 const hasRunningXray = (s: Server): boolean =>
@@ -826,7 +827,12 @@ export function ServerDetailScreen() {
     proto: string;
     label: string;
   } | null>(null);
-  const [activeTab, setActiveTab] = useState<ServerDetailTab>("connection");
+  // активный раздел — в URL (/servers/{id}/{tab}), чтобы на него можно было дать ссылку и делиться
+  const tabParam = useNav((s) => s.params.tab);
+  const activeTab: ServerDetailTab = SERVER_TABS.includes(tabParam as ServerDetailTab)
+    ? (tabParam as ServerDetailTab)
+    : "connection";
+  const setActiveTab = (tab: ServerDetailTab) => go("server", { serverId, tab });
 
   const serverQ = useQuery({
     queryKey: ["server", serverId],
