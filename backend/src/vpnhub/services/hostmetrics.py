@@ -3,13 +3,12 @@
 Сбор врезан в monitor-тик (`ServerService.run_tick`) строго best-effort: отдельная короткая
 SSH-сессия к онлайн-серверу гоняет `HOST_METRICS_CMD` (один блок KEY=VALUE), парсит его чистой
 функцией `parse_host_metrics` (см. infra/hostmetrics — без IO) и пишет строку в `server_metrics`.
-Любой сбой сбора глотается и НЕ влияет на online/offline и не роняет тик.
+Любой сбой сбора глотается и НЕ влияет на online/offline и не роняет тик. В той же сессии
+собирается per-proto трафик (`collect_for`) — число онлайн-клиентов выводится из него
+(`online_from_traffic`), без отдельного запроса wg-handshakes.
 
-Опционально — число онлайн-VPN-пиров: `wg show all latest-handshakes` внутри amnezia-wg
-контейнера (свежие handshakes). Не установлено/недоступно → None (поле необязательное).
-
-Хранение — таблица `server_metrics` (одна строка на сервер на тик). Ретеншн — фоновой purge
-(`server_metrics_retention_days`). Показ — последние значения + N последних сэмплов для графиков.
+Хранение — сырьё `server_metrics` (сутки) → почасовые агрегаты `server_metrics_hourly` (месяцы),
+ярусная rollup-джоба. Показ — последние значения + история за период (24h сырьё, длиннее — агрегаты).
 """
 
 from __future__ import annotations
@@ -28,13 +27,7 @@ from sqlalchemy import func, insert, select
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import NotFound
 from vpnhub.infra.db.orm import models as m
-from vpnhub.infra.hostmetrics import (
-    AMNEZIA_WG_CONTAINERS,
-    HOST_METRICS_CMD,
-    HostMetrics,
-    parse_host_metrics,
-    parse_online_clients,
-)
+from vpnhub.infra.hostmetrics import HOST_METRICS_CMD, HostMetrics, parse_host_metrics
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.creds import server_creds
 from vpnhub.infra.provisioning.script_runner import list_known_containers
@@ -69,45 +62,14 @@ def _hourly_id() -> str:
     return uuid.uuid4().hex[:16]
 
 
-async def collect_host_metrics(ssh: Any, *, count_clients: bool = True) -> HostMetrics:
-    """Собрать `HostMetrics` по уже открытому SSH-каналу (host-метрики + опционально онлайн-пиры).
+async def collect_host_metrics(ssh: Any) -> HostMetrics:
+    """Собрать `HostMetrics` по уже открытому SSH-каналу (один вызов `HOST_METRICS_CMD`).
 
-    Хост-метрики — один вызов `HOST_METRICS_CMD`. Онлайн-клиенты (best-effort): пробуем каждый
-    amnezia-wg контейнер, берём первый успешный ответ; недоступно → online_clients=None.
+    Онлайн-клиенты в сэмпл кладёт `collect_for` из собранного трафика (`online_from_traffic`),
+    поэтому отдельного запроса wg-handshakes здесь больше нет.
     """
     res = await ssh.run(HOST_METRICS_CMD)
-    metrics = parse_host_metrics(res.output)
-    if not count_clients:
-        return metrics
-    online = await _online_clients(ssh)
-    if online is not None:
-        metrics = HostMetrics(
-            cpu_pct=metrics.cpu_pct,
-            load1=metrics.load1,
-            mem_used=metrics.mem_used,
-            mem_total=metrics.mem_total,
-            disk_used=metrics.disk_used,
-            disk_total=metrics.disk_total,
-            tcp_estab=metrics.tcp_estab,
-            uptime_s=metrics.uptime_s,
-            online_clients=online,
-        )
-    return metrics
-
-
-async def _online_clients(ssh: Any) -> int | None:
-    """Онлайн-VPN-пиры: свежие handshakes в amnezia-wg контейнере. Недоступно/нет контейнеров → None."""
-    now = time.time()
-    for container in AMNEZIA_WG_CONTAINERS:
-        try:
-            res = await ssh.run(f"sudo docker exec -i {container} wg show all latest-handshakes 2>/dev/null")
-        except SshError:
-            return None
-        # непустой вывод с хотя бы одной цифрой (epoch) = живой wg-контейнер; парсер робастен сам
-        out = res.output.strip()
-        if out and any(ch.isdigit() for ch in out):
-            return parse_online_clients(out, now)
-    return None
+    return parse_host_metrics(res.output)
 
 
 def online_from_traffic(results: dict[str, ProtoTraffic], now: float, window: int) -> dict[str, int | None]:
@@ -231,7 +193,7 @@ class HostMetricsService:
         window = effective_online_window(self.settings)
         try:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
-                metrics = await collect_host_metrics(ssh, count_clients=False)
+                metrics = await collect_host_metrics(ssh)
                 containers = await list_known_containers(ssh)
                 results = await self._collect_protocols(ssh, server, containers, now)
         except (SshError, OSError) as e:

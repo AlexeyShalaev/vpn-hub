@@ -21,6 +21,7 @@ from vpnhub.infra.provisioning import constants as pc
 from vpnhub.services import hostmetrics as hm
 from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.traffic import TRAFFIC_OK, PeerStat, ProtoTraffic
+from vpnhub.services.traffic_rollup import bucket_start
 
 pytestmark = pytest.mark.integration
 
@@ -149,7 +150,7 @@ async def test__collect_for__writes_metrics_traffic_and_health(svc, session_make
 
     now = time.time()
 
-    async def fake_host_metrics(ssh: Any, *, count_clients: bool = True) -> HostMetrics:
+    async def fake_host_metrics(ssh: Any) -> HostMetrics:
         return HostMetrics(cpu_pct=5.0, mem_used=1, mem_total=2, online_clients=None)
 
     async def fake_containers(ssh: Any) -> dict[str, bool]:
@@ -201,7 +202,7 @@ async def test__collect_for__auto_heals_stats_when_disabled(svc, session_maker, 
     hm._STATS_HEAL_ATTEMPTS.clear()
     calls: list[str] = []
 
-    async def fake_host_metrics(ssh: Any, *, count_clients: bool = True) -> HostMetrics:
+    async def fake_host_metrics(ssh: Any) -> HostMetrics:
         return HostMetrics(cpu_pct=1.0)
 
     async def fake_containers(ssh: Any) -> dict[str, bool]:
@@ -248,7 +249,7 @@ async def test__collect_for__no_auto_heal_when_disabled_by_setting(svc, session_
     svc.settings.stats_auto_enable = False
     calls: list[str] = []
 
-    async def fake_host_metrics(ssh: Any, *, count_clients: bool = True) -> HostMetrics:
+    async def fake_host_metrics(ssh: Any) -> HostMetrics:
         return HostMetrics(cpu_pct=1.0)
 
     async def fake_containers(ssh: Any) -> dict[str, bool]:
@@ -307,11 +308,12 @@ async def test__rollup_tick__aggregates_and_purges_raw(svc, session_maker, uow):
         srv = await make_server(s, owner_id=owner.id)
 
     now = time.time()
+    hour = bucket_start(now, 3600)  # выравниваем оба свежих сэмпла в ОДИН часовой бакет (детерминизм)
     old_at = now - (svc.settings.server_metrics_retention_days + 1) * 86400
     async with uow.transaction() as tx:
         # два сэмпла в одном часе → один hourly-бакет (avg cpu 15, max 20)
-        tx.session.add(m.ServerMetric(server_id=srv.id, at=now - 100, cpu_pct=10.0, tcp_estab=5, mem_used=100))
-        tx.session.add(m.ServerMetric(server_id=srv.id, at=now, cpu_pct=20.0, tcp_estab=9, mem_used=200))
+        tx.session.add(m.ServerMetric(server_id=srv.id, at=hour + 10, cpu_pct=10.0, tcp_estab=5, mem_used=100))
+        tx.session.add(m.ServerMetric(server_id=srv.id, at=hour + 20, cpu_pct=20.0, tcp_estab=9, mem_used=200))
         tx.session.add(m.ServerMetric(server_id=srv.id, at=old_at, cpu_pct=1.0))  # старое сырьё
         await tx.session.flush()
 
