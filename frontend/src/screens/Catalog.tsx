@@ -2,10 +2,92 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { dynamicPlanProviderId, fmtPrice, isDynamicPlanProviderId, planSpecs } from "../lib/providerPlans";
 import * as q from "../lib/queries";
 import type { Provider } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
+
+// Модалка «Тарифы провайдера»: распарсенные планы (GET /providers/{pid}/plans). Кнопка «Купить» ведёт
+// на исходную страницу тарифа, «Выбрать» — открывает форму сервера с этим провайдером (автозаполнение).
+function PlansModal({
+  planPid,
+  title,
+  buyUrl,
+  onPick,
+  onClose,
+}: {
+  planPid: string;
+  title: string;
+  buyUrl: string;
+  onPick: () => void;
+  onClose: () => void;
+}) {
+  const pq = useQuery({
+    queryKey: ["providerPlans", planPid],
+    queryFn: () => q.providerPlans(planPid),
+    retry: 1,
+  });
+  const plans = pq.data ?? [];
+  return (
+    <Modal title={`Тарифы · ${title}`} onClose={onClose} wide>
+      <div className="stack" style={{ gap: 10 }}>
+        {pq.isLoading ? (
+          <div style={{ padding: 24, textAlign: "center" }}>
+            <Spinner />
+          </div>
+        ) : pq.isError ? (
+          <Empty title="Не удалось загрузить тарифы" sub="Провайдер мог изменить страницу. Попробуйте на сайте." />
+        ) : plans.length === 0 ? (
+          <Empty title="Тарифы не найдены" sub="Актуальный список — на сайте провайдера." />
+        ) : (
+          <div className="stack" style={{ gap: 8 }}>
+            {plans.map((p) => (
+              <div
+                key={`${p.id}:${p.region}:${p.name}`}
+                className="rowflex"
+                style={{
+                  gap: 12,
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "var(--surface-2)",
+                  opacity: p.available === false ? 0.55 : 1,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+                    {p.name}
+                    {p.available === false && (
+                      <span className="muted-3" style={{ fontSize: 12 }}>
+                        {" "}
+                        · нет в наличии
+                      </span>
+                    )}
+                  </div>
+                  <div className="muted-3" style={{ fontSize: 12 }}>
+                    {planSpecs(p)}
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{fmtPrice(p)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="rowflex" style={{ gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <a href={buyUrl} target="_blank" rel="noopener">
+            <Btn variant="ghost" sm>
+              На сайт провайдера <Icon name="external" size={14} />
+            </Btn>
+          </a>
+          <Btn variant="primary" sm onClick={onPick}>
+            Выбрать провайдера
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 interface FormState {
   id?: string;
@@ -30,6 +112,7 @@ export function CatalogScreen() {
 
   const [form, setForm] = useState<FormState | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [plansFor, setPlansFor] = useState<{ pid: string; provider: Provider } | null>(null);
   const set = (k: keyof FormState, v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["providers"] });
@@ -182,6 +265,25 @@ export function CatalogScreen() {
                   Перейти и купить
                   <Icon name="external" size={15} />
                 </a>
+                {isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name)) && (
+                  <button
+                    onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
+                    title="Актуальные тарифы провайдера"
+                    style={{
+                      height: 42,
+                      padding: "0 14px",
+                      border: "1px solid var(--border-strong)",
+                      borderRadius: 11,
+                      background: "var(--surface)",
+                      color: "var(--text)",
+                      font: "600 13px/1 var(--font)",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Тарифы
+                  </button>
+                )}
                 <button
                   onClick={() => go("serverForm", { provider: p.name })}
                   style={{
@@ -202,6 +304,20 @@ export function CatalogScreen() {
             </div>
           ))}
         </div>
+      )}
+
+      {plansFor && (
+        <PlansModal
+          planPid={plansFor.pid}
+          title={plansFor.provider.name}
+          buyUrl={plansFor.provider.url}
+          onPick={() => {
+            const name = plansFor.provider.name;
+            setPlansFor(null);
+            go("serverForm", { provider: name });
+          }}
+          onClose={() => setPlansFor(null)}
+        />
       )}
 
       {form && (

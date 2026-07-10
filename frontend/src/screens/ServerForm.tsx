@@ -8,8 +8,10 @@ import {
   dynamicPlanProviderId,
   dynamicPlanProviderIdByName,
   findDynamicPlanProvider,
+  fmtPrice,
   isDynamicPlanProviderId,
   planProviderDisplayName,
+  planSpecs,
   providerNameById,
 } from "../lib/providerPlans";
 import * as q from "../lib/queries";
@@ -112,23 +114,6 @@ function suggestName(location: string, provider: string): string {
   const prov = provider.trim();
   if (!loc) return "";
   return prov ? `${loc} [${prov}]` : loc;
-}
-
-const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
-function fmtTraffic(tb: number | null): string {
-  return tb == null ? "безлимит" : `${tb} ТБ`;
-}
-
-function fmtPrice(p: ProviderPlan): string {
-  return `${p.price.toLocaleString("ru-RU")} ${p.currency}/${PRICE_PERIOD_LABEL[p.period] ?? p.period}`;
-}
-
-function fmtPort(p: ProviderPlan): string {
-  return p.portMbps > 0 ? `${p.portMbps} Мбит` : "порт не указан";
-}
-
-function planSpecs(p: ProviderPlan): string {
-  return `${p.cpu}vCPU/${p.ramGb}ГБ RAM · ${p.diskGb}ГБ ${p.diskType} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb)}`;
 }
 
 function planOptionKey(p: ProviderPlan): string {

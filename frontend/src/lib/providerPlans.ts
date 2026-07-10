@@ -1,4 +1,23 @@
-import type { Provider } from "./types";
+import type { Provider, ProviderPlan } from "./types";
+
+// --- форматирование тарифов (общее для ServerForm-автозаполнения и каталога) ---
+export const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
+
+export function fmtTraffic(tb: number | null): string {
+  return tb == null ? "безлимит" : `${tb} ТБ`;
+}
+
+export function fmtPrice(p: ProviderPlan): string {
+  return `${p.price.toLocaleString("ru-RU")} ${p.currency}/${PRICE_PERIOD_LABEL[p.period] ?? p.period}`;
+}
+
+export function fmtPort(p: ProviderPlan): string {
+  return p.portMbps > 0 ? `${p.portMbps} Мбит` : "порт не указан";
+}
+
+export function planSpecs(p: ProviderPlan): string {
+  return `${p.cpu}vCPU/${p.ramGb}ГБ RAM · ${p.diskGb}ГБ ${p.diskType} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb)}`;
+}
 
 export const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
   ahost: "AHost",
