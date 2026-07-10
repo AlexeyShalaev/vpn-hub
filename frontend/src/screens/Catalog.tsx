@@ -2,6 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { type CSSProperties, useMemo, useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { canonicalLocation } from "../lib/locations";
 import {
   currencySymbol,
   DYNAMIC_PLAN_PROVIDER_LABELS,
@@ -154,7 +155,13 @@ const FX_SOURCE_NOTE: Record<string, string> = {
 // Подбор тарифа по всем провайдерам: агрегирует их тарифы и фильтрует по локациям, провайдерам, RAM и
 // бюджету. Валюты у провайдеров разные (RUB/USD/EUR) — все цены сводятся к одной валюте за месяц по
 // курсу ЦБ РФ (кэшируется на бэкенде), поэтому бюджет и сортировка работают через провайдеров разом.
-function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) => void; onClose: () => void }) {
+function PlanFinderModal({
+  onPick,
+  onClose,
+}: {
+  onPick: (providerName: string, plan: FinderPlan) => void;
+  onClose: () => void;
+}) {
   const providerIds = Object.keys(DYNAMIC_PLAN_PROVIDER_LABELS);
   const results = useQueries({
     queries: providerIds.map((pid) => ({
@@ -190,13 +197,15 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
   const [priceCur, setPriceCur] = useState("RUB");
   const [onlyAvailable, setOnlyAvailable] = useState(true);
 
-  const regionOpts = useMemo<[string, string][]>(
-    () =>
-      [...new Set(all.map((p) => p.region).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b, "ru"))
-        .map((r) => [r, r]),
-    [all],
-  );
+  // локации сводим к стране: ОАЭ/UAE/Дубай → одна опция «ОАЭ / UAE» (см. canonicalLocation)
+  const locationOpts = useMemo<[string, string][]>(() => {
+    const byKey = new Map<string, string>();
+    for (const p of all) {
+      const { key, label } = canonicalLocation(p.region);
+      if (!byKey.has(key)) byKey.set(key, label);
+    }
+    return [...byKey].sort((a, b) => a[1].localeCompare(b[1], "ru"));
+  }, [all]);
   const providerOpts = useMemo<[string, string][]>(
     () =>
       providerIds.filter((id) => all.some((p) => p.providerId === id)).map((id) => [id, planProviderDisplayName(id)]),
@@ -216,7 +225,7 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
     const hasPriceBound = priceMin.trim() !== "" || priceMax.trim() !== "";
     return all
       .filter((p) => (onlyAvailable ? p.available !== false : true))
-      .filter((p) => (regions.length === 0 ? true : regions.includes(p.region)))
+      .filter((p) => (regions.length === 0 ? true : regions.includes(canonicalLocation(p.region).key)))
       .filter((p) => (providerSel.length === 0 ? true : providerSel.includes(p.providerId)))
       .filter((p) => p.ramGb >= ramLo && p.ramGb <= ramHi)
       .map((p) => ({ ...p, monthly: monthlyPriceIn(p, priceCur, rates) }))
@@ -244,7 +253,7 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
       <div className="stack" style={{ gap: 12 }}>
         {/* мультивыборы локаций/провайдеров (с поиском) + переключатель наличия */}
         <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <MultiSelect label="Локации" options={regionOpts} selected={regions} onChange={setRegions} />
+          <MultiSelect label="Локации" options={locationOpts} selected={regions} onChange={setRegions} />
           <MultiSelect label="Провайдеры" options={providerOpts} selected={providerSel} onChange={setProviderSel} />
           <label
             className="rowflex"
@@ -378,7 +387,7 @@ function PlanFinderModal({ onPick, onClose }: { onPick: (providerName: string) =
                       </Btn>
                     </a>
                   )}
-                  <Btn variant="primary" sm onClick={() => onPick(p.providerLabel)}>
+                  <Btn variant="primary" sm onClick={() => onPick(p.providerLabel, p)}>
                     Выбрать
                   </Btn>
                 </div>
@@ -581,9 +590,16 @@ export function CatalogScreen() {
 
       {showFinder && (
         <PlanFinderModal
-          onPick={(providerName) => {
+          onPick={(providerName, plan) => {
             setShowFinder(false);
-            go("serverForm", { provider: providerName });
+            // передаём и провайдера, и конкретный тариф — форма создания сервера сразу подставит его
+            // (локацию, цену, квоту): см. presetPlan в ServerForm
+            go("serverForm", {
+              provider: providerName,
+              planProviderId: plan.providerId,
+              planTariff: plan.name,
+              planLocation: plan.region,
+            });
           }}
           onClose={() => setShowFinder(false)}
         />

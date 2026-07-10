@@ -363,11 +363,18 @@ export function ServerFormScreen() {
   // распознанные реквизиты сразу подставляются в поля.
   const [pasteText, setPasteText] = useState("");
   const [parsed, setParsed] = useState<ParsedServerInfo | null>(null);
+  // Пришли из подбора тарифов («Выбрать») с конкретным тарифом → сразу ставим его в очередь на
+  // автозаполнение: как только каталог провайдера загрузится (обычно уже в кэше react-query), тариф
+  // применится — локация, цена и квота подставятся сами (тот же путь, что и для распознанного письма).
   const [pendingProviderPlan, setPendingProviderPlan] = useState<{
     providerId: string;
     tariff: string;
     location?: string;
-  } | null>(null);
+  } | null>(() =>
+    params.planTariff && params.planProviderId
+      ? { providerId: params.planProviderId, tariff: params.planTariff, location: params.planLocation }
+      : null,
+  );
 
   useEffect(() => {
     if (!pendingProviderPlan || pendingProviderPlan.providerId !== planProviderId || plans.length === 0) return;
