@@ -411,7 +411,10 @@ export interface SystemInfo {
 export interface MetricsRetention {
   rawRetentionDays: number | null; // UI-override дней хранения сырья; null = env-дефолт
   defaultRawRetentionDays: number; // env-дефолт (подсказка в плейсхолдере)
-  sizeCapGb: number; // лимит суммарного размера метрик, ГБ; 0 = без лимита
+  sizeCapGb: number; // явный лимит размера метрик, ГБ; 0 = не задан → авто по диску
+  autoSizeCapGb: number; // авто-лимит = процент от диска (0 = авто выключено/диск неизвестен)
+  diskTotalGb: number | null; // полный размер диска (по metrics_disk_path), ГБ; null — неизвестно
+  diskCapPct: number; // процент диска для авто-лимита (по умолчанию 20; 0 = выкл)
   usage: {
     rows: Record<string, number>; // строк по каждой таблице метрик
     sizeBytes: Record<string, number> | null; // размер таблиц, байт (только Postgres; null — неизвестно)

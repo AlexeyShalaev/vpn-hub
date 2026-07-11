@@ -29,6 +29,8 @@ from vpnhub.services.limits import (
 from vpnhub.services.metrics_retention import (
     SETTING_RAW_RETENTION,
     SETTING_SIZE_CAP_GB,
+    auto_size_cap_bytes,
+    disk_total_bytes,
     metrics_disk_usage,
 )
 
@@ -138,10 +140,16 @@ class AdminService:
             cap_row = await tx.settings.get_value(SETTING_SIZE_CAP_GB)
             metrics_usage = await metrics_disk_usage(tx.session)
         # хранение метрик (UI-настройка): дни хранения сырья (override; пусто → env-дефолт) + кап по размеру
+        # авто-лимит по диску: показываем эффективный кап, когда явный не задан (20% диска ≈ N ГБ)
+        auto_cap = auto_size_cap_bytes(self.settings)
+        disk_total = disk_total_bytes(self.settings.metrics_disk_path)
         metrics = {
             "rawRetentionDays": int(raw_row) if raw_row and raw_row.strip().isdigit() else None,
             "defaultRawRetentionDays": self.settings.traffic_raw_retention_days,
             "sizeCapGb": float(cap_row) if cap_row and _is_num(cap_row) else 0.0,
+            "autoSizeCapGb": round(auto_cap / 1_000_000_000, 1) if auto_cap else 0.0,
+            "diskTotalGb": round(disk_total / 1_000_000_000, 1) if disk_total else None,
+            "diskCapPct": self.settings.metrics_disk_cap_pct,
             "usage": metrics_usage,
         }
         s = self.settings

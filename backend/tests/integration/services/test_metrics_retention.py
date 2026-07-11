@@ -12,6 +12,7 @@ from vpnhub.infra.db.orm import models as m
 from vpnhub.services.metrics_retention import (
     SETTING_RAW_RETENTION,
     SETTING_SIZE_CAP_GB,
+    auto_size_cap_bytes,
     chunked_delete,
     metrics_disk_usage,
     raw_retention_override,
@@ -135,3 +136,52 @@ async def test__chunked_delete__max_batches_caps_one_run(uow):
     deleted = await chunked_delete(uow, m.MetricSample, m.MetricSample.at < 10, batch=2, max_batches=2)
     assert deleted == 4
     assert await _metric_count(uow) == 6
+
+
+class _Sett:
+    """Мини-настройки для авто-лимита."""
+
+    def __init__(self, pct: int, path: str = "/") -> None:
+        self.metrics_disk_cap_pct = pct
+        self.metrics_disk_path = path
+
+
+def _fake_disk(monkeypatch: pytest.MonkeyPatch, total_bytes: int) -> None:
+    import collections
+    import shutil
+
+    usage = collections.namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(total_bytes, 0, total_bytes))
+
+
+def test__auto_size_cap_bytes__is_pct_of_disk_total(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: диск 1000 ГБ
+    _fake_disk(monkeypatch, 1_000 * 10**9)
+    # Act / Assert: 20% → 200 ГБ
+    assert auto_size_cap_bytes(_Sett(20)) == 200 * 10**9
+
+
+def test__auto_size_cap_bytes__disabled_when_pct_zero() -> None:
+    assert auto_size_cap_bytes(_Sett(0)) == 0
+
+
+async def test__size_cap_bytes__explicit_setting_overrides_auto(uow, monkeypatch: pytest.MonkeyPatch):
+    # Arrange: и явный кап (5 ГБ), и авто (20% от 1000 ГБ = 200 ГБ)
+    _fake_disk(monkeypatch, 1_000 * 10**9)
+    await _set(uow, SETTING_SIZE_CAP_GB, "5")
+    # Act / Assert: явный побеждает
+    async with uow.query() as tx:
+        assert await size_cap_bytes(tx.session, _Sett(20)) == 5 * 10**9
+
+
+async def test__size_cap_bytes__falls_back_to_auto_when_unset(uow, monkeypatch: pytest.MonkeyPatch):
+    # Arrange: явный кап не задан, авто 10% от 1000 ГБ
+    _fake_disk(monkeypatch, 1_000 * 10**9)
+    async with uow.query() as tx:
+        assert await size_cap_bytes(tx.session, _Sett(10)) == 100 * 10**9
+
+
+async def test__size_cap_bytes__no_settings_means_no_auto(uow):
+    # Без settings авто-фолбэка нет → 0 (обратная совместимость)
+    async with uow.query() as tx:
+        assert await size_cap_bytes(tx.session) == 0

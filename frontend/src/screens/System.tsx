@@ -869,14 +869,18 @@ export function SystemScreen() {
               />
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-              <span className="muted">Лимит размера, ГБ (0 — без лимита)</span>
+              <span className="muted">Лимит размера, ГБ (0 — авто по диску)</span>
               <input
                 className="input"
                 type="number"
                 min={0}
                 step={0.5}
                 style={{ width: 200 }}
-                placeholder="0 — без лимита"
+                placeholder={
+                  sysQ.data.metrics.autoSizeCapGb > 0
+                    ? `авто ${sysQ.data.metrics.autoSizeCapGb} ГБ (${sysQ.data.metrics.diskCapPct}% диска)`
+                    : "0 — без лимита"
+                }
                 value={metricsCap}
                 onChange={(e) => setMetricsCap(e.target.value)}
               />
@@ -898,6 +902,14 @@ export function SystemScreen() {
           <p className="muted-3" style={{ fontSize: 12, marginTop: 10 }}>
             «Дней» применяется к сырью (детальные точки); агрегаты хранятся дольше. Лимит по размеру срезает старейшее
             сырьё, если суммарный размер превышен (доступен на Postgres).
+            {sysQ.data.metrics.sizeCapGb === 0 && sysQ.data.metrics.autoSizeCapGb > 0 && (
+              <>
+                {" "}
+                Явный лимит не задан → действует авто-лимит {sysQ.data.metrics.autoSizeCapGb} ГБ (
+                {sysQ.data.metrics.diskCapPct}% диска
+                {sysQ.data.metrics.diskTotalGb ? ` ${sysQ.data.metrics.diskTotalGb} ГБ` : ""}).
+              </>
+            )}
           </p>
         </div>
       )}
