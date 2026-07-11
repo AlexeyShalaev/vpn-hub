@@ -28,7 +28,7 @@ jobs:
           - language: javascript-typescript
             build-mode: none
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # codeql-action запинен на commit-SHA (# v3 — маркер для Dependabot).
       - uses: github/codeql-action/init@411c4c9a36b3fca4d674f06b6396b2c6d23522c6 # v3
         with:
