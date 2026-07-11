@@ -203,17 +203,15 @@ export function ProfileScreen() {
 
       {/* Настройки */}
       <div className="card stack" style={{ gap: 0 }}>
-        <div style={{ padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
-          <div className="card-row" style={{ padding: 0 }}>
-            <Icon name={theme === "dark" ? "moon" : "sun"} size={18} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14.5 }}>{t("profile.theme")}</div>
-              <div className="muted-3" style={{ fontSize: 12.5 }}>
-                {t("profile.themeHint")}
-              </div>
+        <div className="card-row" style={{ padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
+          <Icon name={theme === "dark" ? "moon" : "sun"} size={18} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 14.5 }}>{t("profile.theme")}</div>
+            <div className="muted-3" style={{ fontSize: 12.5 }}>
+              {t("profile.themeHint")}
             </div>
           </div>
-          <div className="row" style={{ gap: 6, marginTop: 10 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {(["system", "dark", "light"] as const).map((pref) => {
               const active = themePref === pref;
               const label =
@@ -229,14 +227,13 @@ export function ProfileScreen() {
                   onClick={() => setThemePref(pref)}
                   className={active ? "" : "muted"}
                   style={{
-                    flex: 1,
-                    border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                    border: "1px solid var(--border)",
                     borderRadius: 8,
-                    padding: "7px 8px",
+                    padding: "5px 11px",
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: "pointer",
-                    background: active ? "var(--accent-soft)" : "transparent",
+                    background: "transparent",
                     color: active ? "var(--text)" : undefined,
                     opacity: active ? 1 : 0.6,
                   }}
