@@ -48,7 +48,7 @@ class ChainService:
     async def _owned(self, tx: UowTransaction, owner_id: str, sid: str) -> m.Server:
         s: m.Server | None = await tx.servers.get(sid)
         if not s or s.owner_user_id != owner_id:
-            raise NotFound("Сервер не найден")
+            raise NotFound(key="multihop.server_not_found")
         return s
 
     @staticmethod
@@ -56,9 +56,13 @@ class ChainService:
         """Установленный и запущенный tcp-Reality Xray-протокол сервера (иначе BadRequest)."""
         sp = next((p for p in server.protocols if p.proto == CHAIN_PROTO), None)
         if not sp or not sp.installed or not sp.running:
-            raise BadRequest(f"На сервере «{server.name}» должен быть установлен и запущен Xray")
+            raise BadRequest(
+                key="multihop.xray_not_running", params={"server": server.name}
+            )
         if not sp.material_encrypted:
-            raise BadRequest(f"У сервера «{server.name}» нет материала Xray — переустановите протокол")
+            raise BadRequest(
+                key="multihop.xray_no_material", params={"server": server.name}
+            )
         return sp
 
     async def list_for_entry(self, owner_id: str, sid: str) -> list[dict]:
@@ -90,14 +94,14 @@ class ChainService:
         чтобы не копить висячие uuid.
         """
         if entry_sid == exit_sid:
-            raise BadRequest("Входной и выходной серверы должны различаться")
+            raise BadRequest(key="multihop.entry_exit_must_differ")
 
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
             entry = await self._owned(tx, owner_id, entry_sid)
             exit_srv = await self._owned(tx, owner_id, exit_sid)
             if entry.status != "online" or exit_srv.status != "online":
-                raise BadRequest("Оба сервера должны быть онлайн")
+                raise BadRequest(key="multihop.both_servers_must_be_online")
             entry_sp = self._xray_sp(entry)
             exit_sp = self._xray_sp(exit_srv)
             existing = (
@@ -108,7 +112,7 @@ class ChainService:
                 )
             ).scalar_one_or_none()
             if existing is not None:
-                raise BadRequest("У этого сервера уже есть цепочка — удалите её перед созданием новой")
+                raise BadRequest(key="multihop.chain_already_exists")
             exit_material = ServerMaterial.from_dict(prov._dec(exit_sp.material_encrypted))
             exit_ip, exit_port = exit_srv.ip, exit_sp.port
 
@@ -116,7 +120,9 @@ class ChainService:
         try:
             client = await prov.add_client(exit_srv, exit_sp, f"chain:{entry.name}")
         except Exception as e:
-            raise BadRequest(f"Не удалось завести клиента на выходном сервере: {e}") from e
+            raise BadRequest(
+                key="multihop.exit_client_create_failed", params={"error": str(e)}
+            ) from e
 
         # шаг 2: outbound entry → exit; при сбое откатываем клиента exit
         try:
@@ -133,7 +139,9 @@ class ChainService:
                 await prov.revoke_client(exit_srv, exit_sp, client.client_id)
             except Exception as rollback_err:
                 log.warning("chain rollback failed", entry=entry_sid, exit=exit_sid, error=str(rollback_err))
-            raise BadRequest(f"Не удалось применить цепочку на входном сервере: {e}") from e
+            raise BadRequest(
+                key="multihop.entry_chain_apply_failed", params={"error": str(e)}
+            ) from e
 
         async with self.uow.transaction() as tx:
             link = m.ChainLink(
@@ -155,7 +163,7 @@ class ChainService:
             entry = await self._owned(tx, owner_id, entry_sid)
             link = await tx.session.get(m.ChainLink, chain_id)
             if link is None or link.owner_user_id != owner_id or link.entry_server_id != entry_sid:
-                raise NotFound("Цепочка не найдена")
+                raise NotFound(key="multihop.chain_not_found")
             exit_srv = await tx.servers.get(link.exit_server_id)
             entry_sp = next((p for p in entry.protocols if p.proto == link.proto), None)
             exit_sp = next((p for p in exit_srv.protocols if p.proto == link.proto), None) if exit_srv else None

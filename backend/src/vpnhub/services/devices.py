@@ -37,13 +37,14 @@ class DeviceService:
 
     async def create(self, user_id: str, name: str, platform: str) -> dict:
         if not name:
-            raise BadRequest("Введите имя")
+            raise BadRequest(key="device.name_required")
         async with self.uow.transaction() as tx:
             used = await used_devices(tx.session, user_id)
             limit = await effective_device_limit(tx.session, user_id)
             if used >= limit:
                 raise BadRequest(
-                    f"Достигнут лимит устройств ({used}/{limit}). Обратитесь к владельцу, чтобы увеличить лимит."
+                    key="device.limit_reached",
+                    params={"used": used, "limit": limit},
                 )
             d = m.Device(user_id=user_id, name=name, platform=platform or "ios")
             tx.devices.add(d)
@@ -56,7 +57,7 @@ class DeviceService:
         async with self.uow.query() as tx:
             d = await tx.devices.get(did)
             if not d or d.user_id != user_id:
-                raise NotFound("Устройство не найдено")
+                raise NotFound(key="device.not_found")
             refs = [
                 (c.server_id, c.proto or "", c.client_id or "")
                 for c in d.configs

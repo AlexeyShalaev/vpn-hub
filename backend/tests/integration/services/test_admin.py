@@ -14,7 +14,7 @@ from vpnhub.api.config import Settings
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.security import hash_token, normalize_phone
-from vpnhub.services.admin import _FALLBACK_RELEASES, AdminService
+from vpnhub.services.admin import AdminService, _fallback_releases
 from vpnhub.services.backups import BackupService
 
 pytestmark = pytest.mark.integration
@@ -219,7 +219,7 @@ async def test__check_updates__no_feed_url_no_cache__falls_back_to_current(admin
     assert result["latest"] == "0.1.0"
     assert result["current"] == "0.1.0"
     assert result["available"] is False
-    assert result["releases"] == _FALLBACK_RELEASES
+    assert result["releases"] == _fallback_releases()
 
 
 async def test__check_updates__cached_newer_version__reports_from_cache(admin_service, session_maker):
@@ -246,7 +246,7 @@ async def test__check_updates__corrupt_cache__falls_back_to_current(admin_servic
     result = await admin_service.check_updates()
     # Assert
     assert result["latest"] == "0.1.0"
-    assert result["releases"] == _FALLBACK_RELEASES
+    assert result["releases"] == _fallback_releases()
 
 
 async def test__check_updates__feed_configured_but_unreachable__falls_back_with_reason(

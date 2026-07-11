@@ -567,7 +567,7 @@ class TrafficService:
         async with self.uow.query() as tx:
             server = await tx.servers.get(sid)
             if not server or server.owner_user_id != owner_id:
-                raise NotFound("Сервер не найден")
+                raise NotFound(key="traffic.server_not_found")
             states = await self._peer_states_for(tx, [sid])
             totals = await self._tier_totals(tx, [sid], since, totals_tier)
             series = await self._tier_series(tx, [sid], since, series_tier)

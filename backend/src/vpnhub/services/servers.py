@@ -55,13 +55,13 @@ def _provider_metadata(raw: object) -> dict[str, Any]:
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        raise BadRequest("Метаданные провайдера должны быть JSON-объектом")
+        raise BadRequest(key="server.provider_metadata_not_object")
     try:
         dumped = json.dumps(raw, ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError) as exc:
-        raise BadRequest("Метаданные провайдера должны быть валидным JSON") from exc
+        raise BadRequest(key="server.provider_metadata_invalid_json") from exc
     if len(dumped) > 8192:
-        raise BadRequest("Метаданные провайдера слишком большие")
+        raise BadRequest(key="server.provider_metadata_too_large")
     return cast("dict[str, Any]", json.loads(dumped))
 
 
@@ -93,7 +93,7 @@ class ServerService:
     async def _owned(self, tx: UowTransaction, owner_id: str, sid: str) -> m.Server:
         s: m.Server | None = await tx.servers.get(sid)
         if not s or s.owner_user_id != owner_id:
-            raise NotFound("Сервер не найден")
+            raise NotFound(key="server.not_found")
         return s
 
     async def get(self, owner_id: str, sid: str) -> dict:
@@ -106,9 +106,9 @@ class ServerService:
         ip = (data.get("ip") or "").strip()
         location = (data.get("location") or "").strip()
         if not name or not ip or not location:
-            raise BadRequest("Название, IP и локация обязательны")
+            raise BadRequest(key="server.required_fields_missing")
         if not is_valid_host(ip):
-            raise BadRequest("Некорректный IP или хост сервера")
+            raise BadRequest(key="server.invalid_host")
         async with self.uow.transaction() as tx:
             s = m.Server(
                 owner_user_id=owner_id,
@@ -135,12 +135,12 @@ class ServerService:
         if data.get("ip") is not None:
             ip = str(data["ip"]).strip()
             if not is_valid_host(ip):
-                raise BadRequest("Некорректный IP или хост сервера")
+                raise BadRequest(key="server.invalid_host")
             data = {**data, "ip": ip}  # хранить обрезанное значение (валидатор строг к пробелам)
         if data.get("location") is not None:
             location = str(data["location"]).strip()
             if not location:
-                raise BadRequest("Локация обязательна")
+                raise BadRequest(key="server.location_required")
             data = {**data, "location": location}  # хранить обрезанное значение
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
@@ -183,9 +183,9 @@ class ServerService:
         """
         ip = str(data.get("ip") or "").strip()
         if not ip:
-            raise BadRequest("Укажите IP нового сервера")
+            raise BadRequest(key="server.new_ip_required")
         if not is_valid_host(ip):
-            raise BadRequest("Некорректный IP или хост сервера")
+            raise BadRequest(key="server.invalid_host")
 
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.transaction() as tx:
@@ -390,11 +390,11 @@ class ServerService:
         self, owner_id: str, sid: str, vtype: str, op: str, protos: builtins.list[str] | None = None
     ) -> dict:
         if vtype not in VPN_TYPES:
-            raise BadRequest("Неизвестный тип VPN")
+            raise BadRequest(key="server.unknown_vpn_type")
         if op == "fix":
             return await self.apply_fix(owner_id, sid, vtype)
         if op not in ("install", "remove", "start", "stop"):
-            raise BadRequest("Неизвестная операция")
+            raise BadRequest(key="server.unknown_operation")
         # все вендоры (amnezia/openvpn/outline/hysteria2) — реальный provisioning
         return await self._provisioned_op(owner_id, sid, vtype, op, protos)
 
@@ -410,16 +410,16 @@ class ServerService:
             s = await self._owned(tx, owner_id, sid)
             errored = next((p for p in s.protocols if p.vendor == vtype and p.state == "error"), None)
             if errored is None:
-                raise BadRequest("Нет ошибки для исправления")
+                raise BadRequest(key="server.no_error_to_fix")
             rem = remediation.resolve(errored.error_code, errored.error)
             if rem is None or rem.kind != "auto" or rem.fix_id is None:
-                raise BadRequest("Эту ошибку нельзя исправить автоматически")
+                raise BadRequest(key="server.fix_not_automatic")
             fix_id = rem.fix_id
         # SSH-фикс — вне транзакции (может занять время)
         try:
             await prov.run_fix(s, fix_id)
         except (SshError, ProvisioningError) as e:
-            raise BadRequest(f"Не удалось выполнить исправление: {e}") from e
+            raise BadRequest(key="server.fix_failed", params={"error": str(e)}) from e
         # авто-переустановка вендора (как install): помечаем installing и уходим в фон
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
@@ -440,7 +440,7 @@ class ServerService:
             # выбранное подмножество протоколов вендора (пусто/None → все); докачка = install части
             proto_ids = ProvisioningService.resolve_proto_ids(vendor, protos)
             if not proto_ids:
-                raise BadRequest("Не выбрано ни одного протокола для установки")
+                raise BadRequest(key="server.no_protocols_selected")
             async with self.uow.transaction() as tx:
                 s = await self._owned(tx, owner_id, sid)
                 vpn = next((v for v in s.vpns if v.type == vendor), None)
@@ -483,11 +483,11 @@ class ServerService:
         async with self.uow.query() as tx:
             s = await self._owned(tx, owner_id, sid)
             if s.status != "online":
-                raise BadRequest("Сервер должен быть онлайн")
+                raise BadRequest(key="server.must_be_online")
         try:
             await prov.lifecycle_vendor(s, vendor, op)
         except (SshError, ProvisioningError) as e:
-            raise BadRequest(f"Не удалось выполнить операцию на сервере: {e}") from e
+            raise BadRequest(key="server.operation_failed", params={"error": str(e)}) from e
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
             running = op == "start"
@@ -504,13 +504,13 @@ class ServerService:
     async def protocol_op(self, owner_id: str, sid: str, proto_id: str, op: str) -> dict:
         """Операция над ОДНИМ протоколом: remove (снос+отзыв) / start / stop (свитчер контейнера)."""
         if proto_id not in pc.PROTOCOLS:
-            raise BadRequest("Неизвестный протокол")
+            raise BadRequest(key="server.unknown_protocol")
         if op == "remove":
             return await self.remove_protocol(owner_id, sid, proto_id)
         if op == "update":
             return await self.update_protocol(owner_id, sid, proto_id)
         if op not in ("start", "stop"):
-            raise BadRequest("Неизвестная операция")
+            raise BadRequest(key="server.unknown_operation")
         return await self._lifecycle_protocol(owner_id, sid, proto_id, op)
 
     async def update_protocol(self, owner_id: str, sid: str, proto_id: str) -> dict:
@@ -526,18 +526,18 @@ class ServerService:
         размечено как remaining; здесь — безопасный скелет пересборки под явным флагом обновления.
         """
         if proto_id not in pc.PROTOCOLS:
-            raise BadRequest("Неизвестный протокол")
+            raise BadRequest(key="server.unknown_protocol")
         spec = pc.spec_by_id(proto_id)
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
             if s.status != "online":
-                raise BadRequest("Сервер должен быть онлайн")
+                raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
             if not sp or not sp.installed:
-                raise BadRequest("Протокол не установлен")
+                raise BadRequest(key="server.protocol_not_installed")
             if not component_versions.update_available(proto_id, sp.image_version):
-                raise BadRequest("Обновление недоступно: компонент уже актуальной версии")
+                raise BadRequest(key="server.update_not_available")
             await prov.mark_installing(tx, sid, spec.vendor, (proto_id,))
             await tx.session.flush()
             await tx.session.refresh(s)
@@ -552,14 +552,14 @@ class ServerService:
         async with self.uow.query() as tx:
             s = await self._owned(tx, owner_id, sid)
             if s.status != "online":
-                raise BadRequest("Сервер должен быть онлайн")
+                raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
             if not sp or not sp.installed:
-                raise BadRequest("Протокол не установлен")
+                raise BadRequest(key="server.protocol_not_installed")
         try:
             await prov.lifecycle_protocol(s, proto_id, op)
         except (SshError, ProvisioningError) as e:
-            raise BadRequest(f"Не удалось выполнить операцию на сервере: {e}") from e
+            raise BadRequest(key="server.operation_failed", params={"error": str(e)}) from e
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
@@ -584,23 +584,23 @@ class ServerService:
         (иначе рассинхрон сторон и все клиенты отвалятся). Пиры сохраняются (syncconf).
         """
         if proto_id not in pc.PROTOCOLS:
-            raise BadRequest("Неизвестный протокол")
+            raise BadRequest(key="server.unknown_protocol")
         spec = pc.spec_by_id(proto_id)
         if spec.kind != "wireguard":
-            raise BadRequest("Параметры обфускации доступны только для AmneziaWG")
+            raise BadRequest(key="server.obfuscation_amneziawg_only")
 
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
             s = await self._owned(tx, owner_id, sid)
             if s.status != "online":
-                raise BadRequest("Сервер должен быть онлайн")
+                raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
             if not sp or not sp.installed or not sp.running:
-                raise BadRequest("Протокол не установлен или остановлен")
+                raise BadRequest(key="server.protocol_not_installed_or_stopped")
 
             current = AwgParams.from_dict(json.loads(sp.params_json)) if sp.params_json else None
             if current is None:
-                raise BadRequest("Нет текущих параметров обфускации")
+                raise BadRequest(key="server.no_current_obfuscation_params")
 
             if preset == "default":
                 fresh = AwgProvisioner.new_params(spec.is_awg2)
@@ -611,7 +611,7 @@ class ServerService:
             elif values:
                 target = awg_params.merge_editable(current, values)
             else:
-                raise BadRequest("Укажите preset или values")
+                raise BadRequest(key="server.preset_or_values_required")
 
         try:
             awg_params.validate(target, spec.is_awg2)
@@ -621,7 +621,7 @@ class ServerService:
         try:
             await prov.set_protocol_params(s, sp, target)
         except (SshError, ProvisioningError) as e:
-            raise BadRequest(f"Не удалось применить параметры на сервере: {e}") from e
+            raise BadRequest(key="server.apply_params_failed", params={"error": str(e)}) from e
 
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
@@ -639,12 +639,12 @@ class ServerService:
         это просто запретит выдавать НОВЫЕ конфиги; уже выданные не трогаются.
         """
         if proto_id not in pc.PROTOCOLS:
-            raise BadRequest("Неизвестный протокол")
+            raise BadRequest(key="server.unknown_protocol")
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
             if sp is None:
-                raise BadRequest("Протокол не установлен на сервере")
+                raise BadRequest(key="server.protocol_not_installed_on_server")
             sp.max_clients = max_clients if (max_clients is not None and max_clients > 0) else None
             await tx.session.flush()
             await tx.session.refresh(s)
@@ -713,19 +713,19 @@ class ServerService:
         material_encrypted не меняется (иначе панель разойдётся с сервером). Клиенты (uuid) сохраняются.
         """
         if proto_id not in pc.PROTOCOLS:
-            raise BadRequest("Неизвестный протокол")
+            raise BadRequest(key="server.unknown_protocol")
         spec = pc.spec_by_id(proto_id)
         if spec.kind != "xray":
-            raise BadRequest("Параметры Reality доступны только для Xray")
+            raise BadRequest(key="server.reality_xray_only")
 
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
             s = await self._owned(tx, owner_id, sid)
             if s.status != "online":
-                raise BadRequest("Сервер должен быть онлайн")
+                raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
             if not sp or not sp.installed or not sp.running:
-                raise BadRequest("Протокол не установлен или остановлен")
+                raise BadRequest(key="server.protocol_not_installed_or_stopped")
             material = ServerMaterial.from_dict(prov._dec(sp.material_encrypted))
 
         try:
@@ -742,7 +742,7 @@ class ServerService:
         try:
             new_material = await prov.set_reality(s, sp, short_id=target_short_id, sni=target_sni)
         except (SshError, ProvisioningError) as e:
-            raise BadRequest(f"Не удалось применить параметры Reality на сервере: {e}") from e
+            raise BadRequest(key="server.apply_reality_failed", params={"error": str(e)}) from e
 
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)
@@ -760,7 +760,7 @@ class ServerService:
         хоть один протокол; config-gen всё равно не отдаст конфиг по неустановленному протоколу.
         """
         if proto_id not in pc.PROTOCOLS:
-            raise BadRequest("Неизвестный протокол")
+            raise BadRequest(key="server.unknown_protocol")
         spec = pc.spec_by_id(proto_id)
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:

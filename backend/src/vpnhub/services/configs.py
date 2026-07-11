@@ -160,10 +160,10 @@ class ConfigService:
         async with self.uow.query() as tx:
             access, _ = await effective_access(tx, user_id)
             if vpn_type not in access.get(server_id, set()):
-                raise Forbidden("Нет доступа к этому VPN")
+                raise Forbidden(key="config.no_vpn_access")
             s = await tx.servers.get(server_id)
             if not s:
-                raise NotFound("Сервер не найден")
+                raise NotFound(key="config.server_not_found")
             platform = "ios"
             if device_id:
                 d = await tx.devices.get(device_id)
@@ -171,7 +171,7 @@ class ConfigService:
                     platform = d.platform
 
         if vpn_type not in PROVISIONED_VENDORS:
-            raise BadRequest("Неизвестный тип VPN")
+            raise BadRequest(key="config.unknown_vpn_type")
         return await self._generate_provisioned(vpn_type, user_id, server_id, device_id, proto, platform, peek)
 
     async def _generate_provisioned(
@@ -185,7 +185,7 @@ class ConfigService:
         peek: bool = False,
     ) -> dict:
         if not device_id:
-            raise BadRequest("Выберите устройство")
+            raise BadRequest(key="config.select_device")
         # запрошенный протокол должен принадлежать вендору; иначе решаем по установленным ниже
         requested = pc.spec_by_label(proto or "")
         if requested is not None and requested.vendor != vpn_type:
@@ -198,7 +198,7 @@ class ConfigService:
             s = await self._owned_server(tx, server_id)
             device = await tx.devices.get(device_id)
             if not device or device.user_id != user_id:
-                raise NotFound("Устройство не найдено")
+                raise NotFound(key="config.device_not_found")
             # только установленные протоколы вендора (в каталожном порядке) — их отдаём и из них выбираем
             installed_ids = {p.proto for p in s.protocols if p.vendor == vpn_type and p.installed}
             installed_labels = [
@@ -211,7 +211,7 @@ class ConfigService:
                 else (pc.spec_by_label(installed_labels[0]) if installed_labels else None)
             )
             if spec is None:
-                raise BadRequest("Протокол ещё не установлен на этом сервере")
+                raise BadRequest(key="config.proto_not_installed")
             sp = next(p for p in s.protocols if p.proto == spec.id)
             server_ip, server_name, port = s.ip, s.name, sp.port
             server_owner_id = s.owner_user_id
@@ -226,8 +226,8 @@ class ConfigService:
                 used = await used_clients(tx.session, sp)
                 if over_limit(used, sp.max_clients):
                     raise BadRequest(
-                        f"Достигнут лимит конфигов на «{spec.label}» этого сервера "
-                        f"({used}/{sp.max_clients}). Владелец может увеличить лимит."
+                        key="config.limit_reached",
+                        params={"proto": spec.label, "used": used, "max": sp.max_clients},
                     )
             # лимит трафика per (user, server) за биллинг-период: блок выдачи НОВОГО конфига при превышении
             # (уже выданные конфиги отсекаются отдельно — Этап 3b; здесь только мягкий блок новых)
@@ -238,9 +238,12 @@ class ConfigService:
                     urx, utx = await period_usage(tx.session, server_id, user_id, ps)
                     if urx + utx >= byte_limit:
                         raise BadRequest(
-                            f"Достигнут лимит трафика на «{server_name}» за период "
-                            f"({fmt_bytes(urx + utx)} / {fmt_bytes(byte_limit)}). "
-                            "Доступ восстановится после сброса периода."
+                            key="config.traffic_limit_reached",
+                            params={
+                                "server": server_name,
+                                "used": fmt_bytes(urx + utx),
+                                "limit": fmt_bytes(byte_limit),
+                            },
                         )
 
         # установленные amnezia-протоколы, что склеиваются в ОДИН vpn:// (awg/awg_legacy/xray).
@@ -277,7 +280,7 @@ class ConfigService:
                 async with SshClient(creds) as ssh:
                     client = await prov_obj.add_client(ssh, server_ip, port, client_name)
             except (SshError, ProvisioningError) as e:
-                raise BadRequest(f"Не удалось создать конфиг на сервере: {e}") from e
+                raise BadRequest(key="config.create_failed", params={"error": str(e)}) from e
             await self._persist_client(device_id, server_id, spec, client, client_name)
 
         artifact = prov_obj.build_artifact(server_ip=server_ip, port=port, server_name=server_name, client=client)
@@ -370,7 +373,7 @@ class ConfigService:
                     for spec, port, provisioner in missing:
                         created[spec.id] = await provisioner.add_client(ssh, server_ip, port, client_name)
             except (SshError, ProvisioningError) as e:
-                raise BadRequest(f"Не удалось создать конфиг на сервере: {e}") from e
+                raise BadRequest(key="config.create_failed", params={"error": str(e)}) from e
             for spec, _port, _prov in missing:
                 await self._persist_client(device_id, server_id, spec, created[spec.id], client_name)
 
@@ -399,7 +402,7 @@ class ConfigService:
 
     async def install(self, user_id: str, server_id: str, vpn_type: str, device_id: str, proto: str | None) -> dict:
         if not device_id:
-            raise BadRequest("Выберите устройство")
+            raise BadRequest(key="config.select_device")
         if vpn_type in PROVISIONED_VENDORS:
             # реальный provisioning: создаст клиента на сервере и сохранит DeviceConfig
             await self._generate_provisioned(vpn_type, user_id, server_id, device_id, proto, platform="ios")
@@ -408,7 +411,7 @@ class ConfigService:
         async with self.uow.transaction() as tx:
             d = await tx.devices.get(device_id)
             if not d or d.user_id != user_id:
-                raise NotFound("Устройство не найдено")
+                raise NotFound(key="config.device_not_found")
             for c in list(d.configs):
                 if c.server_id == server_id and c.vpn_type == vpn_type and c.proto == proto:
                     await tx.session.delete(c)
@@ -421,12 +424,12 @@ class ConfigService:
     async def remove(self, user_id: str, server_id: str, vpn_type: str, device_id: str, proto: str | None) -> dict:
         """Снять конфиг с устройства + отозвать клиента на сервере (симметрично generate)."""
         if not device_id:
-            raise BadRequest("Выберите устройство")
+            raise BadRequest(key="config.select_device")
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
             d = await tx.devices.get(device_id)
             if not d or d.user_id != user_id:
-                raise NotFound("Устройство не найдено")
+                raise NotFound(key="config.device_not_found")
             target = next(
                 (c for c in d.configs if c.server_id == server_id and c.vpn_type == vpn_type and c.proto == proto),
                 None,
@@ -455,7 +458,7 @@ class ConfigService:
     async def _owned_server(self, tx: UowTransaction, server_id: str) -> m.Server:
         s: m.Server | None = await tx.servers.get(server_id)
         if not s:
-            raise NotFound("Сервер не найден")
+            raise NotFound(key="config.server_not_found")
         return s
 
     @staticmethod

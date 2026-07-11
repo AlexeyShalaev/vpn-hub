@@ -75,7 +75,7 @@ def _price_dict(seg: m.ServerPrice | None) -> dict | None:
 def _norm_currency(cur: str) -> str:
     cur = (cur or "").strip().upper()
     if not (3 <= len(cur) <= 8 and cur.isalpha()):
-        raise BadRequest("Валюта — 3–8 латинских букв (напр. RUB, USD, EUR)")
+        raise BadRequest(key="finance.currency_invalid")
     return cur
 
 
@@ -138,7 +138,7 @@ class FinanceService:
     async def _owned(self, tx: UowTransaction, owner_id: str, sid: str) -> m.Server:
         s: m.Server | None = await tx.servers.get(sid)
         if not s or s.owner_user_id != owner_id:
-            raise NotFound("Сервер не найден")
+            raise NotFound(key="finance.server_not_found")
         return s
 
     @staticmethod
@@ -172,9 +172,9 @@ class FinanceService:
         # не-конечное (NaN/±Inf) не должно долетать до round()/BigInteger (иначе 500); отрицательное
         # бесконечное иначе тихо закрыло бы сегмент. Верхняя граница — чтобы micros влез в BigInteger.
         if amount is not None and not math.isfinite(amount):
-            raise BadRequest("Цена должна быть конечным числом")
+            raise BadRequest(key="finance.price_not_finite")
         if amount is not None and amount > 1_000_000_000_000:  # 1e12 → micros 1e18 < bigint max
-            raise BadRequest("Слишком большая цена")
+            raise BadRequest(key="finance.price_too_large")
         async with self.uow.transaction() as tx:
             await self._owned(tx, owner_id, sid)
             cur = await self._open_segment(tx, sid)
@@ -186,7 +186,7 @@ class FinanceService:
                 return None
 
             if period not in PERIODS:
-                raise BadRequest("Период — minute | day | month")
+                raise BadRequest(key="finance.period_invalid")
             currency = _norm_currency(currency)
             anchor = anchor_day if (period == "month" and anchor_day and 1 <= anchor_day <= 31) else None
             micros = round(amount * MICROS)
@@ -277,7 +277,7 @@ class FinanceService:
         now = time.time()
         end = min(end, now)
         if end <= start:
-            raise BadRequest("Некорректный период отчёта")
+            raise BadRequest(key="finance.report_period_invalid")
 
         totals_cost: dict[str, float] = {}
         quota_cost: dict[str, float] = {}

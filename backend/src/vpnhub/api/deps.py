@@ -10,10 +10,17 @@ from fastapi.responses import Response
 
 from vpnhub.api.config import Settings, get_settings
 from vpnhub.core.errors import Forbidden, TooManyRequests, Unauthorized
+from vpnhub.core.i18n import Lang, resolve_lang
 from vpnhub.infra.ratelimit import get_limiter
 from vpnhub.services.auth import AuthService, Identity
 
 COOKIE = "vpnhub_session"
+
+
+def req_lang(request: Request) -> Lang:
+    """Язык ответа для эндпоинтов, которые сами формируют локализованный текст
+    (не через обработчик ошибок): берём из Accept-Language, как ставит фронт."""
+    return resolve_lang(request.headers.get("accept-language"))
 
 
 def _client_ip(request: Request, settings: Settings) -> str | None:
@@ -81,7 +88,7 @@ async def require_user(request: Request) -> Identity:
 async def require_admin(request: Request) -> Identity:
     ident = await require_user(request)
     if ident.kind != "admin":
-        raise Forbidden("Требуются права администратора")
+        raise Forbidden(key="deps.admin_required")
     return ident
 
 

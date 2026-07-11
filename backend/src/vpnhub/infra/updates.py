@@ -16,9 +16,40 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import urllib.request
 from datetime import datetime
 from typing import Any
+
+from vpnhub.core.i18n import DEFAULT_LANG, Lang, translate
+
+# conventional-commit префикс `type(scope)!: описание` — локализуем метку типа.
+_CC_RE = re.compile(r"^(feat|fix|perf|refactor|docs|style|test|build|ci|chore|revert)(\([^)]*\))?(!)?:\s*(.*)$")
+
+
+def localize_note(note: str, lang: Lang = DEFAULT_LANG) -> str:
+    """Заменить англоязычную метку типа коммита на локализованную («feat:» → «Новое:»).
+
+    Описание релиза остаётся как написал автор (для авто-генерации из коммитов — англ.);
+    двуязычим именно структурную «шапку», чтобы changelog читался на выбранном языке.
+    """
+    m = _CC_RE.match(note.strip())
+    if not m:
+        return note
+    typ, scope, bang, desc = m.group(1), m.group(2) or "", m.group(3) or "", m.group(4)
+    return f"{translate(f'changelog.{typ}', lang)}{scope}{bang}: {desc}"
+
+
+def localize_releases(releases: list[dict], lang: Lang = DEFAULT_LANG) -> list[dict]:
+    """Локализовать метки типов в заметках каждого релиза (не мутируя исходные dict)."""
+    out: list[dict] = []
+    for r in releases:
+        notes = r.get("notes")
+        if isinstance(notes, list):
+            out.append({**r, "notes": [localize_note(str(n), lang) for n in notes]})
+        else:
+            out.append(r)
+    return out
 
 # Официальный источник обновлений по умолчанию — релизы репозитория продукта.
 OFFICIAL_FEED_URL = "https://api.github.com/repos/AlexeyShalaev/vpn-hub/releases"

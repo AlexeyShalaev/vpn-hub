@@ -15,10 +15,11 @@ import vpnhub
 from vpnhub.api.config import Settings
 from vpnhub.common.serializers import user_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
+from vpnhub.core.i18n import DEFAULT_LANG, Lang, translate
 from vpnhub.infra import keyring, selfupdate, sysprobe
 from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
-from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed
+from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, localize_releases, normalize_feed
 from vpnhub.services.backups import BackupService
 from vpnhub.services.limits import (
     SETTING_DEFAULT_DEVICES,
@@ -37,17 +38,21 @@ from vpnhub.services.metrics_retention import (
 log = structlog.get_logger(__name__)
 
 _START = time.time()
-_FALLBACK_RELEASES = [
-    {
-        "v": "0.1.0",
-        "date": "29.06.2026",
-        "notes": [
-            "Первый релиз VPN Hub",
-            "Серверы, пулы, группы и выдача доступов",
-            "Получение конфигов Amnezia / OpenVPN / Outline",
-        ],
-    }
-]
+def _fallback_releases(lang: Lang = DEFAULT_LANG) -> list[dict]:
+    """Запасные заметки первого релиза (когда фид недоступен) — на языке запроса."""
+    return [
+        {
+            "v": "0.1.0",
+            "date": "29.06.2026",
+            "notes": [
+                translate("changelog.fallback_first_release", lang),
+                translate("changelog.fallback_servers", lang),
+                translate("changelog.fallback_configs", lang),
+            ],
+        }
+    ]
+
+
 _CACHE_KEY = "update_feed_cache"
 
 
@@ -96,11 +101,11 @@ class AdminService:
 
     async def update_user(self, uid: str, name: str, phone: str, status: str, new_password: str | None) -> dict:
         if not name or not phone:
-            raise BadRequest("Имя и телефон обязательны")
+            raise BadRequest(key="admin.name_phone_required")
         async with self.uow.transaction() as tx:
             u = await tx.users.get(uid)
             if not u:
-                raise NotFound("Пользователь не найден")
+                raise NotFound(key="admin.user_not_found")
             u.name, u.phone, u.status = name, normalize_phone(phone), status
             if new_password:
                 u.password_hash = hash_password(new_password)
@@ -117,7 +122,7 @@ class AdminService:
             if u:
                 await tx.session.delete(u)
 
-    async def system(self) -> dict:
+    async def system(self, lang: Lang = DEFAULT_LANG) -> dict:
         pg = self.settings.postgres.connection
         db_status, db_latency, engine = "disconnected", None, "PostgreSQL"
         async with self.uow.query() as tx:
@@ -155,7 +160,7 @@ class AdminService:
         s = self.settings
         cache = await self._update_cache()
         latest = cache.get("latest") or s.version
-        releases = cache.get("releases") or _FALLBACK_RELEASES
+        releases = localize_releases(cache.get("releases") or _fallback_releases(lang), lang)
         update_mode = selfupdate.detect_mode(s)
         update_supported = update_mode != "manual"
         update_hint = ""
@@ -222,7 +227,7 @@ class AdminService:
     async def set_default_devices(self, n: int) -> None:
         """Глобальный дефолт лимита устройств на пользователя (>=1)."""
         if n < 1:
-            raise BadRequest("Лимит устройств должен быть не меньше 1")
+            raise BadRequest(key="admin.device_limit_min")
         async with self.uow.transaction() as tx:
             await tx.settings.set_value(SETTING_DEFAULT_DEVICES, str(int(n)))
 
@@ -234,9 +239,9 @@ class AdminService:
     async def set_metrics_retention(self, raw_days: int | None, size_cap_gb: float | None) -> None:
         """Хранение метрик из UI: дни хранения сырья (None/≤0 → env-дефолт) и лимит размера, ГБ (0 = без лимита)."""
         if raw_days is not None and raw_days < 0:
-            raise BadRequest("Дни хранения не могут быть отрицательными")
+            raise BadRequest(key="admin.retention_days_negative")
         if size_cap_gb is not None and size_cap_gb < 0:
-            raise BadRequest("Лимит размера не может быть отрицательным")
+            raise BadRequest(key="admin.size_cap_negative")
         raw_val = str(int(raw_days)) if (raw_days and raw_days > 0) else "0"
         cap_val = f"{size_cap_gb:g}" if (size_cap_gb and size_cap_gb > 0) else "0"
         async with self.uow.transaction() as tx:
@@ -253,7 +258,7 @@ class AdminService:
         except ValueError:
             return {}
 
-    async def check_updates(self) -> dict:
+    async def check_updates(self, lang: Lang = DEFAULT_LANG) -> dict:
         """Реальная проверка: тянет фид релизов, сравнивает версии, кэширует результат."""
         current = self.settings.version
         url = self.settings.update_feed_url
@@ -265,8 +270,8 @@ class AdminService:
                 "current": current,
                 "latest": latest,
                 "checked": False,
-                "releases": cache.get("releases") or _FALLBACK_RELEASES,
-                "reason": "Проверка обновлений отключена (VPNHUB_UPDATE_FEED_URL=off)",
+                "releases": localize_releases(cache.get("releases") or _fallback_releases(lang), lang),
+                "reason": translate("update.check_disabled", lang),
             }
         try:
             feed = normalize_feed(await fetch_feed(url))
@@ -279,11 +284,11 @@ class AdminService:
                 "current": current,
                 "latest": latest,
                 "checked": False,
-                "releases": cache.get("releases") or _FALLBACK_RELEASES,
-                "reason": f"Не удалось получить фид обновлений: {exc}",
+                "releases": localize_releases(cache.get("releases") or _fallback_releases(lang), lang),
+                "reason": translate("update.feed_failed", lang, error=str(exc)),
             }
         latest = str(feed.get("latest") or current)
-        releases = feed.get("releases") or _FALLBACK_RELEASES
+        releases = feed.get("releases") or _fallback_releases(lang)
         async with self.uow.transaction() as tx:
             await tx.settings.set_value(
                 _CACHE_KEY, json.dumps({"latest": latest, "releases": releases, "at": time.time()})
@@ -293,10 +298,10 @@ class AdminService:
             "current": current,
             "latest": latest,
             "checked": True,
-            "releases": releases,
+            "releases": localize_releases(releases, lang),
         }
 
-    async def apply_update(self) -> dict:
+    async def apply_update(self, lang: Lang = DEFAULT_LANG) -> dict:
         """Применить обновление доступным драйвером (command/webhook/k8s) в фоне.
 
         Контейнер не может пересоздать сам себя, поэтому применение делегируется
@@ -309,7 +314,7 @@ class AdminService:
             return {
                 "ok": False,
                 "manual": True,
-                "message": "Автообновление не настроено. Обновите образ вручную.",
+                "message": translate("update.not_configured", lang),
                 "instructions": [
                     f"docker pull {s.image}:latest",
                     "docker compose up -d  # или перезапустите контейнер с новым образом",
@@ -318,11 +323,11 @@ class AdminService:
         cache = await self._update_cache()
         target = str(cache.get("latest") or "")
         if not target or not is_newer(target, s.version):
-            fresh = await self.check_updates()  # кнопку могли нажать до первой проверки фида
+            fresh = await self.check_updates(lang)  # кнопку могли нажать до первой проверки фида
             target = str(fresh.get("latest") or "")
             if not target or not is_newer(target, s.version):
-                return {"ok": False, "manual": False, "message": "Установлена последняя версия — обновлять нечего"}
-        return selfupdate.start(s, target)
+                return {"ok": False, "manual": False, "message": translate("update.already_latest", lang)}
+        return selfupdate.start(s, target, lang)
 
     def upgrade_status(self) -> dict:
         """Статус применения обновления + текущая версия (по ней UI понимает успех)."""

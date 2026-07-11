@@ -36,7 +36,7 @@ class ServerAccessService:
     async def _owned(self, tx: UowTransaction, owner_id: str, sid: str) -> m.Server:
         s: m.Server | None = await tx.servers.get(sid)
         if not s or s.owner_user_id != owner_id:
-            raise NotFound("Сервер не найден")
+            raise NotFound(key="serverAccess.server_not_found")
         return s
 
     async def overview(self, owner_id: str, sid: str) -> dict:
@@ -214,7 +214,7 @@ class ServerAccessService:
             server = s
 
         if server.status != "online":
-            raise BadRequest("Сервер офлайн — внешних клиентов не прочитать")
+            raise BadRequest(key="serverAccess.server_offline")
 
         result: list[dict] = []
         try:
@@ -238,19 +238,19 @@ class ServerAccessService:
                     if ext:
                         result.append({"proto": pid, "label": spec.label, "clients": ext})
         except SshError as e:
-            raise BadRequest(f"Не удалось подключиться к серверу: {e}") from e
+            raise BadRequest(key="serverAccess.ssh_connect_failed", params={"error": str(e)}) from e
 
         return {"external": result}
 
     async def rename_client(self, owner_id: str, sid: str, config_id: str, name: str) -> dict:
         name = (name or "").strip()
         if not name:
-            raise BadRequest("Введите имя конфига")
+            raise BadRequest(key="serverAccess.name_required")
         async with self.uow.transaction() as tx:
             await self._owned(tx, owner_id, sid)
             cfg = await tx.session.get(m.DeviceConfig, config_id)
             if not cfg or cfg.server_id != sid:
-                raise NotFound("Конфиг не найден")
+                raise NotFound(key="serverAccess.config_not_found")
             cfg.client_name = name
             await tx.session.flush()
         return {"ok": True}
@@ -261,7 +261,7 @@ class ServerAccessService:
             await self._owned(tx, owner_id, sid)
             cfg = await tx.session.get(m.DeviceConfig, config_id)
             if not cfg or cfg.server_id != sid:
-                raise NotFound("Конфиг не найден")
+                raise NotFound(key="serverAccess.config_not_found")
             vpn_type, proto, client_id, cfg_id = cfg.vpn_type, cfg.proto, cfg.client_id, cfg.id
             device_id, client_name = cfg.device_id, cfg.client_name
 
@@ -300,16 +300,16 @@ class ServerAccessService:
             await self._owned(tx, owner_id, sid)
             cfg = await tx.session.get(m.DeviceConfig, config_id)
             if not cfg or cfg.server_id != sid:
-                raise NotFound("Конфиг не найден")
+                raise NotFound(key="serverAccess.config_not_found")
             if cfg.vpn_type not in PROVISIONED_VENDORS or not cfg.client_id:
-                raise BadRequest("Этот конфиг нельзя приостановить")
+                raise BadRequest(key="serverAccess.pause_not_supported")
             ref = (sid, cfg.proto or "", prov.material_from_config(cfg))
             cfg_id, client_id = cfg.id, cfg.client_id
 
         # применяем на сервере ПЕРЕД сменой статуса: если сервер недоступен — статус не меняем
         done = await (prov.suspend_configs([ref]) if pause else prov.resume_configs([ref]))
         if client_id not in done:
-            raise BadRequest("Сервер недоступен — не удалось изменить состояние конфига")
+            raise BadRequest(key="serverAccess.server_unreachable")
 
         new_status = "paused" if pause else "active"
         async with self.uow.transaction() as tx:

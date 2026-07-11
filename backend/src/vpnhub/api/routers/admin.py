@@ -7,7 +7,8 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse
 
-from vpnhub.api.deps import require_admin, service
+from vpnhub.api.deps import req_lang, require_admin, service
+from vpnhub.core.i18n import Lang
 from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.services.admin import AdminService
 from vpnhub.services.auth import Identity
@@ -47,8 +48,12 @@ async def delete_user(
 
 
 @router.get("/system")
-async def system(_: Identity = Depends(require_admin), svc: AdminService = Depends(service(AdminService))) -> dict:
-    return await svc.system()
+async def system(
+    _: Identity = Depends(require_admin),
+    svc: AdminService = Depends(service(AdminService)),
+    lang: Lang = Depends(req_lang),
+) -> dict:
+    return await svc.system(lang)
 
 
 @router.get("/system/storage")
@@ -71,14 +76,20 @@ async def metrics(
 
 @router.post("/system/check-updates")
 async def check_updates(
-    _: Identity = Depends(require_admin), svc: AdminService = Depends(service(AdminService))
+    _: Identity = Depends(require_admin),
+    svc: AdminService = Depends(service(AdminService)),
+    lang: Lang = Depends(req_lang),
 ) -> dict:
-    return await svc.check_updates()
+    return await svc.check_updates(lang)
 
 
 @router.post("/system/upgrade")
-async def upgrade(_: Identity = Depends(require_admin), svc: AdminService = Depends(service(AdminService))) -> dict:
-    return await svc.apply_update()
+async def upgrade(
+    _: Identity = Depends(require_admin),
+    svc: AdminService = Depends(service(AdminService)),
+    lang: Lang = Depends(req_lang),
+) -> dict:
+    return await svc.apply_update(lang)
 
 
 @router.get("/system/upgrade/status")

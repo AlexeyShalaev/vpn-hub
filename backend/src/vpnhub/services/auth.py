@@ -54,17 +54,17 @@ class AuthService:
     ) -> str:
         np = normalize_phone(phone)
         if not name or not np or not password:
-            raise BadRequest("Заполните имя, телефон и пароль")
+            raise BadRequest(key="auth.fill_name_phone_password")
         if not is_valid_phone(phone):
-            raise BadRequest("Введите корректный номер телефона")
+            raise BadRequest(key="auth.invalid_phone")
         validate_password(password)
         if password != password2:
-            raise BadRequest("Пароли не совпадают")
+            raise BadRequest(key="auth.passwords_mismatch")
         async with self.uow.transaction() as tx:
             if (await tx.admins.count()) > 0:
-                raise BadRequest("Администратор уже создан")
+                raise BadRequest(key="auth.admin_already_created")
             if await tx.users.by_phone(np):
-                raise BadRequest("Этот номер уже зарегистрирован")
+                raise BadRequest(key="auth.phone_already_registered")
             # админ — это обычный пользователь + запись-признак в admins
             user = m.User(phone=np, name=name, password_hash=hash_password(password), status="active")
             tx.users.add(user)
@@ -75,16 +75,16 @@ class AuthService:
     async def register(self, name: str, phone: str, password: str, password2: str) -> None:
         np = normalize_phone(phone)
         if not name or not np or not password:
-            raise BadRequest("Заполните имя, телефон и пароль")
+            raise BadRequest(key="auth.fill_name_phone_password")
         if not is_valid_phone(phone):
-            raise BadRequest("Введите корректный номер телефона")
+            raise BadRequest(key="auth.invalid_phone")
         validate_password(password)
         if password != password2:
-            raise BadRequest("Пароли не совпадают")
+            raise BadRequest(key="auth.passwords_mismatch")
         async with self.uow.transaction() as tx:
             # админы тоже лежат в users, так что одной проверки достаточно
             if await tx.users.by_phone(np):
-                raise BadRequest("Этот номер уже зарегистрирован")
+                raise BadRequest(key="auth.phone_already_registered")
             user = m.User(phone=np, name=name, password_hash=hash_password(password), status="pending")
             tx.users.add(user)
             await tx.session.flush()
@@ -95,24 +95,24 @@ class AuthService:
     async def login(self, phone: str, password: str, *, ip: str | None = None, ua: str | None = None) -> str:
         np = normalize_phone(phone)
         if not np or not password:
-            raise BadRequest("Введите телефон и пароль")
+            raise BadRequest(key="auth.enter_phone_password")
         async with self.uow.transaction() as tx:
             user = await tx.users.by_phone(np)
             # verify() всегда, даже без пользователя (заглушка-хеш) → постоянное время ответа.
             password_ok = verify_password(user.password_hash if user else _DUMMY_PASSWORD_HASH, password)
             if not user or not password_ok:
-                raise Unauthorized("Неверный телефон или пароль")
+                raise Unauthorized(key="auth.invalid_credentials")
             if await tx.admins.is_admin(user.id):
                 token = await self._make_session(tx, "admin", user.id, ip, ua)
                 self._audit_login(tx, "admin", user, ip)
                 return token
             if user.status == "blocked":
-                raise Unauthorized("Аккаунт заблокирован. Обратитесь к администратору.")
+                raise Unauthorized(key="auth.account_blocked")
             # подхватить приглашения, появившиеся уже после регистрации
             if user.status == "pending" and await self._bind_invites(tx, user):
                 user.status = "active"
             if user.status == "pending":
-                raise Unauthorized("Аккаунт ожидает подтверждения администратора.")
+                raise Unauthorized(key="auth.account_pending")
             token = await self._make_session(tx, "user", user.id, ip, ua)
             self._audit_login(tx, "user", user, ip)
             return token
@@ -201,7 +201,7 @@ class AuthService:
         async with self.uow.transaction() as tx:
             sess = await tx.sessions.get(session_id)
             if not sess or sess.subject_id != subject_id:
-                raise NotFound("Сессия не найдена")
+                raise NotFound(key="auth.session_not_found")
             await tx.session.delete(sess)
 
     async def revoke_others(self, token: str | None, subject_id: str) -> int:
@@ -215,7 +215,7 @@ class AuthService:
         async with self.uow.transaction() as tx:
             user = await tx.users.get(user_id)
             if not user or not verify_password(user.password_hash, current_password):
-                raise BadRequest("Текущий пароль неверен")
+                raise BadRequest(key="auth.current_password_incorrect")
             user.password_hash = hash_password(new_password)
             # оставляем только текущую сессию
             await tx.sessions.delete_for_subject(user_id, except_id=hash_token(token) if token else None)

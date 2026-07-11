@@ -83,9 +83,9 @@ async def setup_admin(
     key_from_env = bool(backups.settings.master_key)
     if not key_from_env:
         if not body.masterKey:
-            raise BadRequest("Задайте мастер-ключ восстановления")
+            raise BadRequest(key="authApi.master_key_required")
         if len(body.masterKey) < 8:
-            raise BadRequest("Мастер-ключ — минимум 8 символов")
+            raise BadRequest(key="authApi.master_key_too_short")
     ip, ua = client_meta(request)
     token = await auth.create_first_admin(body.name, body.phone, body.password, body.password2, ip=ip, ua=ua)
     set_session_cookie(response, token, request=request)
@@ -105,7 +105,7 @@ async def setup_restore(
 ) -> dict:
     """Развернуть систему из существующего бэкапа (только пока система не настроена)."""
     if not await auth.setup_needed():
-        raise Forbidden("Система уже настроена")
+        raise Forbidden(key="authApi.system_already_configured")
     await backups.restore_from_bytes(await file.read(), key)
     return {"ok": True}
 

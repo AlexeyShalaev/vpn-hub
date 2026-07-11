@@ -370,7 +370,7 @@ class HostMetricsService:
         async with self.uow.query() as tx:
             server = await tx.servers.get(sid)
             if not server or server.owner_user_id != owner_id:
-                raise NotFound("Сервер не найден")
+                raise NotFound(key="hostmetrics.server_not_found")
             if period == self._RAW_PERIOD:
                 raw = list(
                     (
@@ -497,7 +497,7 @@ class HostMetricsService:
         async with self.uow.query() as tx:
             server = await tx.servers.get(sid)
             if not server or server.owner_user_id != owner_id:
-                raise NotFound("Сервер не найден")
+                raise NotFound(key="hostmetrics.server_not_found")
             protos = [sp.proto for sp in server.protocols if sp.installed and sp.proto in STATS_PROTOS]
             creds = server_creds(server, self.settings.secret_key)
         result: dict[str, str] = {}
