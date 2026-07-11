@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Avatar, Btn, Field, Icon, Modal, ScreenHeader, Spinner, Switch } from "../components/ui";
+import { Avatar, Btn, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { LANG_LABEL, LANGS, useT } from "../lib/i18n";
 import * as q from "../lib/queries";
@@ -11,7 +11,8 @@ import { useStore } from "../store";
 export function ProfileScreen() {
   const me = useStore((s) => s.me);
   const theme = useStore((s) => s.theme);
-  const toggleTheme = useStore((s) => s.toggleTheme);
+  const themePref = useStore((s) => s.themePref);
+  const setThemePref = useStore((s) => s.setThemePref);
   const lang = useStore((s) => s.lang);
   const setLang = useStore((s) => s.setLang);
   const t = useT();
@@ -202,15 +203,49 @@ export function ProfileScreen() {
 
       {/* Настройки */}
       <div className="card stack" style={{ gap: 0 }}>
-        <div className="card-row" style={{ padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
-          <Icon name={theme === "dark" ? "moon" : "sun"} size={18} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 14.5 }}>{t("profile.darkTheme")}</div>
-            <div className="muted-3" style={{ fontSize: 12.5 }}>
-              {t("profile.themeNow", { value: theme === "dark" ? t("profile.themeDark") : t("profile.themeLight") })}
+        <div style={{ padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
+          <div className="card-row" style={{ padding: 0 }}>
+            <Icon name={theme === "dark" ? "moon" : "sun"} size={18} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 14.5 }}>{t("profile.theme")}</div>
+              <div className="muted-3" style={{ fontSize: 12.5 }}>
+                {t("profile.themeHint")}
+              </div>
             </div>
           </div>
-          <Switch on={theme === "dark"} onClick={toggleTheme} />
+          <div className="row" style={{ gap: 6, marginTop: 10 }}>
+            {(["system", "dark", "light"] as const).map((pref) => {
+              const active = themePref === pref;
+              const label =
+                pref === "system"
+                  ? t("profile.themeSystem")
+                  : pref === "dark"
+                    ? t("profile.themeDark")
+                    : t("profile.themeLight");
+              return (
+                <button
+                  key={pref}
+                  type="button"
+                  onClick={() => setThemePref(pref)}
+                  className={active ? "" : "muted"}
+                  style={{
+                    flex: 1,
+                    border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                    borderRadius: 8,
+                    padding: "7px 8px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    background: active ? "var(--accent-soft)" : "transparent",
+                    color: active ? "var(--text)" : undefined,
+                    opacity: active ? 1 : 0.6,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="card-row" style={{ padding: "14px 0" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
