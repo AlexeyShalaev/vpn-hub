@@ -1,10 +1,8 @@
-"""optimize metric storage: index traffic_samples by (server_id, at) + autovacuum tuning
+"""optimize metric storage: autovacuum tuning for high-churn metric tables
 
-A5 + C2 из плана оптимизации метрик. Индекс под фактический запрос дашборда/ретеншна
-(WHERE server_id IN (...) AND at >= since ORDER BY at); прежний (server_id, proto, client_id)
-не использовался ни одним чтением, одиночный server_id покрыт композитом. Плюс агрессивнее
-autovacuum на высокочурновых таблицах метрик, чтобы ретеншн-DELETE меньше их раздувал.
-Только Postgres (тесты гоняют схему из metadata, миграции не применяют).
+C2 из плана оптимизации метрик: агрессивнее autovacuum на высокочурновых таблицах, чтобы
+ретеншн-DELETE меньше их раздувал. Индекс (server_id, at) у traffic_samples теперь создаётся сразу
+в его create-миграции (squash), поэтому здесь только autovacuum. Только Postgres.
 
 Revision ID: b1c2d3e4f5a6
 Revises: a0b1c2d3e4f5
@@ -35,11 +33,7 @@ _AUTOVACUUM_KEYS = (
 
 
 def upgrade() -> None:
-    # A5: индекс под фактический запрос; убираем неиспользуемые
-    op.drop_index(op.f("traffic_samples_server_id_idx"), table_name="traffic_samples")
-    op.drop_index("traffic_samples_scope_idx", table_name="traffic_samples")
-    op.create_index("traffic_samples_time_idx", "traffic_samples", ["server_id", "at"], unique=False)
-    # C2: autovacuum-тюнинг (имена таблиц — из константы, не пользовательский ввод)
+    # autovacuum-тюнинг (имена таблиц — из константы, не пользовательский ввод)
     for table in _AUTOVACUUM_TABLES:
         op.execute(f"ALTER TABLE {table} SET ({_AUTOVACUUM_SET})")
 
@@ -47,8 +41,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     for table in _AUTOVACUUM_TABLES:
         op.execute(f"ALTER TABLE {table} RESET ({_AUTOVACUUM_KEYS})")
-    op.drop_index("traffic_samples_time_idx", table_name="traffic_samples")
-    op.create_index(
-        "traffic_samples_scope_idx", "traffic_samples", ["server_id", "proto", "client_id"], unique=False
-    )
-    op.create_index(op.f("traffic_samples_server_id_idx"), "traffic_samples", ["server_id"], unique=False)

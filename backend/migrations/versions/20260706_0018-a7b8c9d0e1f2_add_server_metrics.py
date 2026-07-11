@@ -34,6 +34,8 @@ def upgrade() -> None:
         sa.Column("tcp_estab", sa.Integer(), nullable=True),
         sa.Column("uptime_s", sa.Integer(), nullable=True),
         sa.Column("online_clients", sa.Integer(), nullable=True),
+        # online_by_proto свёрнут в create (раньше — отдельной миграцией online_by_proto)
+        sa.Column("online_by_proto", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["server_id"], ["servers.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )

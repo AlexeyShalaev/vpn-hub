@@ -1,5 +1,8 @@
 """add traffic_samples table
 
+Финальная форма сразу: колонки online/ext_name и индекс (server_id, at) свёрнуты в create
+(раньше добавлялись отдельными миграциями online/ext_name и перекладкой индекса — убрано squash-ем).
+
 Revision ID: c3d4e5f6a7b8
 Revises: b2c3d4e5f6a7
 Create Date: 2026-07-05 13:00:00.000000
@@ -32,15 +35,15 @@ def upgrade() -> None:
         sa.Column("rx_delta", sa.BigInteger(), nullable=False),
         sa.Column("tx_delta", sa.BigInteger(), nullable=False),
         sa.Column("last_handshake", sa.Float(), nullable=True),
+        sa.Column("online", sa.Boolean(), nullable=True),
+        sa.Column("ext_name", sa.String(length=128), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("traffic_samples_server_id_idx"), "traffic_samples", ["server_id"], unique=False)
     op.create_index(op.f("traffic_samples_at_idx"), "traffic_samples", ["at"], unique=False)
-    op.create_index("traffic_samples_scope_idx", "traffic_samples", ["server_id", "proto", "client_id"], unique=False)
+    op.create_index("traffic_samples_time_idx", "traffic_samples", ["server_id", "at"], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index("traffic_samples_scope_idx", table_name="traffic_samples")
+    op.drop_index("traffic_samples_time_idx", table_name="traffic_samples")
     op.drop_index(op.f("traffic_samples_at_idx"), table_name="traffic_samples")
-    op.drop_index(op.f("traffic_samples_server_id_idx"), table_name="traffic_samples")
     op.drop_table("traffic_samples")
