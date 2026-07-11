@@ -12,9 +12,10 @@ from tests.conftest import TEST_SECRET_KEY
 from tests.factories.orm import make_session_row, make_user, seed
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import BadRequest, NotFound
+from vpnhub.infra.changelog import local_releases
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.security import hash_token, normalize_phone
-from vpnhub.services.admin import AdminService, _fallback_releases
+from vpnhub.services.admin import AdminService
 from vpnhub.services.backups import BackupService
 
 pytestmark = pytest.mark.integration
@@ -219,7 +220,7 @@ async def test__check_updates__no_feed_url_no_cache__falls_back_to_current(admin
     assert result["latest"] == "0.1.0"
     assert result["current"] == "0.1.0"
     assert result["available"] is False
-    assert result["releases"] == _fallback_releases()
+    assert result["releases"] == local_releases()  # ноты — из курируемого changelog, не из фида/кэша
 
 
 async def test__check_updates__cached_newer_version__reports_from_cache(admin_service, session_maker):
@@ -232,9 +233,9 @@ async def test__check_updates__cached_newer_version__reports_from_cache(admin_se
     result = await admin_service.check_updates()
     # Assert
     assert result["checked"] is False
-    assert result["latest"] == "9.9.9"
+    assert result["latest"] == "9.9.9"  # номер версии — из кэша
     assert result["available"] is True
-    assert result["releases"] == cached["releases"]
+    assert result["releases"] == local_releases()  # ноты — из курируемого changelog
 
 
 async def test__check_updates__corrupt_cache__falls_back_to_current(admin_service, session_maker):
@@ -246,7 +247,7 @@ async def test__check_updates__corrupt_cache__falls_back_to_current(admin_servic
     result = await admin_service.check_updates()
     # Assert
     assert result["latest"] == "0.1.0"
-    assert result["releases"] == _fallback_releases()
+    assert result["releases"] == local_releases()  # ноты — из курируемого changelog, не из фида/кэша
 
 
 async def test__check_updates__feed_configured_but_unreachable__falls_back_with_reason(
@@ -295,7 +296,7 @@ async def test__system__cached_release__surfaces_latest_in_summary(admin_service
     # Assert
     assert info["latest"] == "2.0.0"
     assert info["updateAvailable"] is True
-    assert info["releases"] == cached["releases"]
+    assert info["releases"] == local_releases()  # ноты — из курируемого changelog
 
 
 async def test__storage__reports_deployment_dirs_volumes_and_db(admin_service, settings):

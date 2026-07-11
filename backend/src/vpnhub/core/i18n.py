@@ -56,28 +56,6 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "Не удалось получить фид обновлений: {error}",
         "en": "Failed to fetch the update feed: {error}",
     },
-    # заметки релизов: локализованные метки типов conventional-commit (feat/fix/…)
-    "changelog.feat": {"ru": "Новое", "en": "New"},
-    "changelog.fix": {"ru": "Исправление", "en": "Fix"},
-    "changelog.perf": {"ru": "Оптимизация", "en": "Performance"},
-    "changelog.refactor": {"ru": "Рефакторинг", "en": "Refactor"},
-    "changelog.docs": {"ru": "Документация", "en": "Docs"},
-    "changelog.style": {"ru": "Оформление", "en": "Style"},
-    "changelog.test": {"ru": "Тесты", "en": "Tests"},
-    "changelog.build": {"ru": "Сборка", "en": "Build"},
-    "changelog.ci": {"ru": "CI", "en": "CI"},
-    "changelog.chore": {"ru": "Обслуживание", "en": "Maintenance"},
-    "changelog.revert": {"ru": "Откат", "en": "Revert"},
-    # запасные заметки первого релиза (когда фид недоступен) — двуязычные
-    "changelog.fallback_first_release": {"ru": "Первый релиз VPN Hub", "en": "First VPN Hub release"},
-    "changelog.fallback_servers": {
-        "ru": "Серверы, пулы, группы и выдача доступов",
-        "en": "Servers, pools, groups, and access sharing",
-    },
-    "changelog.fallback_configs": {
-        "ru": "Получение конфигов Amnezia / OpenVPN / Outline",
-        "en": "Amnezia / OpenVPN / Outline config issuance",
-    },
     # ── ключи модулей (пополняются миграцией i18n) ───────────────────────────────
     # AUTO-KEYS-START — не удалять этот маркер: между ним и AUTO-KEYS-END живут
     # сообщения, извлечённые из сервисов/роутеров при переводе бэкенда.

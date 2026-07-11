@@ -69,22 +69,16 @@ def test__resolve_lang__explicit_pref_wins() -> None:
     assert resolve_lang("en", pref="bogus") == "en"  # мусорный pref игнорируется
 
 
-def test__localize_note__translates_conventional_commit_type() -> None:
-    from vpnhub.infra.updates import localize_note
+def test__changelog__every_note_is_bilingual() -> None:
+    from vpnhub.infra.changelog import RELEASES, local_releases
 
-    # метка типа локализуется, scope/описание сохраняются
-    assert localize_note("feat(ui): superapp launcher", "ru") == "Новое(ui): superapp launcher"
-    assert localize_note("feat(ui): superapp launcher", "en") == "New(ui): superapp launcher"
-    assert localize_note("fix: race in sync", "ru") == "Исправление: race in sync"
-    # неизвестный/непрефиксный текст остаётся как есть
-    assert localize_note("Первый релиз VPN Hub", "en") == "Первый релиз VPN Hub"
-    assert localize_note("random text", "ru") == "random text"
-
-
-def test__localize_releases__maps_notes_without_mutating() -> None:
-    from vpnhub.infra.updates import localize_releases
-
-    src = [{"v": "1.0.0", "date": "x", "notes": ["feat: a", "fix: b"]}]
-    out = localize_releases(src, "en")
-    assert out[0]["notes"] == ["New: a", "Fix: b"]
-    assert src[0]["notes"] == ["feat: a", "fix: b"]  # исходник не мутирован
+    assert RELEASES, "changelog не должен быть пустым"
+    for r in RELEASES:
+        assert r["v"] and r["date"], f"релиз без версии/даты: {r}"
+        assert r["notes"], f"релиз {r['v']} без заметок"
+        for note in r["notes"]:
+            assert note.get("ru") and note.get("en"), f"{r['v']}: неполный перевод {note}"
+    # local_releases отдаёт плоские строки на нужном языке
+    ru, en = local_releases("ru"), local_releases("en")
+    assert ru[0]["notes"] and isinstance(ru[0]["notes"][0], str)
+    assert ru[0]["notes"] != en[0]["notes"]  # языки различаются

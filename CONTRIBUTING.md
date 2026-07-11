@@ -54,6 +54,19 @@ Breaking changes: add `!` after the type (`feat!:`) or include a `BREAKING CHANG
 
 ## Releasing (maintainers only)
 
-Releases are fully automated via [Release Please](https://github.com/googleapis/release-please).
-Merge a PR with conventional commits → Release Please opens a release PR → merge it → a `vX.Y.Z`
-tag is created → the Docker image is built and pushed to `ghcr.io/AlexeyShalaev/vpn-hub`.
+Versioning and tagging stay automated via [Release Please](https://github.com/googleapis/release-please):
+merge a PR with conventional commits → Release Please opens a release PR bumping the version → merge it
+→ a `vX.Y.Z` tag is created → the Docker image is built and pushed to `ghcr.io/AlexeyShalaev/vpn-hub`.
+
+**Release notes are hand-written and bilingual** — we do *not* ship the auto-generated changelog.
+The single source of truth is `backend/src/vpnhub/infra/changelog.py` (`RELEASES`): every note has
+both `ru` and `en`. The panel serves these notes in the user's language (Settings → System), and the
+English `CHANGELOG.md` (for GitHub) is generated from them — never edit `CHANGELOG.md` by hand.
+
+When cutting a release, in the Release Please release PR **before merging**:
+
+1. Add a new entry at the **top** of `RELEASES` in `backend/src/vpnhub/infra/changelog.py` with the
+   release version, date (`YYYY-MM-DD`), and user-facing notes in both `ru` and `en`.
+2. Run `make changelog` — it regenerates `CHANGELOG.md` from `RELEASES`, overwriting whatever
+   Release Please auto-generated (that's expected).
+3. Commit both files to the release PR, then merge.

@@ -17,9 +17,10 @@ from vpnhub.common.serializers import user_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.core.i18n import DEFAULT_LANG, Lang, translate
 from vpnhub.infra import keyring, selfupdate, sysprobe
+from vpnhub.infra.changelog import local_releases
 from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
-from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, localize_releases, normalize_feed
+from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed
 from vpnhub.services.backups import BackupService
 from vpnhub.services.limits import (
     SETTING_DEFAULT_DEVICES,
@@ -38,21 +39,6 @@ from vpnhub.services.metrics_retention import (
 log = structlog.get_logger(__name__)
 
 _START = time.time()
-
-
-def _fallback_releases(lang: Lang = DEFAULT_LANG) -> list[dict]:
-    """Запасные заметки первого релиза (когда фид недоступен) — на языке запроса."""
-    return [
-        {
-            "v": "0.1.0",
-            "date": "29.06.2026",
-            "notes": [
-                translate("changelog.fallback_first_release", lang),
-                translate("changelog.fallback_servers", lang),
-                translate("changelog.fallback_configs", lang),
-            ],
-        }
-    ]
 
 
 _CACHE_KEY = "update_feed_cache"
@@ -162,7 +148,7 @@ class AdminService:
         s = self.settings
         cache = await self._update_cache()
         latest = cache.get("latest") or s.version
-        releases = localize_releases(cache.get("releases") or _fallback_releases(lang), lang)
+        releases = local_releases(lang)  # ноты — из курируемого двуязычного changelog
         update_mode = selfupdate.detect_mode(s)
         update_supported = update_mode != "manual"
         update_hint = ""
@@ -261,9 +247,15 @@ class AdminService:
             return {}
 
     async def check_updates(self, lang: Lang = DEFAULT_LANG) -> dict:
-        """Реальная проверка: тянет фид релизов, сравнивает версии, кэширует результат."""
+        """Проверка обновлений: тянет фид ради номера последней версии, сравнивает с текущей.
+
+        Заметки релизов берём НЕ из фида, а из курируемого двуязычного changelog
+        (infra/changelog.py) — на языке запроса. Фид нужен только чтобы узнать, что
+        вышла более свежая версия; кэшируем только её номер (для офлайна).
+        """
         current = self.settings.version
         url = self.settings.update_feed_url
+        releases = local_releases(lang)
         if feed_disabled(url):
             cache = await self._update_cache()
             latest = cache.get("latest") or current
@@ -272,7 +264,7 @@ class AdminService:
                 "current": current,
                 "latest": latest,
                 "checked": False,
-                "releases": localize_releases(cache.get("releases") or _fallback_releases(lang), lang),
+                "releases": releases,
                 "reason": translate("update.check_disabled", lang),
             }
         try:
@@ -286,21 +278,18 @@ class AdminService:
                 "current": current,
                 "latest": latest,
                 "checked": False,
-                "releases": localize_releases(cache.get("releases") or _fallback_releases(lang), lang),
+                "releases": releases,
                 "reason": translate("update.feed_failed", lang, error=str(exc)),
             }
         latest = str(feed.get("latest") or current)
-        releases = feed.get("releases") or _fallback_releases(lang)
         async with self.uow.transaction() as tx:
-            await tx.settings.set_value(
-                _CACHE_KEY, json.dumps({"latest": latest, "releases": releases, "at": time.time()})
-            )
+            await tx.settings.set_value(_CACHE_KEY, json.dumps({"latest": latest, "at": time.time()}))
         return {
             "available": is_newer(latest, current),
             "current": current,
             "latest": latest,
             "checked": True,
-            "releases": localize_releases(releases, lang),
+            "releases": releases,
         }
 
     async def apply_update(self, lang: Lang = DEFAULT_LANG) -> dict:

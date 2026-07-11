@@ -40,6 +40,9 @@ front-build: ##@ Собрать фронт и положить в статику
 	rm -rf backend/src/vpnhub/static && mkdir -p backend/src/vpnhub/static
 	cp -r frontend/dist/* backend/src/vpnhub/static/
 
+changelog: ##@ Сгенерировать CHANGELOG.md из курируемого источника (backend/.../infra/changelog.py)
+	cd backend && uv run python ../scripts/gen_changelog.py
+
 front-lint: ##@ Тайпчек фронта
 	cd frontend && npx tsc --noEmit
 
