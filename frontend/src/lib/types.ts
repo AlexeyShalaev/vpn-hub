@@ -419,6 +419,40 @@ export interface MetricsRetention {
   };
 }
 
+// админ: развёртывание + дисковое использование (GET /admin/system/storage)
+export interface SystemStorage {
+  deployment: {
+    method: string; // host | docker | compose | kubernetes
+    methodLabel: string;
+    container: boolean;
+    hostname: string;
+    pid: number;
+    python: string;
+    platform: string;
+    cpuCount: number | null;
+    rssBytes: number | null; // резидентная память процесса (пиковая)
+    namespace: string | null; // k8s
+    pod: string | null; // k8s
+    cwd: string;
+    tz: string;
+    image: string;
+    edition: string;
+    updateMode: string; // command | webhook | k8s | manual
+    baseUrl: string;
+  };
+  dirs: {
+    label: string;
+    kind: string; // backups | data | static
+    path: string;
+    exists: boolean;
+    writable: boolean;
+    sizeBytes: number;
+    files: number;
+  }[];
+  volumes: { path: string; totalBytes: number; usedBytes: number; freeBytes: number }[];
+  db: { totalBytes: number | null; tables: { name: string; sizeBytes: number; rows: number }[] };
+}
+
 // per-server мониторинг ресурсов хоста (owner): один сэмпл = один monitor-тик по SSH
 export interface ServerMetricSample {
   at: number; // epoch seconds

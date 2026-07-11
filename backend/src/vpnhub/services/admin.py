@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -14,7 +15,7 @@ import vpnhub
 from vpnhub.api.config import Settings
 from vpnhub.common.serializers import user_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
-from vpnhub.infra import keyring, selfupdate
+from vpnhub.infra import keyring, selfupdate, sysprobe
 from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
 from vpnhub.infra.updates import feed_disabled, fetch_feed, is_newer, normalize_feed
@@ -187,6 +188,28 @@ class AdminService:
             "metrics": metrics,
             "releases": releases,
         }
+
+    async def storage(self) -> dict:
+        """Развёртывание + дисковое использование: способ деплоя, рабочие папки, тома, размер БД по таблицам."""
+        s = self.settings
+        static_dir = Path(vpnhub.__file__).parent / "static"  # тот же путь, что монтирует api/static
+        data_dir = Path(s.providers_file).parent
+
+        def _scan() -> tuple[list[dict], list[dict], dict]:
+            # синхронные os.walk/stat/disk_usage — уводим в поток, чтобы не блокировать event loop на скане ФС
+            dirs = [
+                sysprobe.dir_usage("Резервные копии", s.backup_dir, kind="backups"),
+                sysprobe.dir_usage("Данные (провайдеры и пр.)", str(data_dir), kind="data"),
+                sysprobe.dir_usage("Статика фронтенда", str(static_dir), kind="static"),
+            ]
+            volumes = sysprobe.volume_usage([s.backup_dir, str(data_dir), str(static_dir)])
+            return dirs, volumes, sysprobe.detect_deployment()
+
+        dirs, volumes, deployment = await asyncio.to_thread(_scan)
+        async with self.uow.query() as tx:
+            db = await sysprobe.db_disk_usage(tx.session)
+        deployment.update(image=s.image, edition=s.edition, updateMode=selfupdate.detect_mode(s), baseUrl=s.base_url)
+        return {"deployment": deployment, "dirs": dirs, "volumes": volumes, "db": db}
 
     async def set_default_devices(self, n: int) -> None:
         """Глобальный дефолт лимита устройств на пользователя (>=1)."""

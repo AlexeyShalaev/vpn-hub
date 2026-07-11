@@ -51,6 +51,14 @@ async def system(_: Identity = Depends(require_admin), svc: AdminService = Depen
     return await svc.system()
 
 
+@router.get("/system/storage")
+async def system_storage(
+    _: Identity = Depends(require_admin), svc: AdminService = Depends(service(AdminService))
+) -> dict:
+    """Развёртывание + дисковое использование (папки, тома, размер БД по таблицам) — для админ-дашборда."""
+    return await svc.storage()
+
+
 @router.get("/metrics")
 async def metrics(
     period: str = "24h",

@@ -192,6 +192,218 @@ function MonitoringSection() {
   );
 }
 
+// цвет бейджа способа деплоя: контейнерные — акцент, хост-процесс — нейтрально
+const DEPLOY_BADGE: Record<string, { bg: string; fg: string }> = {
+  kubernetes: { bg: "var(--accent)", fg: "#fff" },
+  docker: { bg: "var(--accent)", fg: "#fff" },
+  compose: { bg: "var(--accent)", fg: "#fff" },
+  host: { bg: "var(--surface-2)", fg: "var(--text-2)" },
+};
+
+// полоса заполнения тома: зелёная/жёлтая/красная по проценту
+function UsageBar({ used, total, h = 8 }: { used: number; total: number; h?: number }) {
+  const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+  const color = pct >= 90 ? "var(--danger)" : pct >= 75 ? "var(--warn)" : "var(--ok)";
+  return (
+    <div style={{ height: h, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+      <div style={{ width: `${pct}%`, height: "100%", background: color }} />
+    </div>
+  );
+}
+
+// Развёртывание + дисковое использование (GET /admin/system/storage): способ деплоя, куда пишет система,
+// свободное место на томах, размер БД по таблицам. Грузится лениво, отдельно от основной сводки.
+function StorageSection() {
+  const sq = useQuery({ queryKey: ["adminStorage"], queryFn: q.adminSystemStorage, staleTime: 30_000, retry: 1 });
+  const data = sq.data;
+
+  if (sq.isLoading || !data) {
+    return (
+      <div className="card">
+        <SectionLabel>Развёртывание и диск</SectionLabel>
+        {sq.isLoading ? (
+          <div style={{ padding: 20, textAlign: "center" }}>
+            <Spinner />
+          </div>
+        ) : (
+          <p style={{ fontSize: 13, color: "var(--text-3)", margin: 0 }}>Не удалось загрузить сведения о системе.</p>
+        )}
+      </div>
+    );
+  }
+
+  const d = data.deployment;
+  const badge = DEPLOY_BADGE[d.method] ?? DEPLOY_BADGE.host;
+  const depRows: [string, string, boolean][] = [
+    ["Хост", d.hostname, true],
+    ["Платформа", d.platform, false],
+    ["Python", d.python, true],
+    ["CPU / RAM", `${d.cpuCount ?? "—"} ядер · ${fmtBytes(d.rssBytes)}`, false],
+    ["PID", String(d.pid), true],
+    ["Драйвер обновлений", d.updateMode, false],
+    ["Рабочий каталог", d.cwd, true],
+    ["Часовой пояс", d.tz, false],
+  ];
+  if (d.namespace) depRows.splice(1, 0, ["Namespace / Pod", `${d.namespace} / ${d.pod ?? "—"}`, true]);
+
+  return (
+    <>
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <SectionLabel>Развёртывание</SectionLabel>
+          <span
+            style={{
+              font: "700 12px/1 var(--font)",
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: badge.bg,
+              color: badge.fg,
+              marginBottom: 12,
+            }}
+          >
+            {d.methodLabel}
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {depRows.map(([k, v, mono], i, arr) => (
+            <div
+              key={k}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "10px 0",
+                borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : undefined,
+              }}
+            >
+              <span style={{ fontSize: 13.5, color: "var(--text-2)", flex: "none" }}>{k}</span>
+              <span
+                className={mono ? "mono" : undefined}
+                style={{
+                  fontSize: mono ? 13 : 13.5,
+                  fontWeight: 600,
+                  textAlign: "right",
+                  flex: 1,
+                  minWidth: 0,
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {v}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <SectionLabel>Дисковое пространство</SectionLabel>
+
+        {data.volumes.map((v) => (
+          <div key={v.path} style={{ marginBottom: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                fontSize: 12.5,
+                color: "var(--text-2)",
+                marginBottom: 6,
+              }}
+            >
+              <span className="mono" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                {v.path}
+              </span>
+              <span style={{ flex: "none" }}>
+                свободно {fmtBytes(v.freeBytes)} из {fmtBytes(v.totalBytes)}
+              </span>
+            </div>
+            <UsageBar used={v.usedBytes} total={v.totalBytes} />
+          </div>
+        ))}
+
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", margin: "6px 0 8px" }}>
+          Куда пишет система
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {data.dirs.map((dir) => (
+            <div
+              key={dir.kind}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+                padding: "8px 10px",
+                borderRadius: 10,
+                background: "var(--surface-2)",
+              }}
+            >
+              <div style={{ minWidth: 0, flex: "1 1 240px" }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {dir.label}
+                  {!dir.exists && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--warn)" }}>· нет</span>}
+                  {dir.exists && !dir.writable && (
+                    <span style={{ marginLeft: 6, fontSize: 11, color: "var(--warn)" }}>· только чтение</span>
+                  )}
+                </div>
+                <div className="mono" style={{ fontSize: 11.5, color: "var(--text-3)", overflowWrap: "anywhere" }}>
+                  {dir.path}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flex: "none" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{fmtBytes(dir.sizeBytes)}</div>
+                <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{dir.files.toLocaleString("ru-RU")} файл.</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", margin: "16px 0 8px" }}>
+          База данных
+          {data.db.totalBytes != null && (
+            <span style={{ color: "var(--text-3)", fontWeight: 400 }}> · {fmtBytes(data.db.totalBytes)}</span>
+          )}
+        </div>
+        {data.db.totalBytes == null ? (
+          <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: 0 }}>
+            Размер таблиц доступен только на PostgreSQL.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.db.tables.map((t) => {
+              const pct = data.db.totalBytes ? Math.round((t.sizeBytes / data.db.totalBytes) * 100) : 0;
+              return (
+                <div key={t.name}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      fontSize: 12.5,
+                      marginBottom: 3,
+                    }}
+                  >
+                    <span className="mono" style={{ color: "var(--text-2)", minWidth: 0, overflowWrap: "anywhere" }}>
+                      {t.name}
+                    </span>
+                    <span style={{ color: "var(--text-3)", flex: "none" }}>
+                      {fmtBytes(t.sizeBytes)} · ~{t.rows.toLocaleString("ru-RU")} строк
+                    </span>
+                  </div>
+                  <div style={{ height: 5, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+                    <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: "var(--accent)" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 export function SystemScreen() {
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
@@ -859,7 +1071,10 @@ export function SystemScreen() {
         </div>
       </div>
 
-      {/* (5) Мониторинг здоровья инстанса */}
+      {/* (5) Развёртывание + дисковое использование */}
+      <StorageSection />
+
+      {/* (6) Мониторинг здоровья инстанса */}
       <MonitoringSection />
 
       {/* модалка релиза */}

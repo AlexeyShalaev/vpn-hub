@@ -29,6 +29,7 @@ import type {
   ServerUsage,
   Session,
   SystemInfo,
+  SystemStorage,
   UpdateCheck,
   UpgradeResult,
   UpgradeStatus,
@@ -239,6 +240,8 @@ export const adminUpdateUser = (id: string, b: Record<string, unknown>) =>
   http.patch<AdminUser>(`/admin/users/${id}`, b);
 export const adminDeleteUser = (id: string) => http.del(`/admin/users/${id}`);
 export const adminSystem = () => http.get<SystemInfo>("/admin/system");
+// админ: развёртывание + дисковое использование (папки, тома, размер БД по таблицам)
+export const adminSystemStorage = () => http.get<SystemStorage>("/admin/system/storage");
 // admin-дашборд здоровья инстанса (health самой панели, не VPN-трафик клиентов)
 export const adminMetrics = (period: string) =>
   http.get<MetricsOverview>(`/admin/metrics?period=${encodeURIComponent(period)}`);

@@ -296,3 +296,23 @@ async def test__system__cached_release__surfaces_latest_in_summary(admin_service
     assert info["latest"] == "2.0.0"
     assert info["updateAvailable"] is True
     assert info["releases"] == cached["releases"]
+
+
+async def test__storage__reports_deployment_dirs_volumes_and_db(admin_service, settings):
+    # Act
+    res = await admin_service.storage()
+    # Assert — развёртывание
+    assert res["deployment"]["method"] in {"host", "docker", "kubernetes"}
+    assert res["deployment"]["image"] == settings.image
+    assert "updateMode" in res["deployment"]
+    # рабочие папки: backups (на tmp — существует), data, static присутствуют как категории
+    kinds = {d["kind"] for d in res["dirs"]}
+    assert {"backups", "data", "static"} <= kinds
+    backups = next(d for d in res["dirs"] if d["kind"] == "backups")
+    assert backups["exists"] is True  # settings.backup_dir = tmp_path
+    # тома: хотя бы один, с положительным total
+    assert res["volumes"]
+    assert res["volumes"][0]["totalBytes"] > 0
+    # размер БД: на SQLite статистика недоступна → None (graceful, отчёт не падает)
+    assert res["db"]["totalBytes"] is None
+    assert res["db"]["tables"] == []
