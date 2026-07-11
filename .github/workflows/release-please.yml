@@ -23,7 +23,7 @@ jobs:
       # воркфлоу — publish.yml сам бы не запустился. Но workflow_dispatch — исключение из этого
       # правила, поэтому явно дёргаем publish.yml для нового тега. PAT/App не нужен.
       - name: Trigger image publish for the new tag
-        if: ${{ steps.release.outputs['backend--release_created'] == 'true' }}
+        if: ${{ steps.release.outputs['.--release_created'] == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run publish.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs['backend--tag_name'] }}"
+        run: gh workflow run publish.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs['.--tag_name'] }}"
