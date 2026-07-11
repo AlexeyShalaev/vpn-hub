@@ -1,6 +1,6 @@
 [project]
 name = "vpn-hub-backend"
-version = "0.8.0"
+version = "0.8.0" # x-release-please-version
 description = "VPN Hub — self-hosted VPN aggregator (backend)"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Alexey Shalaev", email = "shalaevad.alexey@gmail.com" }]
