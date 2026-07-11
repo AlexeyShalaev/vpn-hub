@@ -239,9 +239,7 @@ def create_app() -> FastAPI:
             and not request.headers.get("x-requested-with")
         ):
             lang = resolve_lang(request.headers.get("accept-language"))
-            return JSONResponse(
-                {"code": "CSRF", "message": translate("error.csrf", lang)}, status_code=403
-            )
+            return JSONResponse({"code": "CSRF", "message": translate("error.csrf", lang)}, status_code=403)
         t0 = time.perf_counter()
         resp: Response = await call_next(request)
         # прикладная метрика HTTP для admin-дашборда (path нормализуется до шаблона без id)

@@ -642,11 +642,7 @@ class TrafficService:
         if not server_ids:
             return []
         return list(
-            (
-                await tx.session.execute(
-                    select(m.TrafficPeerState).where(m.TrafficPeerState.server_id.in_(server_ids))
-                )
-            )
+            (await tx.session.execute(select(m.TrafficPeerState).where(m.TrafficPeerState.server_id.in_(server_ids))))
             .scalars()
             .all()
         )

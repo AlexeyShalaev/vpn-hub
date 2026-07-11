@@ -149,9 +149,7 @@ class TrafficRollupService:
         """Досчитать почасовые агрегаты из сырья (пересчёт хвоста; идемпотентно)."""
         window = effective_online_window(self.settings)
         async with self.uow.transaction() as tx:
-            watermark = (
-                await tx.session.execute(select(func.max(m.TrafficHourly.bucket)))
-            ).scalar_one_or_none()
+            watermark = (await tx.session.execute(select(func.max(m.TrafficHourly.bucket)))).scalar_one_or_none()
             oldest_at = (await tx.session.execute(select(func.min(m.TrafficSample.at)))).scalar_one_or_none()
             rf = recompute_from(watermark, oldest_at, _HOUR)
             if rf is None:
@@ -184,17 +182,13 @@ class TrafficRollupService:
         """Досчитать посуточные агрегаты из почасовых (пересчёт хвоста; идемпотентно)."""
         async with self.uow.transaction() as tx:
             watermark = (await tx.session.execute(select(func.max(m.TrafficDaily.bucket)))).scalar_one_or_none()
-            oldest_bucket = (
-                await tx.session.execute(select(func.min(m.TrafficHourly.bucket)))
-            ).scalar_one_or_none()
+            oldest_bucket = (await tx.session.execute(select(func.min(m.TrafficHourly.bucket)))).scalar_one_or_none()
             rf = recompute_from(watermark, oldest_bucket, _DAY)
             if rf is None:
                 return 0
             await tx.session.execute(sa_delete(m.TrafficDaily).where(m.TrafficDaily.bucket >= rf))
             rows = (
-                (await tx.session.execute(select(m.TrafficHourly).where(m.TrafficHourly.bucket >= rf)))
-                .scalars()
-                .all()
+                (await tx.session.execute(select(m.TrafficHourly).where(m.TrafficHourly.bucket >= rf))).scalars().all()
             )
             aggs = aggregate_rollups(rows, _DAY)
             await self._insert(tx, m.TrafficDaily, aggs)

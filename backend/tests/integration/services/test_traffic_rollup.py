@@ -49,8 +49,15 @@ async def test__rollup_hourly__aggregates_raw_into_hour_buckets(svc, session_mak
             {"server_id": srv.id, "proto": "awg", "client_id": "A", "at": 100.0, "rx_delta": 10, "tx_delta": 20},
             {"server_id": srv.id, "proto": "awg", "client_id": "A", "at": 200.0, "rx_delta": 5, "tx_delta": 6},
             {"server_id": srv.id, "proto": "awg", "client_id": "A", "at": 3700.0, "rx_delta": 1, "tx_delta": 2},
-            {"server_id": srv.id, "proto": "xray", "client_id": "B", "at": 150.0, "rx_delta": 7, "tx_delta": 8,
-             "online": True},
+            {
+                "server_id": srv.id,
+                "proto": "xray",
+                "client_id": "B",
+                "at": 150.0,
+                "rx_delta": 7,
+                "tx_delta": 8,
+                "online": True,
+            },
         ],
     )
     n = await svc.rollup_hourly(now=7200.0)

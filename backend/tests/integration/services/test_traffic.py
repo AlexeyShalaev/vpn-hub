@@ -245,15 +245,27 @@ async def test__overview__totals_tier_by_period(svc, session_maker, uow):
         # hourly-бакет: суммарно 200
         tx.session.add(
             m.TrafficHourly(
-                server_id=srv.id, proto="awg", client_id="C", bucket=int(now - 100), rx=100, tx=100,
-                samples_total=1, samples_online=1,
+                server_id=srv.id,
+                proto="awg",
+                client_id="C",
+                bucket=int(now - 100),
+                rx=100,
+                tx=100,
+                samples_total=1,
+                samples_online=1,
             )
         )
         # daily-бакет: суммарно 5000
         tx.session.add(
             m.TrafficDaily(
-                server_id=srv.id, proto="awg", client_id="C", bucket=int(now - 100), rx=2000, tx=3000,
-                samples_total=1, samples_online=1,
+                server_id=srv.id,
+                proto="awg",
+                client_id="C",
+                bucket=int(now - 100),
+                rx=2000,
+                tx=3000,
+                samples_total=1,
+                samples_online=1,
             )
         )
         await tx.session.flush()
@@ -280,9 +292,7 @@ async def test__overview__online_and_speed_from_state_regardless_of_period(svc, 
     now = time.time()
     async with uow.transaction() as tx:
         tx.session.add(
-            m.TrafficPeerState(
-                server_id=srv.id, proto="xray", client_id="C", last_at=now, online=True, rx_speed=50.0
-            )
+            m.TrafficPeerState(server_id=srv.id, proto="xray", client_id="C", last_at=now, online=True, rx_speed=50.0)
         )
         await tx.session.flush()
 
@@ -362,14 +372,26 @@ async def test__overview__reports_speed_for_active_client(svc, session_maker, uo
     async with uow.transaction() as tx:
         tx.session.add(
             m.TrafficPeerState(
-                server_id=srv.id, proto="xray", client_id="ON", rx_bytes=1000, rx_speed=100.0, tx_speed=5.0,
-                last_at=now, online=True,
+                server_id=srv.id,
+                proto="xray",
+                client_id="ON",
+                rx_bytes=1000,
+                rx_speed=100.0,
+                tx_speed=5.0,
+                last_at=now,
+                online=True,
             )
         )
         tx.session.add(
             m.TrafficPeerState(
-                server_id=srv.id, proto="xray", client_id="OFF", rx_bytes=1000, rx_speed=100.0, tx_speed=5.0,
-                last_at=now, online=False,
+                server_id=srv.id,
+                proto="xray",
+                client_id="OFF",
+                rx_bytes=1000,
+                rx_speed=100.0,
+                tx_speed=5.0,
+                last_at=now,
+                online=False,
             )
         )
         await tx.session.flush()

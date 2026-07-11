@@ -51,6 +51,7 @@ def localize_releases(releases: list[dict], lang: Lang = DEFAULT_LANG) -> list[d
             out.append(r)
     return out
 
+
 # Официальный источник обновлений по умолчанию — релизы репозитория продукта.
 OFFICIAL_FEED_URL = "https://api.github.com/repos/AlexeyShalaev/vpn-hub/releases"
 

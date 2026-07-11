@@ -23,13 +23,9 @@ depends_on: str | Sequence[str] | None = None
 # высокочурновые таблицы метрик (ретеншн-DELETE + rollup-перезапись) — autovacuum должен срабатывать чаще
 _AUTOVACUUM_TABLES = ("traffic_samples", "server_metrics", "metric_samples", "traffic_hourly")
 _AUTOVACUUM_SET = (
-    "autovacuum_vacuum_scale_factor = 0.02, "
-    "autovacuum_analyze_scale_factor = 0.05, "
-    "autovacuum_vacuum_cost_limit = 2000"
+    "autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05, autovacuum_vacuum_cost_limit = 2000"
 )
-_AUTOVACUUM_KEYS = (
-    "autovacuum_vacuum_scale_factor, autovacuum_analyze_scale_factor, autovacuum_vacuum_cost_limit"
-)
+_AUTOVACUUM_KEYS = "autovacuum_vacuum_scale_factor, autovacuum_analyze_scale_factor, autovacuum_vacuum_cost_limit"
 
 
 def upgrade() -> None:

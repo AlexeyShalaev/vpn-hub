@@ -293,11 +293,7 @@ class HostMetricsService:
             return
         async with self.uow.transaction() as tx:
             rows = (
-                (
-                    await tx.session.execute(
-                        select(m.ServerProtocol).where(m.ServerProtocol.server_id == server_id)
-                    )
-                )
+                (await tx.session.execute(select(m.ServerProtocol).where(m.ServerProtocol.server_id == server_id)))
                 .scalars()
                 .all()
             )
@@ -448,20 +444,14 @@ class HostMetricsService:
     async def _rollup_hourly(self, now: float) -> int:
         """Пересчёт хвоста delete+insert с клампом на oldest сырья (как traffic-rollup)."""
         async with self.uow.transaction() as tx:
-            watermark = (
-                await tx.session.execute(select(func.max(m.ServerMetricHourly.bucket)))
-            ).scalar_one_or_none()
+            watermark = (await tx.session.execute(select(func.max(m.ServerMetricHourly.bucket)))).scalar_one_or_none()
             oldest_at = (await tx.session.execute(select(func.min(m.ServerMetric.at)))).scalar_one_or_none()
             rf = recompute_from(watermark, oldest_at, 3600)
             if rf is None:
                 return 0
             await tx.session.execute(sa_delete(m.ServerMetricHourly).where(m.ServerMetricHourly.bucket >= rf))
             rows = list(
-                (
-                    await tx.session.execute(select(m.ServerMetric).where(m.ServerMetric.at >= rf))
-                )
-                .scalars()
-                .all()
+                (await tx.session.execute(select(m.ServerMetric).where(m.ServerMetric.at >= rf))).scalars().all()
             )
             aggs = aggregate_host_metrics(rows, 3600)
             if aggs:

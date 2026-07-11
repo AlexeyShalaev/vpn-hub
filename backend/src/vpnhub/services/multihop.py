@@ -56,13 +56,9 @@ class ChainService:
         """Установленный и запущенный tcp-Reality Xray-протокол сервера (иначе BadRequest)."""
         sp = next((p for p in server.protocols if p.proto == CHAIN_PROTO), None)
         if not sp or not sp.installed or not sp.running:
-            raise BadRequest(
-                key="multihop.xray_not_running", params={"server": server.name}
-            )
+            raise BadRequest(key="multihop.xray_not_running", params={"server": server.name})
         if not sp.material_encrypted:
-            raise BadRequest(
-                key="multihop.xray_no_material", params={"server": server.name}
-            )
+            raise BadRequest(key="multihop.xray_no_material", params={"server": server.name})
         return sp
 
     async def list_for_entry(self, owner_id: str, sid: str) -> list[dict]:
@@ -120,9 +116,7 @@ class ChainService:
         try:
             client = await prov.add_client(exit_srv, exit_sp, f"chain:{entry.name}")
         except Exception as e:
-            raise BadRequest(
-                key="multihop.exit_client_create_failed", params={"error": str(e)}
-            ) from e
+            raise BadRequest(key="multihop.exit_client_create_failed", params={"error": str(e)}) from e
 
         # шаг 2: outbound entry → exit; при сбое откатываем клиента exit
         try:
@@ -139,9 +133,7 @@ class ChainService:
                 await prov.revoke_client(exit_srv, exit_sp, client.client_id)
             except Exception as rollback_err:
                 log.warning("chain rollback failed", entry=entry_sid, exit=exit_sid, error=str(rollback_err))
-            raise BadRequest(
-                key="multihop.entry_chain_apply_failed", params={"error": str(e)}
-            ) from e
+            raise BadRequest(key="multihop.entry_chain_apply_failed", params={"error": str(e)}) from e
 
         async with self.uow.transaction() as tx:
             link = m.ChainLink(

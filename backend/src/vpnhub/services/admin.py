@@ -38,6 +38,8 @@ from vpnhub.services.metrics_retention import (
 log = structlog.get_logger(__name__)
 
 _START = time.time()
+
+
 def _fallback_releases(lang: Lang = DEFAULT_LANG) -> list[dict]:
     """Запасные заметки первого релиза (когда фид недоступен) — на языке запроса."""
     return [
