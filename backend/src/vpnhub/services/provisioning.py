@@ -20,9 +20,11 @@ from sqlalchemy import select
 
 from vpnhub.api.config import Settings
 from vpnhub.infra.db.orm import models as m
+from vpnhub.infra.events import TOPIC_SERVER, EventBus, get_event_bus
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning import errors, templates
 from vpnhub.infra.provisioning.awg_params import AwgParams
+from vpnhub.infra.provisioning.creds import server_creds
 from vpnhub.infra.provisioning.provisioners import ClientMaterial, ConfigArtifact, ServerMaterial
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
@@ -32,6 +34,7 @@ from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.remediation import FIXES
 from vpnhub.infra.provisioning.script_runner import already_installed_containers, remove_container
 from vpnhub.infra.provisioning.ssh import ServerCreds, SshClient, SshError
+from vpnhub.infra.provisioning.stats import STATS_PROTOS, enable_stats
 from vpnhub.infra.security import decrypt_secret, encrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
 
@@ -57,20 +60,17 @@ def _spawn(coro: Any) -> None:
 
 
 class ProvisioningService:
-    def __init__(self, uow: Uow, settings: Settings) -> None:
+    def __init__(self, uow: Uow, settings: Settings, bus: EventBus | None = None) -> None:
         self.uow = uow
         self.settings = settings
+        # шина realtime-сигналов: ad-hoc-конструкции (uow, settings) берут модульный синглтон,
+        # DI прокидывает тот же инстанс — publisher и SSE-subscriber видят одну шину.
+        self.bus = bus or get_event_bus()
 
     # ------------------------------------------------------------ helpers ---
 
     def creds(self, server: m.Server) -> ServerCreds:
-        return ServerCreds(
-            host=server.ip,
-            port=int(server.ssh_port or 22),
-            username=server.ssh_user or "root",
-            auth=server.ssh_auth or "key",
-            secret=decrypt_secret(self.settings.secret_key, server.ssh_secret_encrypted or ""),
-        )
+        return server_creds(server, self.settings.secret_key)
 
     def _enc(self, obj: dict) -> str:
         return encrypt_secret(self.settings.secret_key, json.dumps(obj))
@@ -185,6 +185,14 @@ class ProvisioningService:
                     material = await XrayProvisioner(spec).install(
                         ssh, server_ip, spec.default_port, pc.XRAY_DEFAULT_SITE
                     )
+                # точная статистика (Stats API/trafficStats) — включаем сразу при установке, чтобы
+                # per-client трафик/онлайн собирался с первого клиента (не дожидаясь ручной кнопки).
+                # best-effort: провал не роняет установку; рестарт незаметен — клиентов ещё нет.
+                if spec.id in STATS_PROTOS and self.settings.stats_auto_enable:
+                    try:
+                        await enable_stats(spec, ssh)
+                    except Exception as e:
+                        log.warning("enable_stats on install failed", server=server_id, proto=proto_id, error=str(e))
             async with self.uow.transaction() as tx:
                 sp = await self._get_or_create_sp(tx, server_id, proto_id)
                 sp.state, sp.installed, sp.running, sp.error, sp.error_code = "installed", True, True, None, None
@@ -193,6 +201,7 @@ class ProvisioningService:
                 if params is not None:
                     sp.params_json = json.dumps(params.as_dict())
                 await self._refresh_vendor_flags(tx, server_id, spec.vendor)  # видно сразу, не дожидаясь всех
+            self.bus.publish(TOPIC_SERVER, server_id)  # пуш: прогресс установки виден без поллинга
             log.info("protocol installed", server=server_id, proto=proto_id)
         except Exception as e:  # фоновая задача: любая ошибка → error-состояние, не роняем loop
             # стабильный код для движка подсказок: ProvisioningError.code, ssh — для транспортных сбоев
@@ -201,6 +210,7 @@ class ProvisioningService:
                 sp = await self._get_or_create_sp(tx, server_id, proto_id)
                 sp.state, sp.installed, sp.running, sp.error, sp.error_code = "error", False, False, str(e), code
                 await self._refresh_vendor_flags(tx, server_id, spec.vendor)
+            self.bus.publish(TOPIC_SERVER, server_id)  # пуш: ошибка видна без ожидания поллинга
             log.warning("protocol install failed", server=server_id, proto=proto_id, error=str(e))
 
     # ------------------------------------------------ remove / lifecycle ---
@@ -273,6 +283,61 @@ class ProvisioningService:
         creds = self.creds(server)
         async with SshClient(creds) as ssh:
             await ssh.run(f"sudo docker {op} {spec.container}")
+
+    async def set_protocol_params(self, server: m.Server, sp: m.ServerProtocol, new_params: AwgParams) -> None:
+        """Применить новые obfuscation-параметры к живому awg0.conf по SSH (syncconf сохраняет пиров)."""
+        creds = self.creds(server)
+        async with SshClient(creds) as ssh:
+            prov = self.loaded_provisioner(sp)
+            if not isinstance(prov, AwgProvisioner):
+                raise errors.make("internal", "set_protocol_params вызван для не-AWG протокола")
+            await prov.set_params(ssh, new_params)
+
+    async def set_reality(self, server: m.Server, sp: m.ServerProtocol, *, short_id: str, sni: str) -> ServerMaterial:
+        """Применить новые shortId/SNI к живому server.json по SSH + рестарт; вернуть обновлённый материал."""
+        creds = self.creds(server)
+        async with SshClient(creds) as ssh:
+            prov = self.loaded_provisioner(sp)
+            if not isinstance(prov, XrayProvisioner):
+                raise errors.make("internal", "set_reality вызван для не-Xray протокола")
+            return await prov.set_reality(ssh, short_id=short_id, sni=sni)
+
+    async def set_chain(
+        self,
+        entry_server: m.Server,
+        entry_sp: m.ServerProtocol,
+        *,
+        exit_host: str,
+        exit_port: str,
+        exit_material: ServerMaterial,
+        exit_uuid: str,
+    ) -> None:
+        """Мультихоп: направить outbound entry-контейнера на exit-сервер (vless+Reality) по SSH.
+
+        `exit_uuid` — клиентский uuid, заведённый на exit через add_client: entry предъявляет его
+        как обычный vless-клиент exit. Материал exit (pubkey/shortId/SNI) — из ServerProtocol exit.
+        """
+        prov = self.loaded_provisioner(entry_sp)
+        if not isinstance(prov, XrayProvisioner):
+            raise errors.make("internal", "set_chain вызван для не-Xray протокола")
+        async with SshClient(self.creds(entry_server)) as ssh:
+            await prov.set_outbound_chain(
+                ssh,
+                exit_host=exit_host,
+                exit_port=exit_port,
+                exit_public_key=exit_material.xray_public_key,
+                exit_short_id=exit_material.short_id,
+                exit_sni=exit_material.site or pc.XRAY_DEFAULT_SITE,
+                exit_uuid=exit_uuid,
+            )
+
+    async def clear_chain(self, entry_server: m.Server, entry_sp: m.ServerProtocol) -> None:
+        """Снять мультихоп: вернуть outbound entry-контейнера к прямому freedom по SSH."""
+        prov = self.loaded_provisioner(entry_sp)
+        if not isinstance(prov, XrayProvisioner):
+            raise errors.make("internal", "clear_chain вызван для не-Xray протокола")
+        async with SshClient(self.creds(entry_server)) as ssh:
+            await prov.clear_outbound_chain(ssh)
 
     async def check_server(self, server: m.Server) -> tuple[bool, int | None, dict[str, str]]:
         """Реальная проверка: (online, latency_ms, {container: port}) через docker ps по SSH."""
@@ -369,3 +434,65 @@ class ProvisioningService:
     async def reconcile_users(self, user_ids: list[str]) -> None:
         for uid in {u for u in user_ids if u}:
             await self.reconcile_user(uid)
+
+    # ---- suspend / resume по лимиту трафика (Этап 3b) ---------------------------
+
+    def material_from_config(self, c: m.DeviceConfig) -> ClientMaterial:
+        """Восстановить клиентский материал из DeviceConfig (с расшифровкой секрета)."""
+        priv = decrypt_secret(self.settings.secret_key, c.client_secret_encrypted) if c.client_secret_encrypted else ""
+        return ClientMaterial(
+            client_id=c.client_id or "",
+            client_private_key=priv,
+            client_public_key=c.client_public_key or "",
+            client_ip=c.client_ip or "",
+        )
+
+    async def _apply_client_state(self, refs: list[tuple[str, str, ClientMaterial]], *, suspend: bool) -> set[str]:
+        """suspend/resume клиентов на серверах (best-effort, одна SSH-сессия на сервер).
+
+        refs = [(server_id, proto_label, material)]. Возвращает множество client_id, для которых
+        операция реально применилась (SSH прошёл) — вызывающий по нему обновляет статус в БД.
+        """
+        by_server: dict[str, list[tuple[str, ClientMaterial]]] = defaultdict(list)
+        for server_id, proto_label, mat in refs:
+            if mat.client_id:
+                by_server[server_id].append((proto_label, mat))
+        done: set[str] = set()
+        for server_id, items in by_server.items():
+            async with self.uow.query() as tx:
+                server = await tx.servers.get(server_id)
+                if not server:
+                    continue
+                creds = self.creds(server)
+                jobs = []  # (provisioner, material)
+                for proto_label, mat in items:
+                    spec = pc.spec_by_label(proto_label)
+                    if not spec:
+                        continue
+                    sp = await self._get_sp(tx, server_id, spec.id)
+                    if sp and sp.installed and sp.material_encrypted:
+                        jobs.append((self.loaded_provisioner(sp), mat))
+            if not jobs:
+                continue
+            try:
+                async with SshClient(creds) as ssh:
+                    for prov_obj, mat in jobs:
+                        try:
+                            if suspend:
+                                await prov_obj.suspend_client(ssh, mat)
+                            else:
+                                await prov_obj.resume_client(ssh, mat)
+                            done.add(mat.client_id)
+                        except Exception as e:  # один сбойный клиент не роняет остальных
+                            op = "suspend" if suspend else "resume"
+                            log.warning(f"{op} client failed", server=server_id, client=mat.client_id, error=str(e))
+            except SshError as e:
+                op = "suspend" if suspend else "resume"
+                log.warning(f"{op}: ssh unavailable", server=server_id, error=str(e))
+        return done
+
+    async def suspend_configs(self, refs: list[tuple[str, str, ClientMaterial]]) -> set[str]:
+        return await self._apply_client_state(refs, suspend=True)
+
+    async def resume_configs(self, refs: list[tuple[str, str, ClientMaterial]]) -> set[str]:
+        return await self._apply_client_state(refs, suspend=False)

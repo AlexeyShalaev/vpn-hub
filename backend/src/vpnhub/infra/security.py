@@ -133,10 +133,10 @@ def validate_password(password: str, *, min_len: int = MIN_PASSWORD_LEN) -> None
     """Парольная политика: длина + минимум два класса символов. Бросает BadRequest."""
     pwd = password or ""
     if len(pwd) < min_len:
-        raise BadRequest(f"Пароль — минимум {min_len} символов")
+        raise BadRequest(key="security.password_too_short", params={"min_len": min_len})
     classes = sum(bool(re.search(pat, pwd)) for pat in (r"[a-zа-яё]", r"[A-ZА-ЯЁ]", r"\d", r"[^\w\s]"))
     if classes < 2:
-        raise BadRequest("Пароль слишком простой: добавьте цифры, заглавные буквы или спецсимволы")
+        raise BadRequest(key="security.password_too_weak")
 
 
 def gen_token(prefix: str = "") -> str:

@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import json
+import time
 
 from sqlalchemy import select
 
 from vpnhub.api.config import Settings
+from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
@@ -18,10 +20,12 @@ from vpnhub.infra.provisioning.provisioners.base import read_clients_table
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
 from vpnhub.infra.security import decrypt_secret
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services.limits import used_clients
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 
-# из material отдаём только публичное (приватные ключи/psk наружу не уходят)
-_PUBLIC_MATERIAL = ("server_public_key", "xray_public_key")
+# из material отдаём только публичное (приватные ключи/psk наружу не уходят).
+# short_id/site публичны сами по себе — они видны в vless://-ссылке; нужны UI для формы Reality.
+_PUBLIC_MATERIAL = ("server_public_key", "xray_public_key", "short_id", "site")
 
 
 class ServerAccessService:
@@ -32,7 +36,7 @@ class ServerAccessService:
     async def _owned(self, tx: UowTransaction, owner_id: str, sid: str) -> m.Server:
         s: m.Server | None = await tx.servers.get(sid)
         if not s or s.owner_user_id != owner_id:
-            raise NotFound("Сервер не найден")
+            raise NotFound(key="serverAccess.server_not_found")
         return s
 
     async def overview(self, owner_id: str, sid: str) -> dict:
@@ -147,6 +151,9 @@ class ServerAccessService:
                         "externalClients": p.external_clients,
                         "params": params,
                         "keys": keys,
+                        # лимит числа конфигов (soft-cap владельца; null = без лимита) + текущая занятость
+                        "maxClients": p.max_clients,
+                        "usedClients": await used_clients(tx.session, p),
                     }
                 )
 
@@ -207,7 +214,7 @@ class ServerAccessService:
             server = s
 
         if server.status != "online":
-            raise BadRequest("Сервер офлайн — внешних клиентов не прочитать")
+            raise BadRequest(key="serverAccess.server_offline")
 
         result: list[dict] = []
         try:
@@ -231,19 +238,19 @@ class ServerAccessService:
                     if ext:
                         result.append({"proto": pid, "label": spec.label, "clients": ext})
         except SshError as e:
-            raise BadRequest(f"Не удалось подключиться к серверу: {e}") from e
+            raise BadRequest(key="serverAccess.ssh_connect_failed", params={"error": str(e)}) from e
 
         return {"external": result}
 
     async def rename_client(self, owner_id: str, sid: str, config_id: str, name: str) -> dict:
         name = (name or "").strip()
         if not name:
-            raise BadRequest("Введите имя конфига")
+            raise BadRequest(key="serverAccess.name_required")
         async with self.uow.transaction() as tx:
             await self._owned(tx, owner_id, sid)
             cfg = await tx.session.get(m.DeviceConfig, config_id)
             if not cfg or cfg.server_id != sid:
-                raise NotFound("Конфиг не найден")
+                raise NotFound(key="serverAccess.config_not_found")
             cfg.client_name = name
             await tx.session.flush()
         return {"ok": True}
@@ -254,8 +261,9 @@ class ServerAccessService:
             await self._owned(tx, owner_id, sid)
             cfg = await tx.session.get(m.DeviceConfig, config_id)
             if not cfg or cfg.server_id != sid:
-                raise NotFound("Конфиг не найден")
+                raise NotFound(key="serverAccess.config_not_found")
             vpn_type, proto, client_id, cfg_id = cfg.vpn_type, cfg.proto, cfg.client_id, cfg.id
+            device_id, client_name = cfg.device_id, cfg.client_name
 
         # снять пир на сервере (best-effort через provisioning), затем удалить запись
         if vpn_type in PROVISIONED_VENDORS and client_id:
@@ -265,4 +273,61 @@ class ServerAccessService:
             obj = await tx.session.get(m.DeviceConfig, cfg_id)
             if obj is not None:
                 await tx.session.delete(obj)
+            owner = await tx.users.get(owner_id)
+            tx.audit.add_event(
+                at=time.time(),
+                actor_kind="admin" if owner and await tx.admins.is_admin(owner_id) else "user",
+                actor_id=owner_id,
+                actor_name=owner.name if owner else "",
+                type_=audit_types.ACCESS_REVOKE,
+                target_kind="server",
+                target_id=sid,
+                owner_user_id=owner_id,
+                meta_json=json.dumps(
+                    {"vpn": vpn_type, "proto": proto, "deviceId": device_id, "clientName": client_name},
+                    ensure_ascii=False,
+                ),
+            )
         return {"ok": True}
+
+    async def set_paused(self, owner_id: str, sid: str, config_id: str, *, pause: bool) -> dict:
+        """Ручная пауза/старт доступа по конфигу (владелец). Использует тот же suspend/resume-механизм,
+        что и лимит трафика (Этап 3b), но помечает конфиг статусом "paused" — авто-реконсиляция лимита
+        (status IN active/suspended) его НЕ трогает, поэтому ручная пауза не воюет с лимитом.
+        """
+        prov = ProvisioningService(self.uow, self.settings)
+        async with self.uow.query() as tx:
+            await self._owned(tx, owner_id, sid)
+            cfg = await tx.session.get(m.DeviceConfig, config_id)
+            if not cfg or cfg.server_id != sid:
+                raise NotFound(key="serverAccess.config_not_found")
+            if cfg.vpn_type not in PROVISIONED_VENDORS or not cfg.client_id:
+                raise BadRequest(key="serverAccess.pause_not_supported")
+            ref = (sid, cfg.proto or "", prov.material_from_config(cfg))
+            cfg_id, client_id = cfg.id, cfg.client_id
+
+        # применяем на сервере ПЕРЕД сменой статуса: если сервер недоступен — статус не меняем
+        done = await (prov.suspend_configs([ref]) if pause else prov.resume_configs([ref]))
+        if client_id not in done:
+            raise BadRequest(key="serverAccess.server_unreachable")
+
+        new_status = "paused" if pause else "active"
+        async with self.uow.transaction() as tx:
+            obj = await tx.session.get(m.DeviceConfig, cfg_id)
+            if obj is not None:
+                obj.status = new_status
+            owner = await tx.users.get(owner_id)
+            tx.audit.add_event(
+                at=time.time(),
+                actor_kind="admin" if owner and await tx.admins.is_admin(owner_id) else "user",
+                actor_id=owner_id,
+                actor_name=owner.name if owner else "",
+                type_=audit_types.ACCESS_REVOKE,
+                target_kind="server",
+                target_id=sid,
+                owner_user_id=owner_id,
+                meta_json=json.dumps(
+                    {"action": "pause" if pause else "resume", "configId": cfg_id}, ensure_ascii=False
+                ),
+            )
+        return {"ok": True, "status": new_status}

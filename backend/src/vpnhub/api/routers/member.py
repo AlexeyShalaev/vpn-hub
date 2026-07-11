@@ -37,11 +37,23 @@ async def available(
     return await svc.available(ident.id)
 
 
+@router.get("/me/usage")
+async def my_usage(ident: Identity = Depends(require_user), svc: MeService = Depends(service(MeService))) -> list[dict]:
+    return await svc.usage(ident.id)
+
+
 @router.get("/me/devices")
 async def list_devices(
     ident: Identity = Depends(require_user), svc: DeviceService = Depends(service(DeviceService))
 ) -> list[dict]:
     return await svc.list(ident.id)
+
+
+@router.get("/me/devices/limit")
+async def device_limit(
+    ident: Identity = Depends(require_user), svc: DeviceService = Depends(service(DeviceService))
+) -> dict:
+    return await svc.limit_info(ident.id)
 
 
 @router.post("/me/devices")
@@ -75,6 +87,7 @@ async def gen_config(
         body.get("deviceId"),
         body.get("proto"),
         bool(body.get("peek", False)),
+        bool(body.get("bundle", True)),
     )
 
 
@@ -85,7 +98,12 @@ async def install_config(
     svc: ConfigService = Depends(service(ConfigService)),
 ) -> dict:
     return await svc.install(
-        ident.id, body.get("serverId", ""), body.get("vpn", ""), body.get("deviceId", ""), body.get("proto")
+        ident.id,
+        body.get("serverId", ""),
+        body.get("vpn", ""),
+        body.get("deviceId", ""),
+        body.get("proto"),
+        bool(body.get("bundle", True)),
     )
 
 

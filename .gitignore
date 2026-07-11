@@ -115,6 +115,8 @@ venv.bak/
 # mkdocs documentation
 /site
 docs/changelog.md
+# локальные research-черновики (не коммитим)
+docs/research/
 
 # mypy
 .mypy_cache/
@@ -141,3 +143,6 @@ backend/backups/
 backend/.venv/
 # deploy: заполненный k8s-секрет (копия secret.example.yaml) — не коммитить
 deploy/k8s/**/secret.yaml
+
+# Внутренние роадмап/спек-доки — не публикуем в репозитории
+tasks/

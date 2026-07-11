@@ -58,7 +58,7 @@ class ProviderStore:
 
     def create(self, data: dict) -> dict:
         if not (data.get("name") or "").strip():
-            raise BadRequest("Введите название провайдера")
+            raise BadRequest(key="provider.name_required")
         items = self._read()
         pid = (data.get("id") or _slug(str(data["name"]))).strip()
         if any(p["id"] == pid for p in items):
@@ -75,11 +75,11 @@ class ProviderStore:
                 items[i] = self._norm({**p, **data, "id": pid})
                 self._write(items)
                 return items[i]
-        raise NotFound("Провайдер не найден")
+        raise NotFound(key="provider.not_found")
 
     def delete(self, pid: str) -> None:
         items = self._read()
         kept = [p for p in items if p["id"] != pid]
         if len(kept) == len(items):
-            raise NotFound("Провайдер не найден")
+            raise NotFound(key="provider.not_found")
         self._write(kept)

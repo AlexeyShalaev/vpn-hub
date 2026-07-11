@@ -7,6 +7,7 @@ from sqlalchemy_foundation_kit import AsyncSQLAlchemyUnitOfWork
 
 from vpnhub.infra.repositories import (
     AdminRepo,
+    AuditRepo,
     DeviceRepo,
     GroupRepo,
     PoolRepo,
@@ -30,6 +31,7 @@ class UowTransaction:
         self.groups = GroupRepo(session)
         self.devices = DeviceRepo(session)
         self.settings = SettingRepo(session)
+        self.audit = AuditRepo(session)
 
 
 Uow = AsyncSQLAlchemyUnitOfWork[UowTransaction]

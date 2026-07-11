@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Btn, Icon, Modal, ScreenHeader, Spinner, Switch } from "../components/ui";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Server, VpnType } from "../lib/types";
 import { VPN_LABEL } from "../lib/types";
@@ -14,14 +15,6 @@ const VPN_DOT: Record<VpnType, string> = {
   hysteria2: "var(--hysteria2)",
 };
 
-function plural(n: number, a: string, b: string, c: string) {
-  const n10 = n % 10;
-  const n100 = n % 100;
-  if (n10 === 1 && n100 !== 11) return a;
-  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return b;
-  return c;
-}
-
 const mono = (name: string) => (name || "?").slice(0, 2).toUpperCase();
 
 interface PoolFormState {
@@ -31,6 +24,7 @@ interface PoolFormState {
 }
 
 export function AccessScreen() {
+  const t = useT();
   const toast = useStore((s) => s.toast);
   const params = useNav((s) => s.params);
   const go = useNav((s) => s.go);
@@ -82,7 +76,7 @@ export function AccessScreen() {
       qc.invalidateQueries({ queryKey: ["pools"] });
       invalidateGroups();
       setPoolForm(null);
-      toast("Пул сохранён");
+      toast(t("access.poolSaved"));
     },
   });
   const deletePool = useMutation({
@@ -91,7 +85,7 @@ export function AccessScreen() {
       qc.invalidateQueries({ queryKey: ["pools"] });
       invalidateGroups();
       setDelPool(null);
-      toast("Пул удалён");
+      toast(t("access.poolDeleted"));
     },
   });
 
@@ -126,8 +120,8 @@ export function AccessScreen() {
 
   const accessSummary = accGroup
     ? effCount
-      ? `«${accGroup.name}» получает доступ к ${effCount} ${plural(effCount, "серверу", "серверам", "серверам")}`
-      : `У «${accGroup.name}» пока нет доступов`
+      ? `${t("access.summaryHasAccess", { name: accGroup.name })} ${t("access.serversCount", { n: effCount })}`
+      : t("access.summaryNoAccess", { name: accGroup.name })
     : "";
 
   const loading = groupsLoading || poolsLoading || serversLoading;
@@ -135,12 +129,12 @@ export function AccessScreen() {
   return (
     <div className="stack">
       <ScreenHeader
-        title="Доступы"
-        sub="Что открыто выбранной группе"
+        title={t("access.title")}
+        sub={t("access.sub")}
         action={
           <Btn variant="primary" sm onClick={() => openPoolForm(null)}>
             <Icon name="plus" size={16} />
-            Новый пул
+            {t("access.newPool")}
           </Btn>
         }
         onBack={() => go("groups")}
@@ -152,11 +146,11 @@ export function AccessScreen() {
         </div>
       ) : !groups || groups.length === 0 ? (
         <div className="empty">
-          <h3>Нет групп</h3>
-          <p className="muted">Создайте группу, чтобы выдавать доступы.</p>
+          <h3>{t("access.noGroups")}</h3>
+          <p className="muted">{t("access.noGroupsHint")}</p>
           <div style={{ marginTop: 16 }}>
             <Btn variant="primary" onClick={() => go("groups")}>
-              К группам
+              {t("access.toGroups")}
             </Btn>
           </div>
         </div>
@@ -164,9 +158,7 @@ export function AccessScreen() {
         <>
           {/* Выбор группы */}
           <div>
-            <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 9 }}>
-              Настраиваем доступы для группы:
-            </div>
+            <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 9 }}>{t("access.configuringFor")}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {groups.map((g) => {
                 const active = g.id === accGid;
@@ -218,17 +210,14 @@ export function AccessScreen() {
                 color: "var(--text-3)",
               }}
             >
-              Пулы серверов
+              {t("access.serverPools")}
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-3)", marginTop: 6, maxWidth: 360 }}>
-              Дайте доступ к пулу — и группа получит все серверы внутри. Добавите новый сервер в пул — он станет
-              доступен автоматически.
+              {t("access.serverPoolsHint")}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 14 }}>
               {(pools || []).length === 0 ? (
-                <div style={{ fontSize: 13, color: "var(--text-3)" }}>
-                  Пулов пока нет. Создайте первый кнопкой «Новый пул».
-                </div>
+                <div style={{ fontSize: 13, color: "var(--text-3)" }}>{t("access.noPools")}</div>
               ) : (
                 (pools || []).map((pl) => {
                   const on = !!accGroup?.access.pools?.includes(pl.id);
@@ -262,11 +251,11 @@ export function AccessScreen() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 700, fontSize: 15 }}>{pl.name}</div>
                         <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>
-                          {pl.serverIds.length} {plural(pl.serverIds.length, "сервер", "сервера", "серверов")}
+                          {t("access.serversInPoolCount", { n: pl.serverIds.length })}
                         </div>
                       </div>
                       <Btn sm onClick={() => openPoolForm(pl.id)}>
-                        Состав
+                        {t("access.composition")}
                       </Btn>
                       <Switch on={on} onClick={() => accGid && togglePool.mutate(pl.id)} />
                     </div>
@@ -287,14 +276,14 @@ export function AccessScreen() {
                 marginBottom: 6,
               }}
             >
-              Отдельные серверы
+              {t("access.individualServers")}
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 14 }}>
-              Точечно выберите серверы и какие именно VPN на них доступны группе.
+              {t("access.individualServersHint")}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
               {(servers || []).length === 0 ? (
-                <div style={{ fontSize: 13, color: "var(--text-3)" }}>Серверов пока нет.</div>
+                <div style={{ fontSize: 13, color: "var(--text-3)" }}>{t("access.noServersYet")}</div>
               ) : (
                 (servers || []).map((s) => {
                   const installed = s.vpns.filter((v) => v.installed);
@@ -371,11 +360,11 @@ export function AccessScreen() {
                                     whiteSpace: "nowrap",
                                   }}
                                 >
-                                  через пул «{byPoolNames![0]}»
+                                  {t("access.viaPoolBadge", { name: byPoolNames![0] })}
                                 </span>
                               )}
                               {installed.length === 0 && !byPool && (
-                                <span style={{ fontSize: 12, color: "var(--text-3)" }}>нет VPN</span>
+                                <span style={{ fontSize: 12, color: "var(--text-3)" }}>{t("access.noVpn")}</span>
                               )}
                             </div>
                           )}
@@ -384,7 +373,7 @@ export function AccessScreen() {
                           on={grantedAny}
                           onClick={() =>
                             byPool
-                              ? toast(`Доступ идёт через пул «${byPoolNames![0]}»`)
+                              ? toast(t("access.accessViaPoolToast", { name: byPoolNames![0] }))
                               : accGid && toggleServer.mutate(s.id)
                           }
                         />
@@ -408,7 +397,7 @@ export function AccessScreen() {
                                 type="button"
                                 onClick={() =>
                                   byPool
-                                    ? toast(`Управляется пулом «${byPoolNames![0]}»`)
+                                    ? toast(t("access.managedByPoolToast", { name: byPoolNames![0] }))
                                     : accGid && toggleServerVpn.mutate({ serverId: s.id, type: v.type })
                                 }
                                 style={{
@@ -444,7 +433,7 @@ export function AccessScreen() {
       {/* Модалка пула */}
       {poolForm && (
         <Modal
-          title={poolForm.id ? "Состав пула" : "Новый пул"}
+          title={poolForm.id ? t("access.poolComposition") : t("access.newPool")}
           onClose={() => setPoolForm(null)}
           footer={
             <>
@@ -458,16 +447,16 @@ export function AccessScreen() {
                   style={{ marginRight: "auto" }}
                 >
                   <Icon name="trash" size={16} />
-                  Удалить
+                  {t("common.delete")}
                 </Btn>
               )}
-              <Btn onClick={() => setPoolForm(null)}>Отмена</Btn>
+              <Btn onClick={() => setPoolForm(null)}>{t("common.cancel")}</Btn>
               <Btn
                 variant="primary"
                 disabled={!poolForm.name.trim() || savePool.isPending}
                 onClick={() => {
                   if (!poolForm.name.trim()) {
-                    toast("Введите название");
+                    toast(t("access.enterName"));
                     return;
                   }
                   savePool.mutate({
@@ -477,25 +466,25 @@ export function AccessScreen() {
                   });
                 }}
               >
-                Сохранить
+                {t("common.save")}
               </Btn>
             </>
           }
         >
           <div className="field">
-            <label>Название пула</label>
+            <label>{t("access.poolName")}</label>
             <input
               className="input"
               value={poolForm.name}
-              placeholder="например, Европа"
+              placeholder={t("access.poolNamePlaceholder")}
               onChange={(e) => setPoolForm((f) => (f ? { ...f, name: e.target.value } : f))}
             />
           </div>
           <div className="field">
-            <label>Серверы в пуле</label>
+            <label>{t("access.serversInPool")}</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {(servers || []).length === 0 ? (
-                <div style={{ fontSize: 13, color: "var(--text-3)" }}>Серверов пока нет.</div>
+                <div style={{ fontSize: 13, color: "var(--text-3)" }}>{t("access.noServersYet")}</div>
               ) : (
                 (servers || []).map((s: Server) => {
                   const checked = poolForm.serverIds.includes(s.id);
@@ -554,19 +543,19 @@ export function AccessScreen() {
       {/* Подтверждение удаления пула */}
       {delPool && (
         <Modal
-          title="Удалить пул?"
+          title={t("access.deletePoolTitle")}
           onClose={() => setDelPool(null)}
           footer={
             <>
-              <Btn onClick={() => setDelPool(null)}>Отмена</Btn>
+              <Btn onClick={() => setDelPool(null)}>{t("common.cancel")}</Btn>
               <Btn variant="danger" disabled={deletePool.isPending} onClick={() => deletePool.mutate(delPool.id)}>
-                Удалить
+                {t("common.delete")}
               </Btn>
             </>
           }
         >
           <p className="muted" style={{ fontSize: 14, lineHeight: 1.45 }}>
-            Группы потеряют доступ, выданный через пул «{delPool.name}».
+            {t("access.deletePoolWarning", { name: delPool.name })}
           </p>
         </Modal>
       )}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -16,16 +17,22 @@ from vpnhub.api.config import get_settings
 from vpnhub.api.routers import api_router
 from vpnhub.api.static import add_static
 from vpnhub.core.errors import DomainError
+from vpnhub.core.i18n import resolve_lang, translate
 from vpnhub.infra import keyring
+from vpnhub.infra import metrics as mx
 from vpnhub.infra.db.migrate import run_migrations
 from vpnhub.infra.di import build_container
 from vpnhub.infra.keyring import resolve_keys
 from vpnhub.infra.security import gen_master_key
 from vpnhub.infra.uow import Uow
+from vpnhub.services.audit import AuditService
 from vpnhub.services.backups import BackupService
 from vpnhub.services.bootstrap import ensure_bootstrap_admin, normalize_user_phones
+from vpnhub.services.hostmetrics import HostMetricsService
+from vpnhub.services.metrics import MetricsService
 from vpnhub.services.servers import ServerService
 from vpnhub.services.sync import SyncService
+from vpnhub.services.traffic_rollup import TrafficRollupService
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -77,12 +84,60 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     scheduler = AsyncIOScheduler()
     backups = await container.get(BackupService)
-    scheduler.add_job(backups.run_tick, "interval", hours=1, id="backup-tick")
+    scheduler.add_job(mx.instrument_job("backup-tick", backups.run_tick), "interval", hours=1, id="backup-tick")
+
+    audit = await container.get(AuditService)
+    scheduler.add_job(
+        mx.instrument_job("audit-retention", audit.purge_old),
+        "interval",
+        hours=24,
+        id="audit-retention",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    traffic_rollup = await container.get(TrafficRollupService)
+    scheduler.add_job(
+        mx.instrument_job("traffic-rollup", traffic_rollup.run_tick),
+        "interval",
+        hours=1,
+        id="traffic-rollup",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    host_metrics = await container.get(HostMetricsService)
+    scheduler.add_job(
+        mx.instrument_job("server-metrics-rollup", host_metrics.rollup_tick),
+        "interval",
+        hours=1,
+        id="server-metrics-rollup",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    metrics_svc = await container.get(MetricsService)
+    scheduler.add_job(
+        mx.instrument_job("metrics-tick", metrics_svc.scrape_tick),
+        "interval",
+        seconds=settings.metrics_interval,
+        id="metrics-tick",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        mx.instrument_job("metrics-retention", metrics_svc.purge_old),
+        "interval",
+        hours=24,
+        id="metrics-retention",
+        max_instances=1,
+        coalesce=True,
+    )
 
     monitor = await container.get(ServerService)
     if settings.monitor_enabled:
         scheduler.add_job(
-            monitor.run_tick,
+            mx.instrument_job("server-monitor", monitor.run_tick),
             "interval",
             seconds=settings.monitor_interval,
             id="server-monitor",
@@ -93,7 +148,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.sync_enabled:
         syncer = await container.get(SyncService)
         scheduler.add_job(
-            syncer.run_tick,
+            mx.instrument_job("server-sync", syncer.run_tick),
             "interval",
             seconds=settings.sync_interval,
             id="server-sync",
@@ -155,8 +210,9 @@ def create_app() -> FastAPI:
         retry_after = getattr(exc, "retry_after", 0)
         if retry_after:
             headers["Retry-After"] = str(retry_after)
+        lang = resolve_lang(request.headers.get("accept-language"))
         return JSONResponse(
-            {"code": exc.code, "message": exc.message}, status_code=exc.http_status, headers=headers or None
+            {"code": exc.code, "message": exc.localized(lang)}, status_code=exc.http_status, headers=headers or None
         )
 
     # Шрифты самохостятся (@fontsource) — внешние CDN в CSP не нужны, политика строже.
@@ -182,8 +238,12 @@ def create_app() -> FastAPI:
             and request.url.path.startswith("/api/")
             and not request.headers.get("x-requested-with")
         ):
-            return JSONResponse({"code": "CSRF", "message": "Запрос отклонён (CSRF)"}, status_code=403)
+            lang = resolve_lang(request.headers.get("accept-language"))
+            return JSONResponse({"code": "CSRF", "message": translate("error.csrf", lang)}, status_code=403)
+        t0 = time.perf_counter()
         resp: Response = await call_next(request)
+        # прикладная метрика HTTP для admin-дашборда (path нормализуется до шаблона без id)
+        mx.observe_http(request.method, request.url.path, resp.status_code, time.perf_counter() - t0)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")

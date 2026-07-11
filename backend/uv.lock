@@ -207,6 +207,24 @@ wheels = [
 ]
 
 [[package]]
+name = "cashews"
+version = "7.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/73/31598b352165cd0f0b777df1eb67e33f334e29fcd7eb4f4bb48a41b9affe/cashews-7.5.0.tar.gz", hash = "sha256:3f88b8c5ced0ea4826915a1ff67055b647252dd65ef25f4813316a6341f00b37", size = 97699, upload-time = "2026-03-02T22:28:52.462Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/14/06cca741567a2ec458fb1db9d053e72477d9da2be387c1d705cb1060b2c6/cashews-7.5.0-py3-none-any.whl", hash = "sha256:e79cb4e5cc164d8f2d2856b166d45dcc2dd8d53b95874d2c6d07dfdb1c9ac3c4", size = 82413, upload-time = "2026-03-02T22:28:50.98Z" },
+]
+
+[[package]]
+name = "certifi"
+version = "2026.6.17"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/c7/424b75da314c1045981bd9777432fad05a9e0c69daa4ed7e308bbaffe405/certifi-2026.6.17.tar.gz", hash = "sha256:024c88eeec92ca068db80f02b8b07c9cef7b9fe261d1d535abfd5abd6f6af432", size = 134594, upload-time = "2026-06-17T10:31:07.894Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/2f/c5464532e965badff2f4c4c1a3a83f5697f0d7c407ed0cda44aaa99bb451/certifi-2026.6.17-py3-none-any.whl", hash = "sha256:2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db", size = 133289, upload-time = "2026-06-17T10:31:06.348Z" },
+]
+
+[[package]]
 name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1164,7 +1182,7 @@ wheels = [
 
 [[package]]
 name = "vpn-hub-backend"
-version = "0.6.0"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1173,6 +1191,8 @@ dependencies = [
     { name = "argon2-cffi" },
     { name = "asyncpg" },
     { name = "asyncssh" },
+    { name = "cashews" },
+    { name = "certifi" },
     { name = "cryptography" },
     { name = "dishka" },
     { name = "fastapi" },
@@ -1211,6 +1231,8 @@ requires-dist = [
     { name = "argon2-cffi", specifier = ">=23" },
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "asyncssh", specifier = ">=2.24.0" },
+    { name = "cashews", specifier = ">=7.5.0" },
+    { name = "certifi", specifier = ">=2026.6.17" },
     { name = "cryptography", specifier = ">=44" },
     { name = "dishka", specifier = ">=1.4" },
     { name = "fastapi", specifier = ">=0.115" },

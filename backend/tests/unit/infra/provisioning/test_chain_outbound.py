@@ -1,0 +1,38 @@
+"""Юнит-тест чистого билдера мультихоп-outbound (без SSH/БД).
+
+build_chain_outbound строит vless+Reality-outbound entry-контейнера, направленный на exit-сервер —
+именно он заменяет `freedom` в server.json entry при постановке цепочки.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from vpnhub.infra.provisioning import vpn_uri
+
+pytestmark = pytest.mark.unit
+
+
+def test__build_chain_outbound__vless_reality_to_exit():
+    ob = vpn_uri.build_chain_outbound(
+        host="203.0.113.2",
+        port="443",
+        uuid="exit-uuid",
+        public_key="PBK",
+        short_id="deadbeef",
+        sni="ex.example.com",
+    )
+    assert ob["tag"] == vpn_uri.CHAIN_OUTBOUND_TAG
+    assert ob["protocol"] == "vless"
+    vnext = ob["settings"]["vnext"][0]
+    assert vnext["address"] == "203.0.113.2"
+    assert vnext["port"] == 443  # int, как ждёт xray
+    assert vnext["users"][0]["id"] == "exit-uuid"
+    reality = ob["streamSettings"]["realitySettings"]
+    assert reality["publicKey"] == "PBK"
+    assert reality["shortId"] == "deadbeef"
+    assert reality["serverName"] == "ex.example.com"
+
+
+def test__freedom_outbound__is_direct():
+    assert vpn_uri.FREEDOM_OUTBOUND == {"protocol": "freedom"}

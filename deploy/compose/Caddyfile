@@ -2,5 +2,11 @@
 # это сам). Caddy получит и будет обновлять TLS-сертификат Let's Encrypt автоматически.
 # Приложение доступно по имени сервиса `app` на порту 8000. Редактировать файл не нужно.
 {$VPNHUB_DOMAIN} {
+	# SSE-стрим realtime-обновлений (GET /api/v1/stream): без буферизации, чтобы события/heartbeat
+	# доходили сразу, а не залипали в буфере обратного прокси. flush_interval -1 = мгновенный флаш.
+	@sse path /api/v1/stream
+	reverse_proxy @sse app:8000 {
+		flush_interval -1
+	}
 	reverse_proxy app:8000
 }

@@ -8,7 +8,7 @@ on:
     paths:
       - "docs/**"
       - "zensical.toml"
-      - "backend/CHANGELOG.md" # копируется в docs/changelog.md на сборке
+      - "CHANGELOG.md" # копируется в docs/changelog.md на сборке
       - ".github/workflows/docs.yml"
   workflow_dispatch: # ручной перезапуск, если деплой Pages моргнул
 
@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
-      - run: cp backend/CHANGELOG.md docs/changelog.md
+      - run: cp CHANGELOG.md docs/changelog.md
       - run: uvx zensical build --clean
       - uses: actions/upload-pages-artifact@v5
         with:

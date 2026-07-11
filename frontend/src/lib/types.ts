@@ -1,5 +1,7 @@
 // Доменные типы (форма ответов бэкенда, camelCase как в прототипе).
 
+import { type TKey, tg } from "./i18n";
+
 export type VpnType = "amnezia" | "openvpn" | "outline" | "hysteria2";
 
 export interface Me {
@@ -41,6 +43,9 @@ export interface Protocol {
   errorCode?: string | null;
   remediation?: Remediation | null;
   externalClients: number;
+  imageVersion?: string | null; // версия бинарника в контейнере (xray/hysteria2), читает sync
+  latestVersion?: string | null; // эталон релиза панели (null — детект не поддержан)
+  updateAvailable?: boolean; // эталон строго новее того, что на сервере
 }
 
 export interface Server {
@@ -56,8 +61,127 @@ export interface Server {
   status: "online" | "offline" | "unknown";
   latency: string | null;
   lastCheck: string | null;
+  bandwidthQuota: number | null; // квота трафика тарифа за период (байт), null = безлимит
+  billingDay: number | null; // день сброса периода (1..31), null → 1-е число
+  providerMetadata?: Record<string, unknown>; // провайдерская метадата: тариф, external id и т.п.
   vpns: Vpn[];
   protocols: Protocol[];
+}
+
+export interface ProviderPlan {
+  id: string;
+  name: string;
+  region: string;
+  cpu: number;
+  ramGb: number;
+  diskGb: number;
+  diskType: string;
+  portMbps: number;
+  trafficTb: number | null; // квота трафика, null = безлимит
+  price: number;
+  currency: string;
+  period: string; // minute | day | month
+  available?: boolean; // false = на сайте помечен как распродан/ожидается
+  sourceUrl?: string; // страница провайдера, с которой распарсен тариф
+}
+
+export interface FxRates {
+  base: string; // валюта-база курсов (RUB)
+  rates: Record<string, number>; // сколько base за 1 единицу валюты X (base → 1); напр. rates.USD = RUB за $1
+  at: number; // epoch получения курса
+  source: string; // cbr | cbr-stale | fallback — насколько актуален курс
+}
+
+export interface ServerPrice {
+  amount: number; // цена в единицах валюты за период
+  currency: string; // RUB | USD | EUR | ...
+  period: "minute" | "day" | "month";
+  anchorDay: number | null; // день обновления (для month)
+  since: number; // epoch начала действия текущей цены
+}
+
+export interface CostByCurrency {
+  currency: string;
+  amount: number;
+}
+
+export interface ServerCost {
+  serverId: string;
+  start: number;
+  end: number;
+  price: ServerPrice | null;
+  byCurrency: CostByCurrency[]; // accrual-расход за период, раздельно по валютам
+}
+
+export interface CostReport {
+  start: number;
+  end: number;
+  totals: CostByCurrency[];
+  servers: { serverId: string; name: string; price: ServerPrice | null; byCurrency: CostByCurrency[] }[];
+}
+
+export interface FinanceSaleGuide {
+  marginPct: number;
+  pricePerGb: number | null;
+  pricePerTb: number | null;
+  basis: "quota" | "used";
+}
+
+export interface FinanceUnitCost {
+  currency: string;
+  costPerUsedGb: number | null;
+  costPerQuotaGb: number | null;
+  saleGuide: FinanceSaleGuide[];
+}
+
+export interface FinanceServerRow {
+  serverId: string;
+  name: string;
+  provider: string;
+  providerPlan: string | null;
+  location: string;
+  status: "online" | "offline" | "unknown";
+  price: ServerPrice | null;
+  costByCurrency: CostByCurrency[];
+  trafficQuotaBytes: number | null;
+  trafficUsedBytes: number;
+  trafficUtilizationPct: number | null;
+  billingDay: number | null;
+  billingPeriodStart: number;
+  unitCosts: FinanceUnitCost[];
+}
+
+export interface FinanceOverview {
+  start: number;
+  end: number;
+  totals: {
+    servers: number;
+    pricedServers: number;
+    quotaServers: number;
+    trafficQuotaBytes: number | null;
+    trafficUsedBytes: number;
+    trafficUtilizationPct: number | null;
+    costByCurrency: CostByCurrency[];
+    unitCosts: FinanceUnitCost[];
+  };
+  servers: FinanceServerRow[];
+}
+
+export interface ServerUsage {
+  periodStart: number; // epoch начала текущего периода
+  quota: number | null; // квота сервера (байт), null = безлимит
+  serverUsed: number; // суммарно байт по серверу за период
+  users: { userId: string; name: string; used: number; limit: number | null }[];
+}
+
+export interface ChainLink {
+  id: string;
+  entryServerId: string;
+  exitServerId: string;
+  exitServerName: string;
+  proto: string; // xray
+  state: "absent" | "linked" | "error";
+  error: string | null;
 }
 
 export interface Pool {
@@ -68,10 +192,13 @@ export interface Pool {
 
 export interface Member {
   id: string;
+  userId: string | null;
   name: string;
   role: "admin" | "member";
   status: "active" | "invited";
   phone?: string;
+  maxDevices: number | null; // персональный override лимита устройств; null = наследовать
+  maxBytes: number | null; // персональный override лимита трафика (байт/период); null = наследовать
 }
 
 export interface Session {
@@ -95,8 +222,24 @@ export interface Group {
   id: string;
   name: string;
   token: string;
+  maxDevices: number | null; // override лимита устройств для участников; null = глобальный дефолт
+  maxBytes: number | null; // override лимита трафика участников (байт/период); null = глобальный дефолт
   members: Member[];
   access: { pools: string[]; servers: Record<string, VpnType[]> };
+}
+
+export interface DeviceLimit {
+  used: number;
+  limit: number;
+}
+
+export interface MyUsage {
+  serverId: string;
+  serverName: string;
+  used: number; // байт за период (rx+tx)
+  limit: number | null; // байт-лимит per сервер, null = без лимита
+  suspended: boolean; // доступ приостановлен из-за лимита
+  periodStart: number;
 }
 
 export interface DeviceConfig {
@@ -131,6 +274,21 @@ export interface Provider {
   url: string;
   blurb: string;
   tags: string[];
+}
+
+export interface AuditEvent {
+  id: string;
+  at: string; // отформатированная дата (дд.мм.гггг чч:мм)
+  rel: string | null; // относительное время («5 мин назад»)
+  actorKind: "admin" | "user" | "system";
+  actorId: string | null;
+  actorName: string;
+  type: string; // стабильный код (auth.login, group.join, config.download, access.revoke, …)
+  label: string; // русская подпись типа события
+  targetKind: string | null;
+  targetId: string | null;
+  ownerUserId: string | null;
+  meta: Record<string, unknown>;
 }
 
 export interface AdminUser {
@@ -202,6 +360,8 @@ export interface VpnAdvancedProtocol {
   externalClients: number;
   params: Record<string, string> | null;
   keys: Record<string, string>;
+  maxClients: number | null; // мягкий лимит числа конфигов (null = без лимита)
+  usedClients: number; // занято: активные конфиги + внешние клиенты
 }
 
 export interface VpnAdvancedClient {
@@ -244,8 +404,154 @@ export interface SystemInfo {
   lastBackup: string;
   backupFrequency: string; // off|daily|weekly|monthly
   masterKeySet: boolean;
+  defaultDevicesPerUser: number; // глобальный дефолт лимита устройств на пользователя
+  defaultUserBytes: number | null; // глобальный дефолт лимита трафика на пользователя (байт/период), null = без лимита
+  metrics: MetricsRetention; // хранение метрик: ретеншн по времени/размеру + текущее использование
   backups: { id: string; at: string; size: string; kind: string }[];
   releases: { v: string; date: string; notes: string[] }[];
+}
+export interface MetricsRetention {
+  rawRetentionDays: number | null; // UI-override дней хранения сырья; null = env-дефолт
+  defaultRawRetentionDays: number; // env-дефолт (подсказка в плейсхолдере)
+  sizeCapGb: number; // явный лимит размера метрик, ГБ; 0 = не задан → авто по диску
+  autoSizeCapGb: number; // авто-лимит = процент от диска (0 = авто выключено/диск неизвестен)
+  diskTotalGb: number | null; // полный размер диска (по metrics_disk_path), ГБ; null — неизвестно
+  diskCapPct: number; // процент диска для авто-лимита (по умолчанию 20; 0 = выкл)
+  usage: {
+    rows: Record<string, number>; // строк по каждой таблице метрик
+    sizeBytes: Record<string, number> | null; // размер таблиц, байт (только Postgres; null — неизвестно)
+    totalBytes: number | null; // суммарный размер метрик, байт
+  };
+}
+
+// админ: развёртывание + дисковое использование (GET /admin/system/storage)
+export interface SystemStorage {
+  deployment: {
+    method: string; // host | docker | compose | kubernetes
+    methodLabel: string;
+    container: boolean;
+    hostname: string;
+    pid: number;
+    python: string;
+    platform: string;
+    cpuCount: number | null;
+    rssBytes: number | null; // резидентная память процесса (пиковая)
+    namespace: string | null; // k8s
+    pod: string | null; // k8s
+    cwd: string;
+    tz: string;
+    image: string;
+    edition: string;
+    updateMode: string; // command | webhook | k8s | manual
+    baseUrl: string;
+  };
+  dirs: {
+    label: string;
+    kind: string; // backups | data | static
+    path: string;
+    exists: boolean;
+    writable: boolean;
+    sizeBytes: number;
+    files: number;
+  }[];
+  volumes: { path: string; totalBytes: number; usedBytes: number; freeBytes: number }[];
+  db: { totalBytes: number | null; tables: { name: string; sizeBytes: number; rows: number }[] };
+}
+
+// per-server мониторинг ресурсов хоста (owner): один сэмпл = один monitor-тик по SSH
+export interface ServerMetricSample {
+  at: number; // epoch seconds
+  cpuPct: number | null; // 0..100
+  load1: number | null; // 1-минутный load average
+  memUsed: number | null; // байт
+  memTotal: number | null; // байт
+  diskUsed: number | null; // байт (/)
+  diskTotal: number | null; // байт (/)
+  tcpEstab: number | null; // TCP established
+  uptimeS: number | null; // аптайм хоста, сек
+  onlineClients: number | null; // суммарно онлайн (сумма известных по протоколам)
+  onlineByProto?: Record<string, number | null>; // честный online по протоколам: {proto: count|null}
+}
+export interface ServerMetrics {
+  serverId: string;
+  period?: string; // 24h — сырьё; 7d/30d/180d — почасовые агрегаты (avg)
+  current: ServerMetricSample | null; // последнее значение (гейджи/цифры)
+  samples: ServerMetricSample[]; // история (мини-графики), в хронологическом порядке
+}
+
+// супер-мониторинг клиентов: per-client трафик+онлайн по всем протоколам/серверам
+export interface MonitoringClient {
+  configId?: string | null; // DeviceConfig.id — для ручной паузы/старта (null у external)
+  status?: string; // active | paused | suspended | revoked
+  proto: string; // id протокола (awg | xray | hysteria2 | ...)
+  clientId: string | null; // pubkey/uuid/authid движка
+  userName: string; // имя пользователя (пусто для external)
+  deviceName: string; // имя устройства (пусто для external)
+  external: boolean; // клиент без нашего DeviceConfig (заведён вне панели)
+  extName?: string; // имя из Amnezia clientsTable (только для external — заведён мимо панели, но с именем)
+  online: boolean; // активна ли сессия прямо сейчас
+  rxTotal: number; // upload (клиент→сервер) за период, байт
+  txTotal: number; // download (сервер→клиент) за период, байт
+  rxBytes: number; // последний кумулятив upload
+  txBytes: number; // последний кумулятив download
+  rxSpeed: number; // текущая скорость upload, байт/сек (0 у офлайн)
+  txSpeed: number; // текущая скорость download, байт/сек
+  lastSeen: number | null; // epoch последнего онлайна/трафика (null — не видели)
+  serverId?: string; // заполнено в глобальном мониторинге
+  serverName?: string;
+}
+export interface MonitoringSummary {
+  clientsTotal: number;
+  clientsOnline: number;
+  serversTotal: number;
+  rxTotal: number; // суммарный upload за период
+  txTotal: number; // суммарный download за период
+}
+// здоровье сбора трафика — честный диагноз вместо общей фразы «нет данных»
+export interface CollectionProto {
+  proto: string;
+  status: string | null; // ok | stats_disabled | container_down | unreachable | error | null (ещё не собирали)
+  lastCollectedAt: number | null; // epoch последнего успешного сбора
+  error: string | null;
+}
+export interface CollectionHealth {
+  lastCollectedAt: number | null; // max по протоколам сервера
+  protocols: CollectionProto[];
+}
+export type TrafficPeriod = "1h" | "24h" | "7d" | "30d" | "90d" | "365d";
+export interface Monitoring {
+  period: TrafficPeriod;
+  onlineWindowSeconds: number;
+  summary: MonitoringSummary;
+  collection: Record<string, CollectionHealth>; // ключ — serverId
+  clients: MonitoringClient[];
+}
+// per-server overview (тот же endpoint, что и раньше, но с online/speed на клиентах)
+export interface ServerTraffic {
+  serverId: string;
+  period: TrafficPeriod;
+  onlineWindowSeconds: number;
+  seriesBucketSeconds: number; // 0 = сырьё; иначе размер бакета series (час/сутки)
+  collection: CollectionHealth;
+  clients: MonitoringClient[];
+  series: { at: number; proto: string; clientId: string | null; rx: number; tx: number }[];
+}
+
+// admin-дашборд здоровья инстанса (не путать с owner-трафиком)
+export interface MetricPoint {
+  at: number; // epoch seconds
+  value: number;
+}
+export interface MetricSeries {
+  name: string;
+  labels: string; // компактная строка лейблов, напр. "status=online"
+  points: MetricPoint[];
+}
+export interface MetricsOverview {
+  period: "1h" | "24h" | "7d";
+  series: MetricSeries[];
+  servers: { online: number; offline: number; unknown: number };
+  httpTotal: number;
 }
 
 export interface UpdateCheck {
@@ -279,18 +585,25 @@ export interface UpgradeStatus {
   version: string; // текущая версия бэкенда: стала равной target → обновление удалось
 }
 
+// Названия вендоров — бренды, одинаковы в любом языке (не переводятся).
 export const VPN_LABEL: Record<VpnType, string> = {
   amnezia: "Amnezia",
   openvpn: "OpenVPN",
   outline: "Outline",
   hysteria2: "Hysteria2",
 };
-export const VPN_DESC: Record<VpnType, string> = {
-  amnezia: "Маскируется под обычный трафик — лучший против блокировок.",
-  openvpn: "Классика, максимальная совместимость с устройствами.",
-  outline: "Один ключ, проще всего для новичков.",
-  hysteria2: "Быстрый QUIC-протокол с обфускацией — хорош на нестабильных и мобильных сетях.",
+// Функция, а не константа: описания зависят от языка (protoDesc.*), поэтому перевод берём
+// на КАЖДОМ обращении — иначе значение «замёрзло» бы на языке момента импорта и не менялось
+// при переключении языка. Компоненты-потребители подписаны на lang через useT и перерисуются.
+const PROTO_DESC_KEY: Record<VpnType, TKey> = {
+  amnezia: "protoDesc.amnezia",
+  openvpn: "protoDesc.openvpn",
+  outline: "protoDesc.outline",
+  hysteria2: "protoDesc.hysteria2",
 };
+export function vpnDesc(type: VpnType): string {
+  return tg(PROTO_DESC_KEY[type]);
+}
 // Иконка ПО-вендора (см. PATHS в components/ui). Красится акцентом var(--<type>).
 export const VPN_ICON: Record<VpnType, string> = {
   amnezia: "vpn_amnezia",
@@ -299,38 +612,38 @@ export const VPN_ICON: Record<VpnType, string> = {
   hysteria2: "vpn_hysteria2",
 };
 export const PROTO_LABEL: Record<string, string> = {
-  awg: "AmneziaWG",
-  awg_legacy: "AmneziaWG Legacy",
-  xray: "Xray",
-  xray_xhttp: "Xray XHTTP",
-  openvpn: "OpenVPN",
-  hysteria2: "Hysteria2",
+  awg: tg("proto.awg"),
+  awg_legacy: tg("proto.awgLegacy"),
+  xray: tg("proto.xray"),
+  xray_xhttp: tg("proto.xrayXhttp"),
+  openvpn: tg("proto.openvpn"),
+  hysteria2: tg("proto.hysteria2"),
 };
 // Полный набор протоколов вендора (id → label) для выбора при установке/докачке.
 // Зеркалит backend VENDOR_PROTOS + catalog.PROTOS — держать в синхроне при добавлении протокола.
 export const VENDOR_PROTOCOLS: Record<VpnType, { id: string; label: string }[]> = {
   amnezia: [
-    { id: "awg", label: "AmneziaWG" },
-    { id: "awg_legacy", label: "AmneziaWG Legacy" },
-    { id: "xray", label: "Xray" },
-    { id: "xray_xhttp", label: "Xray XHTTP" },
+    { id: "awg", label: tg("proto.awg") },
+    { id: "awg_legacy", label: tg("proto.awgLegacy") },
+    { id: "xray", label: tg("proto.xray") },
+    { id: "xray_xhttp", label: tg("proto.xrayXhttp") },
   ],
-  openvpn: [{ id: "openvpn", label: "OpenVPN" }],
-  outline: [{ id: "outline", label: "Shadowsocks" }],
-  hysteria2: [{ id: "hysteria2", label: "Hysteria2" }],
+  openvpn: [{ id: "openvpn", label: tg("proto.openvpn") }],
+  outline: [{ id: "outline", label: tg("protoDesc.shadowsocks") }],
+  hysteria2: [{ id: "hysteria2", label: tg("proto.hysteria2") }],
 };
 export const PROTO_STATE_LABEL: Record<ProtocolState, string> = {
-  absent: "нет",
-  installing: "устанавливается…",
-  installed: "готов",
-  external: "внешний",
-  error: "ошибка",
+  absent: tg("protoDesc.stateAbsent"),
+  installing: tg("protoDesc.stateInstalling"),
+  installed: tg("protoDesc.stateInstalled"),
+  external: tg("protoDesc.stateExternal"),
+  error: tg("common.error"),
 };
 export const PLATFORM_LABEL: Record<Device["platform"], string> = {
-  ios: "iPhone / iPad",
-  android: "Android",
-  mac: "macOS",
-  windows: "Windows",
-  linux: "Linux",
-  router: "Роутер",
+  ios: tg("protoDesc.platformIos"),
+  android: tg("protoDesc.platformAndroid"),
+  mac: tg("protoDesc.platformMac"),
+  windows: tg("protoDesc.platformWindows"),
+  linux: tg("protoDesc.platformLinux"),
+  router: tg("protoDesc.platformRouter"),
 };

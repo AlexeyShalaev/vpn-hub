@@ -13,6 +13,7 @@ from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.uow import Uow, UowTransaction
+from vpnhub.services.limits import effective_device_limit, used_devices
 from vpnhub.services.provisioning import PROVISIONED_VENDORS, ProvisioningService
 from vpnhub.services.sync_logic import dump_pending, parse_pending
 
@@ -26,10 +27,25 @@ class DeviceService:
         async with self.uow.query() as tx:
             return [device_to_dict(d) for d in await tx.devices.for_user(user_id)]
 
+    async def limit_info(self, user_id: str) -> dict:
+        """Занятость/лимит устройств пользователя для отображения на экране устройств."""
+        async with self.uow.query() as tx:
+            return {
+                "used": await used_devices(tx.session, user_id),
+                "limit": await effective_device_limit(tx.session, user_id),
+            }
+
     async def create(self, user_id: str, name: str, platform: str) -> dict:
         if not name:
-            raise BadRequest("Введите имя")
+            raise BadRequest(key="device.name_required")
         async with self.uow.transaction() as tx:
+            used = await used_devices(tx.session, user_id)
+            limit = await effective_device_limit(tx.session, user_id)
+            if used >= limit:
+                raise BadRequest(
+                    key="device.limit_reached",
+                    params={"used": used, "limit": limit},
+                )
             d = m.Device(user_id=user_id, name=name, platform=platform or "ios")
             tx.devices.add(d)
             await tx.session.flush()
@@ -41,7 +57,7 @@ class DeviceService:
         async with self.uow.query() as tx:
             d = await tx.devices.get(did)
             if not d or d.user_id != user_id:
-                raise NotFound("Устройство не найдено")
+                raise NotFound(key="device.not_found")
             refs = [
                 (c.server_id, c.proto or "", c.client_id or "")
                 for c in d.configs

@@ -125,6 +125,45 @@ class Settings(BaseSettings):
     sync_enabled: bool = True
     sync_interval: int = 300  # период фоновой сверки, сек
 
+    # аудит-лог: сколько дней хранить события (фоновая чистка audit-retention)
+    audit_retention_days: int = 90
+
+    # ярусное хранение трафика (фоновая rollup-джоба раз в час): сырьё traffic_samples → почасовые
+    # агрегаты traffic_hourly → посуточные traffic_daily. Свежее читается из сырья, старое — из
+    # агрегатов (на порядки меньше диска). Старый env VPNHUB_TRAFFIC_RETENTION_DAYS теперь задаёт
+    # ретеншн сырья (семантика сменилась). traffic_daily_retention_days=0 → daily хранится вечно.
+    traffic_raw_retention_days: int = Field(
+        default=7,
+        validation_alias=AliasChoices("VPNHUB_TRAFFIC_RAW_RETENTION_DAYS", "VPNHUB_TRAFFIC_RETENTION_DAYS"),
+    )
+    traffic_hourly_retention_days: int = 90
+    # посуточные агрегаты крошечные (строка/сутки на клиента), но раньше дефолт был «вечно» (0) —
+    # единственный неограниченно растущий ярус. Дефолт — конечный (2 года); 0 всё ещё = вечно.
+    traffic_daily_retention_days: int = 730
+    # клиент считается онлайн, если последний handshake свежее этого окна (сек). Эффективное окно —
+    # не короче двух интервалов сбора + запас на rekey WG (см. traffic.effective_online_window).
+    traffic_online_window_seconds: int = 300
+    # точная статистика xray/hysteria2 (Stats API / trafficStats) включается автоматически: при
+    # установке протокола и авто-починкой в monitor-тике (если stats выключены). Включение рестартит
+    # контейнер — opt-out для тех, кому это нежелательно. False → сбор идёт только там, где включено вручную.
+    stats_auto_enable: bool = True
+
+    # per-server мониторинг ресурсов хоста (CPU/RAM/диск/load/uptime/TCP) — сбор в monitor-тике по SSH.
+    # Ярусное хранение как у трафика: сырьё (сутки) → почасовые агрегаты (месяцы). Rollup-джоба раз в час.
+    server_metrics_retention_days: int = 14  # сколько дней хранить сырьё (фоновой purge)
+    server_metrics_hourly_retention_days: int = 180  # почасовые агрегаты (0 = вечно — не поддержан, держим >0)
+    server_metrics_history_limit: int = 120  # сколько последних сырых сэмплов отдавать для графиков (24h)
+
+    # admin-дашборд здоровья инстанса: скрейп in-process метрик в metric_samples
+    metrics_interval: int = 60  # период снятия сэмплов метрик, сек
+    metrics_retention_days: int = 30  # сколько дней хранить сэмплы (фоновой purge metrics-retention)
+    # Авто-лимит размера метрик: если явный кап (Setting metrics_size_cap_gb) не задан — берём процент от
+    # диска (по умолчанию 20%), чтобы метрики не забивали диск «из коробки». 0 = выключить авто (без лимита).
+    # Диск меряется по metrics_disk_path (в одно-хостовых деплоях = том, где и Postgres; для внешней БД
+    # укажите путь к её тому или задайте явный кап в UI).
+    metrics_disk_cap_pct: int = 20
+    metrics_disk_path: str = "/"
+
     # Подтверждение телефона по SMS/OTP не используется: вход по номеру и паролю,
     # а новые самостоятельные регистрации подтверждает администратор вручную.
 

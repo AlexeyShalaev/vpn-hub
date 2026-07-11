@@ -34,6 +34,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from vpnhub.core.i18n import DEFAULT_LANG, Lang, translate
+
 if TYPE_CHECKING:
     from vpnhub.api.config import Settings
 
@@ -71,14 +73,14 @@ def status() -> dict:
     return dict(_status)
 
 
-def start(settings: Settings, target: str) -> dict:
+def start(settings: Settings, target: str, lang: Lang = DEFAULT_LANG) -> dict:
     """Запустить применение обновления в фоне. Возвращает принятую заявку.
 
     Ответ уходит клиенту сразу: применение может убить текущий процесс
     (пересоздание контейнера/пода), и держать HTTP-запрос открытым нельзя.
     """
     if _status.get("state") == "running":
-        return {"ok": False, "message": "Обновление уже запущено", **status()}
+        return {"ok": False, "message": translate("update.already_running", lang), **status()}
     mode = detect_mode(settings)
     _status.clear()
     _status.update({"state": "running", "mode": mode, "target": target, "from": settings.version, "at": time.time()})

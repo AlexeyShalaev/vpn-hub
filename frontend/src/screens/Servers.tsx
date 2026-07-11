@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Btn, Empty, Icon, ScreenHeader, Spinner, StatusBadge, VpnChip } from "../components/ui";
+import { Btn, Empty, Icon, ScreenHeader, SkeletonCard, StatusBadge, VpnChip } from "../components/ui";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Server } from "../lib/types";
 import { useNav } from "../nav";
@@ -11,6 +12,7 @@ function mono(name: string) {
 
 function ServerCard({ s }: { s: Server }) {
   const go = useNav((n) => n.go);
+  const t = useT();
   const chips = s.vpns.filter((v) => v.installed);
   return (
     <button
@@ -113,7 +115,7 @@ function ServerCard({ s }: { s: Server }) {
         {chips.length > 0 ? (
           chips.map((v) => <VpnChip key={v.type} type={v.type} />)
         ) : (
-          <span style={{ fontSize: 12, color: "var(--text-3)" }}>VPN ещё не установлен</span>
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{t("servers.vpnNotInstalled")}</span>
         )}
       </div>
     </button>
@@ -122,12 +124,14 @@ function ServerCard({ s }: { s: Server }) {
 
 export function ServersScreen() {
   const go = useNav((n) => n.go);
+  const t = useT();
   const [query, setQuery] = useState("");
 
   const { data: servers, isLoading } = useQuery({
     queryKey: ["servers"],
     queryFn: q.listServers,
-    refetchInterval: 20000,
+    // статусы приходят пушем по SSE (см. lib/events); поллинг — страховка на обрыв SSE (реже)
+    refetchInterval: 60000,
   });
 
   const all = servers ?? [];
@@ -142,31 +146,33 @@ export function ServersScreen() {
   return (
     <div className="screen">
       <ScreenHeader
-        title="Серверы"
-        sub="Ваши VPS и установленный VPN-софт"
+        title={t("nav.servers")}
+        sub={t("servers.subtitle")}
         action={
           <div style={{ display: "flex", gap: 10 }}>
             <Btn variant="primary" onClick={() => go("serverForm")}>
-              Добавить сервер
+              {t("servers.addServer")}
             </Btn>
-            <Btn onClick={() => go("catalog")}>Каталог</Btn>
+            <Btn onClick={() => go("catalog")}>{t("servers.catalog")}</Btn>
           </div>
         }
       />
 
       {isLoading ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
-          <Spinner />
+        <div className="grid">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
         </div>
       ) : all.length === 0 ? (
         <Empty
-          title="Пока нет серверов"
-          sub="Арендуйте VPS у провайдера и добавьте его сюда — затем поставьте VPN и раздайте доступ близким."
+          title={t("servers.emptyTitle")}
+          sub={t("servers.emptySub")}
           action={
             <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-              <Btn onClick={() => go("catalog")}>Каталог провайдеров</Btn>
+              <Btn onClick={() => go("catalog")}>{t("servers.catalogProviders")}</Btn>
               <Btn variant="primary" onClick={() => go("serverForm")}>
-                Добавить сервер
+                {t("servers.addServer")}
               </Btn>
             </div>
           }
@@ -192,14 +198,14 @@ export function ServersScreen() {
                 className="input"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Поиск по названию, IP, провайдеру…"
+                placeholder={t("servers.searchPlaceholder")}
                 style={{ paddingLeft: 42 }}
               />
             </div>
           )}
 
           {filtered.length === 0 ? (
-            <Empty title="Ничего не найдено" sub="Попробуйте изменить запрос." />
+            <Empty title={t("common.nothingFound")} sub={t("servers.tryDifferentQuery")} />
           ) : (
             <div className="grid">
               {filtered.map((s) => (

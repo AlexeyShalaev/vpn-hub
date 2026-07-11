@@ -1,5 +1,7 @@
 // Типизированный клиент REST (same-origin, cookie-сессия).
 
+import { tg } from "./i18n";
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -12,21 +14,28 @@ export class ApiError extends Error {
 
 const BASE = "/api/v1";
 
+// Язык интерфейса → бэкенду, чтобы он локализовал ответы (ошибки, заметки релизов).
+// Читаем ту же ячейку, что и i18n.detectLang, на каждый запрос — язык может меняться в рантайме.
+function langHeader(): Record<string, string> {
+  const saved = typeof localStorage !== "undefined" ? localStorage.getItem("vpnhub.lang") : null;
+  return { "Accept-Language": saved === "en" ? "en" : "ru" };
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE + path, {
     method,
     credentials: "include",
     headers:
       body !== undefined
-        ? { "Content-Type": "application/json", "X-Requested-With": "fetch" }
-        : { "X-Requested-With": "fetch" },
+        ? { "Content-Type": "application/json", "X-Requested-With": "fetch", ...langHeader() }
+        : { "X-Requested-With": "fetch", ...langHeader() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const code = data?.code || "ERROR";
-    const message = data?.message || res.statusText || "Ошибка запроса";
+    const message = data?.message || res.statusText || tg("common.requestError");
     throw new ApiError(code, message, res.status);
   }
   return data as T;
@@ -37,14 +46,14 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(BASE + path, {
     method: "POST",
     credentials: "include",
-    headers: { "X-Requested-With": "fetch" },
+    headers: { "X-Requested-With": "fetch", ...langHeader() },
     body: form,
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const code = data?.code || "ERROR";
-    const message = data?.message || res.statusText || "Ошибка запроса";
+    const message = data?.message || res.statusText || tg("common.requestError");
     throw new ApiError(code, message, res.status);
   }
   return data as T;

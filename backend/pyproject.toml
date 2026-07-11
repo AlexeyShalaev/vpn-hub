@@ -38,6 +38,8 @@ dependencies = [
   "sqlalchemy-foundation-kit>=0.1.0",
   "alembic-gauntlet>=0.2.1",
   "asyncssh>=2.24.0",
+  "certifi>=2026.6.17",
+  "cashews>=7.5.0",
 ]
 
 [project.urls]
@@ -45,7 +47,7 @@ Homepage = "https://github.com/AlexeyShalaev/vpn-hub"
 Documentation = "https://AlexeyShalaev.github.io/vpn-hub/"
 Repository = "https://github.com/AlexeyShalaev/vpn-hub"
 Issues = "https://github.com/AlexeyShalaev/vpn-hub/issues"
-Changelog = "https://github.com/AlexeyShalaev/vpn-hub/blob/master/backend/CHANGELOG.md"
+Changelog = "https://github.com/AlexeyShalaev/vpn-hub/blob/master/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

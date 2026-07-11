@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
@@ -25,6 +27,8 @@ from sqlalchemy import select
 from vpnhub.api.config import Settings
 from vpnhub.common.retry import with_retries
 from vpnhub.infra.db.orm import models as m
+from vpnhub.infra.events import TOPIC_SERVER, TOPIC_SYNC, EventBus, get_event_bus
+from vpnhub.infra.provisioning import component_versions
 from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.awg import AwgProvisioner
 from vpnhub.infra.provisioning.provisioners.hysteria2 import HysteriaProvisioner
@@ -33,8 +37,10 @@ from vpnhub.infra.provisioning.provisioners.outline import OutlineProvisioner
 from vpnhub.infra.provisioning.provisioners.xray import XrayProvisioner
 from vpnhub.infra.provisioning.script_runner import list_known_containers
 from vpnhub.infra.provisioning.ssh import SshClient, SshError
+from vpnhub.infra.provisioning.stats import STATS_PROTOS, enable_stats
 from vpnhub.infra.security import encrypt_secret
 from vpnhub.infra.uow import Uow
+from vpnhub.services.limits import effective_byte_limit, period_start, period_usage
 from vpnhub.services.provisioning import PROVISIONED_PROTO_IDS, PROVISIONED_VENDORS, ProvisioningService
 from vpnhub.services.sync_logic import (
     ConfigRow,
@@ -52,13 +58,32 @@ log = structlog.get_logger()
 # Фоновая asyncio-задача не переживает рестарт приложения — иначе протокол завис бы навсегда.
 INSTALLING_GRACE_SECONDS = 600
 
+# Пер-серверный лок: сериализует sync одного сервера (scheduled run_tick И ручной POST /servers/{id}/sync
+# не должны идти параллельно на одном сервере — иначе двойной счёт дельт трафика и гонки suspend/resume).
+# Один процесс/один event-loop → module-level dict корректен.
+_SERVER_SYNC_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _server_sync_lock(server_id: str) -> asyncio.Lock:
+    lock = _SERVER_SYNC_LOCKS.get(server_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _SERVER_SYNC_LOCKS[server_id] = lock
+    return lock
+
 
 class SyncService:
-    def __init__(self, uow: Uow, settings: Settings) -> None:
+    def __init__(self, uow: Uow, settings: Settings, bus: EventBus | None = None) -> None:
         self.uow = uow
         self.settings = settings
+        self.bus = bus or get_event_bus()  # realtime-сигналы (см. infra/events)
 
     async def sync_server(self, server_id: str) -> dict:
+        # сериализуем sync одного сервера (см. _SERVER_SYNC_LOCKS)
+        async with _server_sync_lock(server_id):
+            return await self._sync_server_impl(server_id)
+
+    async def _sync_server_impl(self, server_id: str) -> dict:
         prov = ProvisioningService(self.uow, self.settings)
 
         # ── фаза 1: снимок нашего состояния + провизионеры с материалом ──
@@ -84,11 +109,16 @@ class SyncService:
             pending_by_proto = {
                 p.proto: parse_pending(p.pending_revoke_json) for p in server.protocols if p.pending_revoke_json
             }
+            # протоколы, у которых мониторинг УЖЕ работает (последний сбор был ok) — их sync не трогает.
+            # Для остальных stats-протоколов sync доводит мониторинг (включает точную статистику), чтобы
+            # усыновлённые/внешне поставленные протоколы не остались без метрик (см. _ensure_monitoring).
+            stats_ok = {p.proto for p in server.protocols if p.traffic_status == "ok"}
 
         # ── фаза 2: чтение реального состояния сервера по SSH (best-effort) ──
         adopted: dict[str, tuple[dict, str | None]] = {}
         observations: dict[str, ProtocolObservation] = {}
         drained_by_proto: dict[str, set[str]] = {}  # погашенный долг на снятие (для записи в фазе 3)
+        version_by_proto: dict[str, str] = {}  # версия бинарника компонента в контейнере (best-effort)
         try:
             async with SshClient(creds, connect_timeout=self.settings.monitor_timeout) as ssh:
                 containers = await list_known_containers(ssh)
@@ -111,6 +141,15 @@ class SyncService:
                             readable = True
                         except Exception as e:  # чтение клиентов не удалось — не рискуем revoke
                             log.warning("sync: read clients failed", server=server_id, proto=pid, error=str(e))
+                        try:  # версия компонента: best-effort, поддержано только для xray/hysteria2
+                            ver = await component_versions.read_running_version(ssh, spec)
+                            if ver:
+                                version_by_proto[pid] = ver
+                        except Exception as e:
+                            log.warning("sync: version read failed", server=server_id, proto=pid, error=str(e))
+                        # доводим мониторинг: включаем точную статистику, если её ещё нет (усыновлённые/
+                        # внешне поставленные протоколы через _install_one не проходили). Идемпотентно.
+                        await self._ensure_monitoring(ssh, server_id, spec, stats_ok)
                     obs = ProtocolObservation(pid, present, running, readable, client_ids)
                     observations[pid] = obs
                     # гасим долг на снятие для протокола в рамках уже открытой SSH-сессии
@@ -125,7 +164,77 @@ class SyncService:
             return {"server": server_id, "reachable": False, "error": str(e)}
 
         # ── фаза 3: сверка и запись в БД ──
-        return await self._apply(server_id, installing, observations, adopted, drained_by_proto)
+        result = await self._apply(server_id, installing, observations, adopted, drained_by_proto, version_by_proto)
+
+        # Сбор трафика перенесён в monitor-тик (HostMetricsService.collect_for) — та же SSH-сессия, что
+        # и хост-метрики, чаще (monitor_interval) и с честным health-статусом. Здесь трафик не собираем.
+
+        # ── фаза 4: честная отсечка по лимиту трафика (suspend/resume; Этап 3b) ──
+        try:
+            await self._reconcile_byte_limits(server_id, prov)
+        except Exception as e:  # отсечка best-effort — не роняет результат sync
+            log.warning("sync: byte-limit reconcile failed", server=server_id, error=str(e))
+        return result
+
+    async def _reconcile_byte_limits(self, server_id: str, prov: ProvisioningService) -> None:
+        """Suspend доступ пользователей, превысивших лимит трафика на сервере за текущий период, и
+        resume вернувшихся под лимит (в т.ч. после сброса периода / повышения лимита). Материал
+        сохраняется — пользователю не нужно перевставлять конфиг (см. provisioners.*.suspend_client).
+        """
+        # (cfg_id, client_id, (server_id, proto_label, material))
+        to_suspend: list[tuple[str, str, tuple[str, str, Any]]] = []
+        to_resume: list[tuple[str, str, tuple[str, str, Any]]] = []
+        async with self.uow.query() as tx:
+            server = await tx.servers.get(server_id)
+            if not server:
+                return
+            ps = period_start(time.time(), server.billing_day)
+            rows = (
+                await tx.session.execute(
+                    select(m.DeviceConfig, m.Device.user_id)
+                    .join(m.Device, m.Device.id == m.DeviceConfig.device_id)
+                    .where(
+                        m.DeviceConfig.server_id == server_id,
+                        m.DeviceConfig.client_id.isnot(None),
+                        m.DeviceConfig.vpn_type.in_(list(PROVISIONED_VENDORS)),
+                        m.DeviceConfig.status.in_(["active", "suspended"]),
+                    )
+                )
+            ).all()
+            by_user: dict[str, list[m.DeviceConfig]] = defaultdict(list)
+            for cfg, uid in rows:
+                if uid:
+                    by_user[uid].append(cfg)
+            for uid, cfgs in by_user.items():
+                limit = await effective_byte_limit(tx.session, uid)
+                over = False
+                if limit is not None:
+                    urx, utx = await period_usage(tx.session, server_id, uid, ps)
+                    over = (urx + utx) >= limit
+                for cfg in cfgs:
+                    ref = (server_id, cfg.proto or "", prov.material_from_config(cfg))
+                    if over and cfg.status == "active":
+                        to_suspend.append((cfg.id, cfg.client_id or "", ref))
+                    elif not over and cfg.status == "suspended":
+                        to_resume.append((cfg.id, cfg.client_id or "", ref))
+
+        await self._apply_reconcile(prov, to_suspend, suspend=True)
+        await self._apply_reconcile(prov, to_resume, suspend=False)
+
+    async def _apply_reconcile(
+        self, prov: ProvisioningService, items: list[tuple[str, str, tuple[str, str, Any]]], *, suspend: bool
+    ) -> None:
+        if not items:
+            return
+        refs = [ref for _cfg_id, _cid, ref in items]
+        done = await (prov.suspend_configs(refs) if suspend else prov.resume_configs(refs))
+        new_status = "suspended" if suspend else "active"
+        async with self.uow.transaction() as tx:
+            for cfg_id, client_id, _ref in items:
+                if client_id in done:
+                    obj = await tx.session.get(m.DeviceConfig, cfg_id)
+                    if obj is not None:
+                        obj.status = new_status
 
     async def _drain_pending(
         self, ssh: SshClient, server_id: str, pid: str, pending: set[str], obs: ProtocolObservation, provo: Any
@@ -173,6 +282,21 @@ class SyncService:
         adopted[spec.id] = (material.as_dict(), None)
         return XrayProvisioner(spec, material=material)
 
+    async def _ensure_monitoring(self, ssh: SshClient, server_id: str, spec: Any, stats_ok: set[str]) -> None:
+        """Доводит мониторинг протокола: включает точную статистику, если её ещё нет (best-effort).
+
+        Гарантия «система всегда доделывает мониторинг»: усыновлённые/внешне поставленные stats-протоколы
+        не проходили `_install_one` — здесь sync их подхватывает. Пропускаем, если мониторинг уже работал
+        (`traffic_status == "ok"`), чтобы не дёргать контейнер каждый тик. Гейт `stats_auto_enable`.
+        `enable_stats` идемпотентен: рестарт только при реальном изменении конфига.
+        """
+        if spec.id not in STATS_PROTOS or spec.id in stats_ok or not self.settings.stats_auto_enable:
+            return
+        try:
+            await enable_stats(spec, ssh)
+        except Exception as e:
+            log.warning("sync: ensure monitoring failed", server=server_id, proto=spec.id, error=str(e))
+
     async def _apply(
         self,
         server_id: str,
@@ -180,6 +304,7 @@ class SyncService:
         observations: dict[str, ProtocolObservation],
         adopted: dict,
         drained_by_proto: dict[str, set[str]],
+        version_by_proto: dict[str, str],
     ) -> dict:
         revoked = active = external = 0
         async with self.uow.transaction() as tx:
@@ -230,6 +355,8 @@ class SyncService:
                     ext = external_client_ids(obs, our_ids_by_proto.get(pid, set()))
                     sp.external_clients = len(ext)
                     external += len(ext)
+                    if pid in version_by_proto:  # прочитанную версию компонента сохраняем как есть
+                        sp.image_version = version_by_proto[pid]
                 elif sp is not None:
                     sp.installed = sp.running = False
                     sp.state = "absent"
@@ -245,6 +372,13 @@ class SyncService:
             for c in rows:
                 spec = pc.spec_by_label(c.proto or "")
                 if not spec:
+                    continue
+                # НЕ трогаем намеренно приостановленные: по лимиту трафика (suspended, Этап 3b) или
+                # вручную владельцем (paused). Для xray/hysteria suspend убирает клиента из живого
+                # листинга, и presence-реконсиляция иначе пометила бы конфиг revoked (слот освобождён,
+                # resume уже не случится). Статусом suspended управляет только _reconcile_byte_limits,
+                # статусом paused — только ручные pause/resume в ServerAccessService.
+                if c.status in ("suspended", "paused"):
                     continue
                 new = desired_config_status(ConfigRow(c.id, spec.id, c.client_id or ""), observations)
                 if new and c.status != new:
@@ -283,4 +417,9 @@ class SyncService:
                 log.warning("sync tick: server failed", server=sid, error=str(e))
         if ids:
             log.info("sync tick", total=len(ids), done=done)
+        if done:
+            # сверка могла изменить installed/running/state и статусы конфигов — пуш сигнала.
+            # Сигнал коарс-грейн (без id): фронт инвалидирует ["servers"] и активный ["server", id].
+            self.bus.publish(TOPIC_SYNC)
+            self.bus.publish(TOPIC_SERVER)
         return done

@@ -40,6 +40,9 @@ front-build: ##@ Собрать фронт и положить в статику
 	rm -rf backend/src/vpnhub/static && mkdir -p backend/src/vpnhub/static
 	cp -r frontend/dist/* backend/src/vpnhub/static/
 
+changelog: ##@ Сгенерировать CHANGELOG.md из курируемого источника (backend/.../infra/changelog.py)
+	cd backend && uv run python ../scripts/gen_changelog.py
+
 front-lint: ##@ Тайпчек фронта
 	cd frontend && npx tsc --noEmit
 
@@ -59,11 +62,11 @@ hadolint: ##@ Линт Dockerfile (тот же .hadolint.yaml, что и в CI)
 
 ## ---- docs ----
 docs-serve: ##@ Локальный предпросмотр документации (zensical serve)
-	cp backend/CHANGELOG.md docs/changelog.md
+	cp CHANGELOG.md docs/changelog.md
 	uv run --project backend --no-dev --group docs zensical serve
 
 docs-build: ##@ Собрать сайт документации в site/ (zensical build)
-	cp backend/CHANGELOG.md docs/changelog.md
+	cp CHANGELOG.md docs/changelog.md
 	uv run --project backend --no-dev --group docs zensical build --clean
 
 .PHONY: help install fmt check test test-unit migrate migration run front-dev front-build front-lint db-up db-down build hadolint docs-serve docs-build

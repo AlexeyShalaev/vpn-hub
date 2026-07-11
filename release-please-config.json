@@ -5,7 +5,7 @@
     "backend": {
       "release-type": "python",
       "package-name": "vpn-hub",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "../CHANGELOG.md"
     }
   }
 }

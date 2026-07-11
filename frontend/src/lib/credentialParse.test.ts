@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { useStore } from "../store";
 import { hasUsefulInfo, parseServerInfo } from "./credentialParse";
+
+// Локация из письма теперь локализуется по текущему языку (city.* через tg).
+// Пинуем ru, чтобы канонические русские названия в ассертах были детерминированы
+// (в jsdom navigator.language = en-US, иначе detectLang выбрал бы en).
+beforeAll(() => useStore.setState({ lang: "ru" }));
 
 const FIRSTBYTE_EMAIL = `Активация Виртуального сервера
 Здравствуйте, Ivan!
@@ -39,6 +45,21 @@ IP-адрес сервера: 203.0.113.10
     expect(r.sshUser).toBe("root");
     expect(r.password).toBe("xY7mQ2");
     expect(r.location).toBe("Париж");
+  });
+
+  it("парсит тарифный план из письма FirstByte без локации в коде", () => {
+    const r = parseServerInfo(`Информация о cервере
+Тарифный план: MSK-highmem-KVM-SSD-2
+Дата открытия: 2026-07-04
+Доменное имя: vm4457114.firstbyte.club
+IP-адрес сервера: 185.195.26.162
+Пользователь: root
+Пароль: redacted`);
+    expect(r.providerId).toBe("firstbyte");
+    expect(r.tariff).toBe("MSK-highmem-KVM-SSD-2");
+    expect(r.location).toBe("Москва");
+    expect(r.ip).toBe("185.195.26.162");
+    expect(r.sshUser).toBe("root");
   });
 
   it("не берёт локацию из тарифа без кода ДЦ", () => {

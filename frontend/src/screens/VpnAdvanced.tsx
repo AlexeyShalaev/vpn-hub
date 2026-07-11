@@ -1,11 +1,242 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Btn, Icon, Modal, Spinner } from "../components/ui";
+import { Btn, Field, Icon, Modal, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
-import type { VpnType } from "../lib/types";
+import type { VpnAdvancedProtocol, VpnType } from "../lib/types";
 import { VPN_LABEL } from "../lib/types";
 import { copyText, useStore } from "../store";
+
+// пресеты зеркалят бэкенд (infra/provisioning/awg_params.py); значения применяет сервер.
+const AWG_PRESETS: {
+  id: string;
+  labelKey: "vpnAdv.presetDefault" | "vpnAdv.presetAggressive" | "vpnAdv.presetMobile";
+  hintKey: "vpnAdv.presetDefaultHint" | "vpnAdv.presetAggressiveHint" | "vpnAdv.presetMobileHint";
+}[] = [
+  { id: "default", labelKey: "vpnAdv.presetDefault", hintKey: "vpnAdv.presetDefaultHint" },
+  { id: "aggressive", labelKey: "vpnAdv.presetAggressive", hintKey: "vpnAdv.presetAggressiveHint" },
+  { id: "mobile", labelKey: "vpnAdv.presetMobile", hintKey: "vpnAdv.presetMobileHint" },
+];
+
+// редактируемые obfuscation-поля (subnet/i-junk/protocol_version править нельзя — их хранит бэкенд).
+const AWG_FIELDS_BASE = ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4"];
+const AWG_FIELDS_AWG2 = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"];
+
+// awg2 → H1..H4 диапазоны "a-b", S3/S4 присутствуют; awg_legacy → одиночные H, без S3/S4.
+function ObfuscationForm({ serverId, vtype, proto }: { serverId: string; vtype: VpnType; proto: VpnAdvancedProtocol }) {
+  const t = useT();
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const params = proto.params ?? {};
+  const isAwg2 = "S3" in params || "S4" in params;
+  const fields = isAwg2 ? AWG_FIELDS_AWG2 : AWG_FIELDS_BASE;
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map((f) => [f, params[f] ?? ""])),
+  );
+
+  const mut = useMutation({
+    mutationFn: (body: { preset?: string; values?: Record<string, string> }) =>
+      q.setProtocolParams(serverId, proto.proto, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vpn-advanced", serverId, vtype] });
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast(t("vpnAdv.toastObfuscationApplied"));
+    },
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
+  });
+
+  // форма недоступна, пока протокол не запущен (бэкенд требует online-сервер и running-протокол).
+  const disabled = mut.isPending || !proto.running;
+
+  return (
+    <details>
+      <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--text-2)" }}>
+        {t("vpnAdv.obfuscationParams")}
+      </summary>
+      <div className="stack" style={{ marginTop: 8, gap: 10 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--danger)",
+            border: "1px solid var(--danger)",
+            borderRadius: 8,
+            padding: "7px 9px",
+            background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+          }}
+        >
+          {t("vpnAdv.obfuscationChangeWarning")}
+        </div>
+        {!proto.running && (
+          <div className="muted-3" style={{ fontSize: 12 }}>
+            {t("vpnAdv.protocolStoppedHint")}
+          </div>
+        )}
+        <div className="rowflex" style={{ gap: 6, flexWrap: "wrap" }}>
+          {AWG_PRESETS.map((p) => (
+            <Btn key={p.id} sm disabled={disabled} title={t(p.hintKey)} onClick={() => mut.mutate({ preset: p.id })}>
+              {t(p.labelKey)}
+            </Btn>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: 8 }}>
+          {fields.map((f) => (
+            <Field key={f} label={f}>
+              <input
+                className="input"
+                value={values[f] ?? ""}
+                disabled={disabled}
+                onChange={(e) => setValues((v) => ({ ...v, [f]: e.target.value }))}
+              />
+            </Field>
+          ))}
+        </div>
+        <Btn
+          sm
+          disabled={disabled}
+          onClick={() =>
+            mut.mutate({
+              values: Object.fromEntries(fields.map((f) => [f.toLowerCase(), values[f] ?? ""])),
+            })
+          }
+        >
+          {t("vpnAdv.applyManually")}
+        </Btn>
+      </div>
+    </details>
+  );
+}
+
+// Управление Xray-Reality: ротация shortId и смена SNI/dest (маскировочный домен) с reprovision.
+// short_id/site приходят из proto.keys (публичный материал); значения применяет сервер.
+// Мягкий лимит числа конфигов на протоколе (owner). Показывает «занято/лимит» и форму задать/снять.
+function LimitForm({ serverId, vtype, proto }: { serverId: string; vtype: VpnType; proto: VpnAdvancedProtocol }) {
+  const t = useT();
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const [val, setVal] = useState<string>(proto.maxClients != null ? String(proto.maxClients) : "");
+  const mut = useMutation({
+    mutationFn: (maxClients: number | null) => q.setProtocolLimit(serverId, proto.proto, maxClients),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vpn-advanced", serverId, vtype] });
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast(t("vpnAdv.toastLimitUpdated"));
+    },
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
+  });
+  const cap = proto.maxClients;
+  const full = cap != null && proto.usedClients >= cap;
+  const near = cap != null && !full && proto.usedClients >= cap * 0.8;
+  const save = () => {
+    const n = val.trim() === "" ? null : Math.max(0, Number.parseInt(val, 10) || 0);
+    mut.mutate(n && n > 0 ? n : null);
+  };
+  return (
+    <details>
+      <summary
+        style={{
+          cursor: "pointer",
+          fontSize: 12.5,
+          color: full ? "var(--danger)" : near ? "var(--warn)" : "var(--text-2)",
+        }}
+      >
+        {t("vpnAdv.clientsCount", { count: proto.usedClients })}
+        {cap != null ? ` / ${cap}` : ""}
+        {full ? ` · ${t("vpnAdv.limitReached")}` : near ? ` · ${t("vpnAdv.limitNear")}` : ""}
+      </summary>
+      <div className="stack" style={{ marginTop: 8, gap: 8 }}>
+        <div className="muted-3" style={{ fontSize: 12 }}>
+          {t("vpnAdv.limitHint")}
+          {proto.proto === "openvpn" ? ` ${t("vpnAdv.limitOpenvpnHint")}` : ""}
+        </div>
+        <div className="rowflex" style={{ gap: 8, alignItems: "center" }}>
+          <input
+            className="input"
+            type="number"
+            min={0}
+            placeholder={t("vpnAdv.noLimit")}
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            style={{ width: 150 }}
+            disabled={mut.isPending}
+          />
+          <Btn sm variant="primary" disabled={mut.isPending} onClick={save}>
+            {t("common.save")}
+          </Btn>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function RealityForm({ serverId, vtype, proto }: { serverId: string; vtype: VpnType; proto: VpnAdvancedProtocol }) {
+  const t = useT();
+  const toast = useStore((s) => s.toast);
+  const qc = useQueryClient();
+  const [sni, setSni] = useState<string>(() => proto.keys.site ?? "");
+  const currentShortId = proto.keys.short_id ?? "";
+
+  const mut = useMutation({
+    mutationFn: (body: { rotate_short_id?: boolean; short_id?: string; sni?: string }) =>
+      q.setReality(serverId, proto.proto, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vpn-advanced", serverId, vtype] });
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      toast(t("vpnAdv.toastRealityApplied"));
+    },
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
+  });
+
+  // форма недоступна, пока протокол не запущен (бэкенд требует online-сервер и running-протокол).
+  const disabled = mut.isPending || !proto.running;
+
+  return (
+    <details>
+      <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--text-2)" }}>
+        {t("vpnAdv.realityParams")}
+      </summary>
+      <div className="stack" style={{ marginTop: 8, gap: 10 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--danger)",
+            border: "1px solid var(--danger)",
+            borderRadius: 8,
+            padding: "7px 9px",
+            background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+          }}
+        >
+          {t("vpnAdv.realityChangeWarning")}
+        </div>
+        {!proto.running && (
+          <div className="muted-3" style={{ fontSize: 12 }}>
+            {t("vpnAdv.protocolStoppedHint")}
+          </div>
+        )}
+        <div className="rowflex" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="muted-3" style={{ fontSize: 12 }}>
+            shortId: <code>{currentShortId || t("common.none")}</code>
+          </span>
+          <Btn sm disabled={disabled} onClick={() => mut.mutate({ rotate_short_id: true })}>
+            {t("vpnAdv.rotateShortId")}
+          </Btn>
+        </div>
+        <Field label={t("vpnAdv.maskDomainLabel")}>
+          <input
+            className="input"
+            value={sni}
+            disabled={disabled}
+            placeholder="www.googletagmanager.com"
+            onChange={(e) => setSni(e.target.value)}
+          />
+        </Field>
+        <Btn sm disabled={disabled || !sni.trim()} onClick={() => mut.mutate({ sni: sni.trim() })}>
+          {t("vpnAdv.applySni")}
+        </Btn>
+      </div>
+    </details>
+  );
+}
 
 const sectionTitle = {
   fontSize: 12,
@@ -31,6 +262,7 @@ export function VpnAdvancedModal({
   vtype: VpnType;
   onClose: () => void;
 }) {
+  const t = useT();
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -55,20 +287,20 @@ export function VpnAdvancedModal({
       qc.invalidateQueries({ queryKey: ["server", serverId] });
       qc.invalidateQueries({ queryKey: ["server-access", serverId] });
       setRevoke(null);
-      toast("Конфиг отозван");
+      toast(t("vpnAdv.toastConfigRevoked"));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
   });
 
   return (
     <>
       <Modal
-        title={`${VPN_LABEL[vtype]} · подробно`}
+        title={t("vpnAdv.modalTitle", { label: VPN_LABEL[vtype] })}
         wide
         onClose={onClose}
         footer={
           <Btn block onClick={onClose}>
-            Закрыть
+            {t("common.close")}
           </Btn>
         }
       >
@@ -82,18 +314,18 @@ export function VpnAdvancedModal({
             <div>
               <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <div className="muted-3" style={sectionTitle}>
-                  Контейнеры / протоколы
+                  {t("vpnAdv.containersProtocols")}
                 </div>
                 {data.protocols.some((p) => p.externalClients > 0) && (
                   <Btn variant="ghost" sm onClick={() => setShowExternal((v) => !v)}>
-                    {showExternal ? "Скрыть внешних" : "Показать внешних"}
+                    {showExternal ? t("vpnAdv.hideExternal") : t("vpnAdv.showExternal")}
                   </Btn>
                 )}
               </div>
               <div className="stack" style={{ gap: 8, marginTop: 8 }}>
                 {data.protocols.length === 0 && (
                   <div className="muted-3" style={{ fontSize: 12.5 }}>
-                    Нет установленных протоколов.
+                    {t("vpnAdv.noProtocolsInstalled")}
                   </div>
                 )}
                 {data.protocols.map((p) => (
@@ -111,14 +343,16 @@ export function VpnAdvancedModal({
                           {p.state}
                         </span>
                       </div>
-                      {p.externalClients > 0 && <span style={chip}>+{p.externalClients} внешн.</span>}
+                      {p.externalClients > 0 && (
+                        <span style={chip}>{t("vpnAdv.externalChip", { n: p.externalClients })}</span>
+                      )}
                     </div>
                     <div className="mono muted-3" style={{ fontSize: 12 }}>
-                      {p.container || "—"} · порт {p.port || "—"}
+                      {t("vpnAdv.containerPort", { container: p.container || "—", port: p.port || "—" })}
                     </div>
                     {p.error && (
                       <div style={{ fontSize: 12, color: "var(--danger)", wordBreak: "break-word" }}>
-                        Ошибка: {p.error}
+                        {t("vpnAdv.errorPrefix", { error: p.error })}
                       </div>
                     )}
                     {Object.entries(p.keys).map(([k, v]) => (
@@ -141,30 +375,41 @@ export function VpnAdvancedModal({
                             {v}
                           </div>
                         </div>
-                        <Btn variant="ghost" sm onClick={() => copyText(v, toast, "Скопировано")}>
+                        <Btn variant="ghost" sm onClick={() => copyText(v, toast, t("common.copied"))}>
                           <Icon name="copy" size={14} />
                         </Btn>
                       </div>
                     ))}
-                    {p.params && Object.keys(p.params).length > 0 && (
-                      <details>
-                        <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--text-2)" }}>
-                          Параметры обфускации
-                        </summary>
-                        <div
-                          className="codebox"
-                          style={{ marginTop: 6, maxHeight: 160, overflow: "auto", fontSize: 12 }}
-                        >
-                          {Object.entries(p.params)
-                            .map(([k, v]) => `${k} = ${v}`)
-                            .join("\n")}
-                        </div>
-                      </details>
+                    {/* Лимит числа конфигов (для любого протокола) — занято/лимит + форма */}
+                    <LimitForm serverId={serverId} vtype={vtype} proto={p} />
+                    {/* Xray (xray/xray_xhttp) — управление Reality (shortId, SNI/dest); материала в params нет. */}
+                    {(p.proto === "xray" || p.proto === "xray_xhttp") && (
+                      <RealityForm serverId={serverId} vtype={vtype} proto={p} />
                     )}
+                    {p.params &&
+                      Object.keys(p.params).length > 0 &&
+                      // AWG (awg/awg_legacy) — редактируемая форма пресетов; прочие протоколы — read-only.
+                      (p.proto === "awg" || p.proto === "awg_legacy" ? (
+                        <ObfuscationForm serverId={serverId} vtype={vtype} proto={p} />
+                      ) : (
+                        <details>
+                          <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--text-2)" }}>
+                            {t("vpnAdv.obfuscationParams")}
+                          </summary>
+                          <div
+                            className="codebox"
+                            style={{ marginTop: 6, maxHeight: 160, overflow: "auto", fontSize: 12 }}
+                          >
+                            {Object.entries(p.params)
+                              .map(([k, v]) => `${k} = ${v}`)
+                              .join("\n")}
+                          </div>
+                        </details>
+                      ))}
                     {showExternal && p.externalClients > 0 && (
                       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }}>
                         <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 6 }}>
-                          Внешние клиенты · {p.externalClients} (заведены вне панели)
+                          {t("vpnAdv.externalClientsHeader", { n: p.externalClients })}
                         </div>
                         {externalQ.isLoading ? (
                           <Spinner />
@@ -177,7 +422,7 @@ export function VpnAdvancedModal({
                                 style={{ justifyContent: "space-between", flexWrap: "nowrap", gap: 8 }}
                               >
                                 <span style={{ fontSize: 13, fontWeight: 600, minWidth: 0, wordBreak: "break-word" }}>
-                                  {c.name || "(без имени)"}
+                                  {c.name || t("vpnAdv.unnamed")}
                                 </span>
                                 <span
                                   className="mono muted-3"
@@ -189,7 +434,7 @@ export function VpnAdvancedModal({
                             ))}
                             {externalFor(p.proto).length === 0 && (
                               <span className="muted-3" style={{ fontSize: 12 }}>
-                                —
+                                {t("common.none")}
                               </span>
                             )}
                           </div>
@@ -204,12 +449,12 @@ export function VpnAdvancedModal({
             {/* Пиры / клиенты */}
             <div>
               <div className="muted-3" style={sectionTitle}>
-                Пиры / клиенты ({data.clients.length})
+                {t("vpnAdv.peersClients", { n: data.clients.length })}
               </div>
               <div className="stack" style={{ gap: 6, marginTop: 8 }}>
                 {data.clients.length === 0 && (
                   <div className="muted-3" style={{ fontSize: 12.5 }}>
-                    Выданных конфигов ещё нет.
+                    {t("vpnAdv.noConfigsIssued")}
                   </div>
                 )}
                 {data.clients.map((c) => (
@@ -231,14 +476,14 @@ export function VpnAdvancedModal({
                       <div className="muted-3" style={{ fontSize: 11.5 }}>
                         {c.user} · {c.device} · {c.proto}
                         {c.clientIp ? ` · ${c.clientIp}` : ""}
-                        {c.status !== "active" ? " · отозван" : ""}
+                        {c.status !== "active" ? ` · ${t("vpnAdv.revokedSuffix")}` : ""}
                       </div>
                       <div className="muted-3 mono" style={{ fontSize: 11, wordBreak: "break-all", opacity: 0.8 }}>
                         {c.clientId}
                       </div>
                     </div>
                     <div className="rowflex" style={{ flexWrap: "nowrap" }}>
-                      <Btn variant="ghost" sm onClick={() => copyText(c.clientId, toast, "ID скопирован")}>
+                      <Btn variant="ghost" sm onClick={() => copyText(c.clientId, toast, t("vpnAdv.idCopied"))}>
                         <Icon name="copy" size={15} />
                       </Btn>
                       <Btn variant="ghost" sm onClick={() => setRevoke({ cid: c.id, label: c.clientName || c.device })}>
@@ -255,20 +500,18 @@ export function VpnAdvancedModal({
 
       {revoke && (
         <Modal
-          title="Отозвать конфиг?"
+          title={t("vpnAdv.revokeConfirmTitle")}
           onClose={() => setRevoke(null)}
           footer={
             <>
-              <Btn onClick={() => setRevoke(null)}>Отмена</Btn>
+              <Btn onClick={() => setRevoke(null)}>{t("common.cancel")}</Btn>
               <Btn variant="danger" block disabled={revokeMut.isPending} onClick={() => revokeMut.mutate(revoke.cid)}>
-                Отозвать
+                {t("vpnAdv.revokeAction")}
               </Btn>
             </>
           }
         >
-          <p className="muted">
-            Конфиг «{revoke.label}» будет удалён на сервере — пользователь потеряет доступ через него.
-          </p>
+          <p className="muted">{t("vpnAdv.revokeConfirmBody", { label: revoke.label })}</p>
         </Modal>
       )}
     </>

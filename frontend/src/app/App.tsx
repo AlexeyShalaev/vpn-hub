@@ -1,22 +1,29 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Component, type ReactNode, useEffect, useState } from "react";
 import { PhoneField } from "../components/PhoneField";
 import { Btn, Field, FilePicker, Icon, KeyInput } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { subscribeEvents } from "../lib/events";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
 import type { Me } from "../lib/types";
-import { useNav } from "../nav";
+import { NAV_META, useNav } from "../nav";
 import { AccessScreen } from "../screens/Access";
 import { AvailableScreen } from "../screens/Available";
 import { CatalogScreen } from "../screens/Catalog";
 import { DevicesScreen } from "../screens/Devices";
+import { EventsScreen } from "../screens/Events";
+import { FinanceScreen } from "../screens/Finance";
 import { GroupDetailScreen } from "../screens/GroupDetail";
 import { GroupsScreen } from "../screens/Groups";
+import { HomeScreen } from "../screens/Home";
+import { MonitoringScreen } from "../screens/Monitoring";
 import { ProfileScreen } from "../screens/Profile";
 import { ServerDetailScreen } from "../screens/ServerDetail";
 import { ServerFormScreen } from "../screens/ServerForm";
 import { ServersScreen } from "../screens/Servers";
+import { SetupScreen as DeviceSetupScreen } from "../screens/Setup";
 import { SystemScreen } from "../screens/System";
 import { UsersScreen } from "../screens/Users";
 import { useStore } from "../store";
@@ -28,6 +35,7 @@ function Toast() {
 }
 
 function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinName?: string }) {
+  const t = useT();
   const qc = useQueryClient();
   const setMe = useStore((s) => s.setMe);
   const go = useNav((s) => s.go);
@@ -46,9 +54,9 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
       const me = await q.login({ phone: form.phone, password: form.password });
       setMe(me);
       qc.invalidateQueries();
-      if (redirect) go(me.role === "owner" ? "servers" : "available");
+      if (redirect) go(me.role === "owner" ? "home" : "available");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Ошибка входа");
+      setError(e instanceof ApiError ? e.message : t("auth.loginError"));
     } finally {
       setBusy(false);
     }
@@ -56,17 +64,15 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
 
   async function onRegister() {
     setError("");
-    if (!form.name.trim()) return setError("Введите имя");
-    if (form.password !== form.password2) return setError("Пароли не совпадают");
+    if (!form.name.trim()) return setError(t("auth.enterName"));
+    if (form.password !== form.password2) return setError(t("auth.passwordsMismatch"));
     setBusy(true);
     try {
       await q.register(form);
-      setInfo(
-        "Аккаунт создан. Если вас пригласили в группу — можно сразу войти; иначе дождитесь подтверждения администратора.",
-      );
+      setInfo(t("auth.registerSuccess"));
       setMode("login");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Ошибка регистрации");
+      setError(e instanceof ApiError ? e.message : t("auth.registerError"));
     } finally {
       setBusy(false);
     }
@@ -80,13 +86,13 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
           <div>
             <div style={{ fontWeight: 800, fontSize: 18 }}>VPN Hub</div>
             <div className="muted" style={{ fontSize: 13 }}>
-              {mode === "login" ? "Вход" : "Регистрация"}
+              {mode === "login" ? t("auth.login") : t("auth.register")}
             </div>
           </div>
         </div>
         {joinName && (
           <div className="muted" style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.45 }}>
-            Войдите или зарегистрируйтесь, чтобы присоединиться к группе «{joinName}».
+            {t("auth.joinPrompt", { name: joinName })}
           </div>
         )}
         {info && (
@@ -97,14 +103,14 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
         {error && <div className="err">{error}</div>}
 
         {mode === "register" && (
-          <Field label="Имя">
+          <Field label={t("auth.name")}>
             <input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
         )}
-        <Field label="Телефон">
+        <Field label={t("auth.phone")}>
           <PhoneField value={form.phone} onChange={(v) => set("phone", v)} />
         </Field>
-        <Field label={mode === "register" ? "Пароль (мин. 8 символов)" : "Пароль"}>
+        <Field label={mode === "register" ? t("auth.passwordMin8") : t("auth.password")}>
           <input
             className="input"
             type="password"
@@ -114,7 +120,7 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
           />
         </Field>
         {mode === "register" && (
-          <Field label="Повторите пароль">
+          <Field label={t("auth.repeatPassword")}>
             <input
               className="input"
               type="password"
@@ -125,7 +131,7 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
           </Field>
         )}
         <Btn variant="primary" block disabled={busy} onClick={() => (mode === "login" ? onLogin() : onRegister())}>
-          {busy ? "…" : mode === "login" ? "Войти" : "Зарегистрироваться"}
+          {busy ? "…" : mode === "login" ? t("auth.signIn") : t("auth.signUp")}
         </Btn>
 
         <div style={{ textAlign: "center", marginTop: 14 }}>
@@ -138,7 +144,7 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
               setMode(mode === "login" ? "register" : "login");
             }}
           >
-            {mode === "login" ? "Создать аккаунт" : "У меня уже есть аккаунт"}
+            {mode === "login" ? t("auth.createAccount") : t("auth.haveAccount")}
           </Btn>
         </div>
       </div>
@@ -147,6 +153,7 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
 }
 
 function JoinScreen({ token, me }: { token: string; me: Me }) {
+  const t = useT();
   const go = useNav((s) => s.go);
   const qc = useQueryClient();
   const setMe = useStore((s) => s.setMe);
@@ -167,7 +174,7 @@ function JoinScreen({ token, me }: { token: string; me: Me }) {
       setState("done");
       setTimeout(() => go("available"), 900);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Не удалось присоединиться");
+      setError(e instanceof ApiError ? e.message : t("auth.joinFailed"));
       setState("error");
     }
   }
@@ -177,7 +184,7 @@ function JoinScreen({ token, me }: { token: string; me: Me }) {
       <div className="auth-card">
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
           <div className="brand-logo">V</div>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>Приглашение в группу</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>{t("auth.groupInvite")}</div>
         </div>
 
         {peekQ.isLoading ? (
@@ -186,28 +193,28 @@ function JoinScreen({ token, me }: { token: string; me: Me }) {
           </div>
         ) : peekQ.isError || !peekQ.data ? (
           <>
-            <div className="err">Приглашение недействительно или было отозвано.</div>
-            <Btn block onClick={() => go(me.role === "owner" ? "servers" : "available")}>
-              На главную
+            <div className="err">{t("auth.inviteInvalid")}</div>
+            <Btn block onClick={() => go(me.role === "owner" ? "home" : "available")}>
+              {t("auth.goHome")}
             </Btn>
           </>
         ) : state === "done" ? (
           <div className="badge ok" style={{ display: "flex" }}>
-            Готово! Вы присоединились к «{peekQ.data.name}».
+            {t("auth.joinedGroup", { name: peekQ.data.name })}
           </div>
         ) : (
           <>
             <div className="muted" style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 16 }}>
-              <b>{peekQ.data.ownerName || "Владелец"}</b> приглашает вас в группу <b>«{peekQ.data.name}»</b>. После
-              присоединения вам станут доступны VPN-серверы этой группы.
+              <b>{peekQ.data.ownerName || t("auth.owner")}</b> {t("auth.invitesYouPrefix")} <b>«{peekQ.data.name}»</b>.{" "}
+              {t("auth.invitesYouSuffix")}
             </div>
             {error && <div className="err">{error}</div>}
             <Btn variant="primary" block disabled={state === "joining"} onClick={join}>
-              {state === "joining" ? "Присоединяемся…" : `Присоединиться как ${me.name}`}
+              {state === "joining" ? t("auth.joining") : t("auth.joinAs", { name: me.name })}
             </Btn>
             <div style={{ textAlign: "center", marginTop: 12 }}>
-              <Btn variant="ghost" sm onClick={() => go(me.role === "owner" ? "servers" : "available")}>
-                Не сейчас
+              <Btn variant="ghost" sm onClick={() => go(me.role === "owner" ? "home" : "available")}>
+                {t("auth.notNow")}
               </Btn>
             </div>
           </>
@@ -218,6 +225,7 @@ function JoinScreen({ token, me }: { token: string; me: Me }) {
 }
 
 function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
+  const t = useT();
   const qc = useQueryClient();
   const setMe = useStore((s) => s.setMe);
   const go = useNav((s) => s.go);
@@ -233,20 +241,20 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
   async function submit() {
     setError("");
     if (form.password !== form.password2) {
-      setError("Пароли не совпадают");
+      setError(t("auth.passwordsMismatch"));
       return;
     }
     if (!keyFromEnv) {
       if (!form.masterKey) {
-        setError("Задайте мастер-ключ восстановления");
+        setError(t("auth.setMasterKey"));
         return;
       }
       if (form.masterKey.length < 8) {
-        setError("Мастер-ключ — минимум 8 символов");
+        setError(t("auth.masterKeyMin8"));
         return;
       }
       if (!keySaved) {
-        setError("Подтвердите, что сохранили ключ восстановления");
+        setError(t("auth.confirmKeySaved"));
         return;
       }
     }
@@ -257,7 +265,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
       qc.invalidateQueries();
       go("system");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Ошибка");
+      setError(e instanceof ApiError ? e.message : t("common.error"));
     } finally {
       setBusy(false);
     }
@@ -265,7 +273,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
   async function restore() {
     setError("");
     if (!restoreFile || !restoreKey) {
-      setError("Выберите файл бэкапа и введите ключ");
+      setError(t("auth.chooseBackupAndKey"));
       return;
     }
     setBusy(true);
@@ -273,7 +281,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
       await q.setupRestore(restoreFile, restoreKey);
       setDone(true);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Ошибка");
+      setError(e instanceof ApiError ? e.message : t("common.error"));
     } finally {
       setBusy(false);
     }
@@ -282,12 +290,12 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
     return (
       <div className="auth-wrap">
         <div className="auth-card">
-          <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 4 }}>Система восстановлена</div>
+          <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 4 }}>{t("auth.systemRestored")}</div>
           <div className="muted" style={{ fontSize: 13, marginBottom: 18 }}>
-            Войдите под учётной записью из восстановленного бэкапа.
+            {t("auth.signInWithRestoredAccount")}
           </div>
           <Btn variant="primary" block onClick={() => qc.invalidateQueries({ queryKey: ["setup"] })}>
-            Перейти ко входу
+            {t("auth.goToSignIn")}
           </Btn>
         </div>
       </div>
@@ -296,9 +304,9 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 4 }}>Первичная настройка</div>
+        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 4 }}>{t("auth.initialSetup")}</div>
         <div className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
-          {mode === "new" ? "Создайте учётную запись администратора" : "Разверните систему из бэкапа"}
+          {mode === "new" ? t("auth.createAdminAccount") : t("auth.deployFromBackup")}
         </div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -311,7 +319,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
               setError("");
             }}
           >
-            Новая установка
+            {t("auth.newInstall")}
           </Btn>
           <Btn
             block
@@ -322,7 +330,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
               setError("");
             }}
           >
-            Из бэкапа
+            {t("auth.fromBackup")}
           </Btn>
         </div>
 
@@ -330,13 +338,13 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
 
         {mode === "new" ? (
           <>
-            <Field label="Имя">
+            <Field label={t("auth.name")}>
               <input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} />
             </Field>
-            <Field label="Телефон">
+            <Field label={t("auth.phone")}>
               <PhoneField value={form.phone} onChange={(v) => set("phone", v)} />
             </Field>
-            <Field label="Пароль (мин. 8 символов)">
+            <Field label={t("auth.passwordMin8")}>
               <input
                 className="input"
                 type="password"
@@ -344,7 +352,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
                 onChange={(e) => set("password", e.target.value)}
               />
             </Field>
-            <Field label="Повторите пароль">
+            <Field label={t("auth.repeatPassword")}>
               <input
                 className="input"
                 type="password"
@@ -354,15 +362,15 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
             </Field>
             {keyFromEnv ? (
               <div className="muted" style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.45 }}>
-                Мастер-ключ задан через переменную окружения
-                <code style={{ margin: "0 3px" }}>VPNHUB_MASTER_KEY</code> — вводить не нужно.
+                {t("auth.masterKeyFromEnvPrefix")}
+                <code style={{ margin: "0 3px" }}>VPNHUB_MASTER_KEY</code> {t("auth.masterKeyFromEnvSuffix")}
               </div>
             ) : (
               <>
-                <Field label="Мастер-ключ восстановления (мин. 8 символов)">
+                <Field label={t("auth.masterKeyMin8Label")}>
                   <KeyInput
                     value={form.masterKey}
-                    placeholder="Минимум 8 символов"
+                    placeholder={t("auth.min8Chars")}
                     onChange={(v) => {
                       set("masterKey", v);
                       setKeySaved(false);
@@ -382,19 +390,16 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
                   }}
                 >
                   <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.5 }}>
-                    Это <b>мастер-ключ восстановления</b> — им шифруются SSH-доступы к серверам и бэкапы. Без него
-                    нельзя ни восстановить копию, ни расшифровать секреты серверов (например, при переносе на другой
-                    сервер). Сохраните его в надёжном месте: мы не храним его в открытом виде.
+                    {t("auth.masterKeyExplainPrefix")} <b>{t("auth.masterKeyExplainBold")}</b>{" "}
+                    {t("auth.masterKeyExplainSuffix")}
                   </div>
                   <Btn sm onClick={() => downloadRecoveryKey(form.masterKey)} disabled={form.masterKey.length < 8}>
                     <Icon name="download" size={15} />
-                    Скачать ключ (.txt)
+                    {t("auth.downloadKeyTxt")}
                   </Btn>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                     <input type="checkbox" checked={keySaved} onChange={(e) => setKeySaved(e.target.checked)} />
-                    <span style={{ fontSize: 13, color: "var(--text-2)" }}>
-                      Я сохранил ключ восстановления в надёжном месте
-                    </span>
+                    <span style={{ fontSize: 13, color: "var(--text-2)" }}>{t("auth.keySavedConfirm")}</span>
                   </label>
                 </div>
               </>
@@ -405,15 +410,15 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
               onClick={submit}
               disabled={busy || (!keyFromEnv && (form.masterKey.length < 8 || !keySaved))}
             >
-              {busy ? "Создаём…" : "Создать администратора"}
+              {busy ? t("auth.creatingAdmin") : t("auth.createAdmin")}
             </Btn>
           </>
         ) : (
           <>
-            <Field label="Файл бэкапа (.vhb)">
+            <Field label={t("auth.backupFile")}>
               <FilePicker accept=".vhb" file={restoreFile} onPick={setRestoreFile} />
             </Field>
-            <Field label="Ключ шифрования">
+            <Field label={t("auth.encryptionKey")}>
               <input
                 className="input"
                 type="password"
@@ -422,7 +427,7 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
               />
             </Field>
             <Btn variant="primary" block onClick={restore} disabled={busy}>
-              {busy ? "Восстанавливаем…" : "Восстановить систему"}
+              {busy ? t("auth.restoring") : t("auth.restoreSystem")}
             </Btn>
           </>
         )}
@@ -431,25 +436,30 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
   );
 }
 
-const NAV_META: Record<string, { label: string; icon: string }> = {
-  servers: { label: "Серверы", icon: "servers" },
-  groups: { label: "Группы", icon: "groups" },
-  access: { label: "Доступы", icon: "access" },
-  available: { label: "Доступно", icon: "available" },
-  devices: { label: "Устройства", icon: "devices" },
-  users: { label: "Пользователи", icon: "users" },
-  system: { label: "Система", icon: "system" },
-  profile: { label: "Профиль", icon: "profile" },
-};
-
 function Shell({ me }: { me: Me }) {
   const { screen, go } = useNav();
   const viewRole = useStore((s) => s.viewRole);
+  const t = useT();
+  const qc = useQueryClient();
 
-  const ownerItems = ["servers", "groups", "access"];
-  const memberItems = ["available", "devices"];
+  // SSE realtime: один коннект на авторизованное приложение. cleanup закрывает EventSource,
+  // так что двойной вызов под React StrictMode (dev) не оставляет висящих коннектов.
+  useEffect(() => subscribeEvents(qc), [qc]);
+
+  const ownerItems = ["home", "servers", "monitoring", "finance", "groups", "access", "events"];
+  const memberItems = ["home", "available", "devices", "setup"];
   const main = viewRole === "owner" ? ownerItems : memberItems;
   const adminItems = me.isAdmin ? ["users", "system"] : [];
+
+  // Мобильная нижняя навигация — компактно, 3 пункта: Главная, основной раздел роли, Профиль.
+  // Остальные разделы открываются с «Главной» (лаунчер-грид, как в супераппе).
+  const bottomItems = viewRole === "owner" ? ["home", "servers", "profile"] : ["home", "available", "profile"];
+  const bottomActive = (id: string): boolean => {
+    if (id === "profile") return screen === "profile";
+    if (id === activeTop) return true;
+    // «Главная» подсвечена и когда открыт раздел из лаунчера (не серверы/доступные/профиль).
+    return id === "home" && activeTop !== "servers" && activeTop !== "available" && screen !== "profile";
+  };
 
   const activeTop =
     screen === "server" || screen === "serverForm" || screen === "catalog"
@@ -460,6 +470,8 @@ function Shell({ me }: { me: Me }) {
 
   const renderScreen = () => {
     switch (screen) {
+      case "home":
+        return <HomeScreen />;
       case "servers":
         return <ServersScreen />;
       case "server":
@@ -468,6 +480,10 @@ function Shell({ me }: { me: Me }) {
         return <ServerFormScreen />;
       case "catalog":
         return <CatalogScreen />;
+      case "monitoring":
+        return <MonitoringScreen />;
+      case "finance":
+        return <FinanceScreen />;
       case "groups":
         return <GroupsScreen />;
       case "group":
@@ -478,6 +494,10 @@ function Shell({ me }: { me: Me }) {
         return <AvailableScreen />;
       case "devices":
         return <DevicesScreen />;
+      case "setup":
+        return <DeviceSetupScreen />;
+      case "events":
+        return <EventsScreen />;
       case "users":
         return <UsersScreen />;
       case "system":
@@ -492,7 +512,7 @@ function Shell({ me }: { me: Me }) {
   const NavItem = ({ id }: { id: string }) => (
     <button className={`nav-btn ${activeTop === id ? "active" : ""}`} onClick={() => go(id as never)}>
       <Icon name={NAV_META[id].icon} />
-      {NAV_META[id].label}
+      {t(NAV_META[id].labelKey)}
     </button>
   );
 
@@ -511,7 +531,7 @@ function Shell({ me }: { me: Me }) {
         {adminItems.length > 0 && (
           <>
             <div className="nav-divider" />
-            <div className="nav-label">Администрирование</div>
+            <div className="nav-label">{t("nav.admin")}</div>
             <div className="stack" style={{ gap: 4 }}>
               {adminItems.map((id) => (
                 <NavItem key={id} id={id} />
@@ -533,18 +553,59 @@ function Shell({ me }: { me: Me }) {
       </main>
 
       <nav className="bottom-nav">
-        {[...main, "profile"].map((id) => (
-          <button
-            key={id}
-            className={activeTop === id || (id === "profile" && screen === "profile") ? "active" : ""}
-            onClick={() => go(id as never)}
-          >
-            <Icon name={NAV_META[id].icon} size={21} />
-            {NAV_META[id].label}
+        {bottomItems.map((id) => (
+          <button key={id} className={bottomActive(id) ? "active" : ""} onClick={() => go(id as never)}>
+            <Icon name={NAV_META[id].icon} size={22} />
+            {t(NAV_META[id].labelKey)}
           </button>
         ))}
       </nav>
     </div>
+  );
+}
+
+// Error Boundary: перехватывает краши рендера дочернего дерева и вместо белого экрана
+// показывает аккуратный экран с кнопкой перезагрузки. Строки приходят пропами (class
+// component не может пользоваться хуком useT), локализуются в обёртке ErrorBoundary.
+class ErrorBoundaryInner extends Component<
+  { children: ReactNode; labels: { title: string; sub: string; reload: string } },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("Необработанная ошибка рендера:", error);
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    const { title, sub, reload } = this.props.labels;
+    return (
+      <div className="auth-wrap">
+        <div className="auth-card" style={{ textAlign: "center" }}>
+          <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{title}</div>
+          <div className="muted" style={{ fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
+            {sub}
+          </div>
+          <Btn variant="primary" block onClick={() => window.location.reload()}>
+            {reload}
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+}
+
+function ErrorBoundary({ children }: { children: ReactNode }) {
+  const t = useT();
+  return (
+    <ErrorBoundaryInner labels={{ title: t("ux.crashTitle"), sub: t("ux.crashSub"), reload: t("ux.reload") }}>
+      {children}
+    </ErrorBoundaryInner>
   );
 }
 
@@ -611,7 +672,9 @@ export function App() {
 
   return (
     <>
-      <Shell me={current} />
+      <ErrorBoundary>
+        <Shell me={current} />
+      </ErrorBoundary>
       <Toast />
     </>
   );

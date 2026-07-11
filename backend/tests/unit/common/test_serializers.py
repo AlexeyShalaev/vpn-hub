@@ -290,6 +290,9 @@ def test__protocol_to_dict__maps_external_clients_to_camelcase() -> None:
         "errorCode": None,
         "remediation": None,
         "externalClients": 3,
+        "imageVersion": None,
+        "latestVersion": None,  # awg: детект версий не поддержан
+        "updateAvailable": False,
     }
 
 
@@ -347,6 +350,17 @@ def test__server_to_dict__with_secret__uses_provided_value() -> None:
     result = s.server_to_dict(srv, secret="s3cr3t")
     # Assert
     assert result["secret"] == "s3cr3t"
+
+
+def test__server_to_dict__provider_metadata__mapped_to_camelcase() -> None:
+    """Провайдерская метадата отдаётся как providerMetadata."""
+    # Arrange
+    srv = _make_server()
+    srv.provider_metadata = {"providerPlan": "MSK-highmem-KVM-SSD-2"}
+    # Act
+    result = s.server_to_dict(srv)
+    # Assert
+    assert result["providerMetadata"] == {"providerPlan": "MSK-highmem-KVM-SSD-2"}
 
 
 def test__server_to_dict__vpns__sorted_by_type() -> None:
@@ -408,12 +422,27 @@ def test__member_to_dict__with_phone__maps_display_name_to_name() -> None:
     """GroupMember → dict: display_name → name, phone сохраняется."""
     # Arrange
     member = m.GroupMember(
-        id="mb1", group_id="g1", display_name="Мама", role="member", status="active", phone="+79001112233"
+        id="mb1",
+        group_id="g1",
+        user_id="u2",
+        display_name="Мама",
+        role="member",
+        status="active",
+        phone="+79001112233",
     )
     # Act
     result = s.member_to_dict(member)
     # Assert
-    assert result == {"id": "mb1", "name": "Мама", "role": "member", "status": "active", "phone": "+79001112233"}
+    assert result == {
+        "id": "mb1",
+        "userId": "u2",
+        "name": "Мама",
+        "role": "member",
+        "status": "active",
+        "phone": "+79001112233",
+        "maxDevices": None,
+        "maxBytes": None,
+    }
 
 
 def test__member_to_dict__no_phone__defaults_to_empty_string() -> None:
@@ -424,6 +453,7 @@ def test__member_to_dict__no_phone__defaults_to_empty_string() -> None:
     result = s.member_to_dict(member)
     # Assert
     assert result["phone"] == ""
+    assert result["userId"] is None
 
 
 def test__group_to_dict__maps_members_and_access() -> None:
@@ -431,7 +461,9 @@ def test__group_to_dict__maps_members_and_access() -> None:
     # Arrange
     group = m.Group(id="g1", owner_user_id="u1", name="Семья", token="grp-tok")
     group.members = [
-        m.GroupMember(id="mb1", group_id="g1", display_name="Папа", role="admin", status="active", phone=None),
+        m.GroupMember(
+            id="mb1", group_id="g1", user_id="u1", display_name="Папа", role="admin", status="active", phone=None
+        ),
     ]
     # Act
     result = s.group_to_dict(group, ["p1"], {"s1": ["amnezia", "openvpn"]})
@@ -440,7 +472,20 @@ def test__group_to_dict__maps_members_and_access() -> None:
         "id": "g1",
         "name": "Семья",
         "token": "grp-tok",
-        "members": [{"id": "mb1", "name": "Папа", "role": "admin", "status": "active", "phone": ""}],
+        "maxDevices": None,
+        "maxBytes": None,
+        "members": [
+            {
+                "id": "mb1",
+                "userId": "u1",
+                "name": "Папа",
+                "role": "admin",
+                "status": "active",
+                "phone": "",
+                "maxDevices": None,
+                "maxBytes": None,
+            }
+        ],
         "access": {"pools": ["p1"], "servers": {"s1": ["amnezia", "openvpn"]}},
     }
 

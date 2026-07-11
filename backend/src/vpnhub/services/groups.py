@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import time
+
 from vpnhub.api.config import Settings
 from vpnhub.common.serializers import group_to_dict
+from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.security import gen_token, normalize_phone
@@ -27,7 +31,7 @@ class GroupService:
     async def _owned(self, tx: UowTransaction, owner_id: str, gid: str) -> m.Group:
         g: m.Group | None = await tx.groups.get(gid)
         if not g or g.owner_user_id != owner_id:
-            raise NotFound("Группа не найдена")
+            raise NotFound(key="group.not_found")
         return g
 
     async def list(self, owner_id: str) -> list[dict]:
@@ -40,7 +44,7 @@ class GroupService:
 
     async def create(self, owner_id: str, owner_name: str, name: str) -> dict:
         if not name:
-            raise BadRequest("Введите название")
+            raise BadRequest(key="group.name_required")
         async with self.uow.transaction() as tx:
             g = m.Group(owner_user_id=owner_id, name=name, token=gen_token("grp"))
             tx.groups.add(g)
@@ -67,6 +71,48 @@ class GroupService:
             await tx.session.refresh(g)
             return await self._ser(tx, g)
 
+    async def set_group_limit(self, owner_id: str, gid: str, max_devices: int | None) -> dict:
+        """Override лимита устройств для участников группы (None/≤0 — снять, наследовать глобал)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            g.max_devices = max_devices if (max_devices is not None and max_devices > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
+    async def set_member_limit(self, owner_id: str, gid: str, mid: str, max_devices: int | None) -> dict:
+        """Персональный override лимита устройств участника (None/≤0 — снять, наследовать группу/глобал)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            mb = next((x for x in g.members if x.id == mid), None)
+            if mb is None:
+                raise NotFound(key="group.member_not_found")
+            mb.max_devices = max_devices if (max_devices is not None and max_devices > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
+    async def set_group_bytes(self, owner_id: str, gid: str, max_bytes: int | None) -> dict:
+        """Override лимита трафика (байт per user/сервер за период) для участников группы (None/≤0 — снять)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            g.max_bytes = max_bytes if (max_bytes is not None and max_bytes > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
+    async def set_member_bytes(self, owner_id: str, gid: str, mid: str, max_bytes: int | None) -> dict:
+        """Персональный override лимита трафика участника (None/≤0 — снять, наследовать группу/глобал)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            mb = next((x for x in g.members if x.id == mid), None)
+            if mb is None:
+                raise NotFound(key="group.member_not_found")
+            mb.max_bytes = max_bytes if (max_bytes is not None and max_bytes > 0) else None
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
     async def delete(self, owner_id: str, gid: str) -> None:
         async with self.uow.transaction() as tx:
             g = await self._owned(tx, owner_id, gid)
@@ -84,7 +130,7 @@ class GroupService:
 
     async def add_member(self, owner_id: str, gid: str, name: str, role: str, phone: str | None) -> dict:
         if not name:
-            raise BadRequest("Введите имя")
+            raise BadRequest(key="group.member_name_required")
         np = normalize_phone(phone) if phone else None
         async with self.uow.transaction() as tx:
             g = await self._owned(tx, owner_id, gid)
@@ -113,7 +159,7 @@ class GroupService:
         async with self.uow.query() as tx:
             g = await tx.groups.by_token(token)
             if not g:
-                raise NotFound("Приглашение недействительно или отозвано")
+                raise NotFound(key="group.invite_invalid")
             owner = await tx.users.get(g.owner_user_id)
             return {
                 "id": g.id,
@@ -126,7 +172,7 @@ class GroupService:
         async with self.uow.transaction() as tx:
             g = await tx.groups.by_token(token)
             if not g:
-                raise NotFound("Приглашение недействительно или отозвано")
+                raise NotFound(key="group.invite_invalid")
             existing = next((mb for mb in g.members if mb.user_id == user_id), None)
             if existing:
                 existing.status = "active"
@@ -151,6 +197,17 @@ class GroupService:
                         )
                     )
             await tx.session.flush()
+            tx.audit.add_event(
+                at=time.time(),
+                actor_kind="user",
+                actor_id=user_id,
+                actor_name=user_name,
+                type_=audit_types.GROUP_JOIN,
+                target_kind="group",
+                target_id=g.id,
+                owner_user_id=g.owner_user_id,
+                meta_json=json.dumps({"group": g.name}, ensure_ascii=False),
+            )
             return {"id": g.id, "name": g.name, "ok": True}
 
     async def toggle_member_role(self, owner_id: str, gid: str, mid: str) -> dict:
@@ -158,7 +215,7 @@ class GroupService:
             g = await self._owned(tx, owner_id, gid)
             mb = await tx.groups.member(mid)
             if not mb or mb.group_id != gid:
-                raise NotFound("Участник не найден")
+                raise NotFound(key="group.member_not_found")
             mb.role = "member" if mb.role == "admin" else "admin"
             await tx.session.flush()
             await tx.session.refresh(g)

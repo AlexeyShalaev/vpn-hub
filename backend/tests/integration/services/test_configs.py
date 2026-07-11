@@ -251,3 +251,67 @@ async def test__generate__xray_xhttp_selected__own_config_without_bundle(uow, se
     assert res["uri"].startswith("vless://") and "xhttp-uuid-1" in res["uri"]
     # имя сервера помечено XHTTP — чтобы в клиенте отличать от обычного Xray/бандла
     assert "XHTTP" in res["uri"]
+
+
+async def test__generate__single_bundlable_vs_bundle__containers_count(uow, settings, session_maker):
+    """bundle=False на склеиваемом протоколе → vpn:// с ОДНИМ контейнером (только он);
+    bundle=True → объединённый vpn:// со всеми склеиваемыми (awg+xray). Даёт выдачу «по одному»."""
+    key = settings.secret_key
+    awg_material = encrypt_secret(key, json.dumps(ServerMaterial(server_public_key="SPUB", psk="PSK").as_dict()))
+    awg_params = json.dumps(gen_awg_params(is_awg2=True).as_dict())
+    xray_material = encrypt_secret(
+        key,
+        json.dumps(ServerMaterial(xray_public_key="XPBK", short_id="0123456789abcdef", site="www.bing.com").as_dict()),
+    )
+    async with seed(session_maker) as s:
+        owner = await make_user(s)
+        server = await make_server(s, owner_id=owner.id, status="online")
+        await make_server_protocol(
+            s,
+            server_id=server.id,
+            proto="awg",
+            vendor="amnezia",
+            container="amnezia-awg2",
+            state="installed",
+            installed=True,
+            running=True,
+            material_encrypted=awg_material,
+            params_json=awg_params,
+        )
+        await make_server_protocol(
+            s,
+            server_id=server.id,
+            proto="xray",
+            vendor="amnezia",
+            container="amnezia-xray",
+            state="installed",
+            installed=True,
+            running=True,
+            material_encrypted=xray_material,
+        )
+        dev = await make_device(s, user_id=owner.id)
+        await make_device_config(
+            s,
+            device_id=dev.id,
+            server_id=server.id,
+            vpn_type="amnezia",
+            proto="AmneziaWG",
+            client_id="WGPUB",
+            client_ip="10.8.1.2",
+        )
+        await make_device_config(
+            s, device_id=dev.id, server_id=server.id, vpn_type="amnezia", proto="Xray", client_id="xray-uuid-1"
+        )
+    svc = ConfigService(uow, settings)
+
+    # bundle=False на awg → один контейнер (только awg), без склейки с xray
+    single = await svc._generate_provisioned(
+        "amnezia", owner.id, server.id, dev.id, "AmneziaWG", "ios", peek=False, bundle=False
+    )
+    assert single["uri"].startswith("vpn://")
+    assert len(vpn_uri.decode_vpn_url(single["uri"])["containers"]) == 1
+
+    # bundle=True (без явного протокола) → объединённый vpn:// с двумя контейнерами (awg + xray)
+    both = await svc._generate_provisioned("amnezia", owner.id, server.id, dev.id, None, "ios", peek=False, bundle=True)
+    assert both["uri"].startswith("vpn://")
+    assert len(vpn_uri.decode_vpn_url(both["uri"])["containers"]) == 2

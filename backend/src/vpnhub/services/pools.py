@@ -24,7 +24,7 @@ class PoolService:
 
     async def create(self, owner_id: str, name: str, server_ids: builtins.list[str]) -> dict:
         if not name:
-            raise BadRequest("Введите название")
+            raise BadRequest(key="pool.name_required")
         async with self.uow.transaction() as tx:
             p = m.Pool(owner_user_id=owner_id, name=name)
             tx.pools.add(p)
@@ -36,7 +36,7 @@ class PoolService:
         async with self.uow.transaction() as tx:
             p = await tx.pools.get(pid)
             if not p or p.owner_user_id != owner_id:
-                raise NotFound("Пул не найден")
+                raise NotFound(key="pool.not_found")
             if name:
                 p.name = name
             await tx.pools.set_servers(pid, server_ids or [])
@@ -46,5 +46,5 @@ class PoolService:
         async with self.uow.transaction() as tx:
             p = await tx.pools.get(pid)
             if not p or p.owner_user_id != owner_id:
-                raise NotFound("Пул не найден")
+                raise NotFound(key="pool.not_found")
             await tx.session.delete(p)

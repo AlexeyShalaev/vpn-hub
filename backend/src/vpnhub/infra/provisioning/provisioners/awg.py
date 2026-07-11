@@ -10,7 +10,7 @@ import re
 
 from vpnhub.infra.provisioning import constants as c
 from vpnhub.infra.provisioning import errors, ipalloc, keys, script_runner, templates, vpn_uri
-from vpnhub.infra.provisioning.awg_params import AwgParams
+from vpnhub.infra.provisioning.awg_params import AwgParams, rewrite_interface_params
 from vpnhub.infra.provisioning.awg_params import generate as gen_params
 from vpnhub.infra.provisioning.provisioners import base
 from vpnhub.infra.provisioning.provisioners.base import ClientMaterial, ConfigArtifact, ServerMaterial
@@ -88,6 +88,51 @@ class AwgProvisioner:
         await ssh.upload_to_container(self.spec.container, new_conf, self.spec.server_config_path, append=False)
         await self._syncconf(ssh)
         await base.remove_client_row(ssh, self.spec, client_id)
+
+    # ---- suspend / resume (лимит трафика, Этап 3b) ----
+    #
+    # ПИР НЕ ТРОГАЕМ: удаление [Peer] освободило бы IP-слот (ipalloc берёт последний AllowedIPs+1 —
+    # порядок важен) и на resume мог бы возникнуть конфликт по IP. Вместо этого режем трафик клиента
+    # через iptables DROP его /32 в обе стороны (FORWARD). Материал и конфиг остаются целыми, resume
+    # снимает правило — клиент продолжает работать тем же конфигом.
+    #
+    # ВАЖНО: правила ставим ВНУТРИ netns контейнера (docker exec), а НЕ на хосте — интерфейс awg0/wg0
+    # и подсеть 10.8.x.x живут в сетевом namespace контейнера (bridge, не --net host), декапсулированный
+    # клиентский пакет (src 10.8.x.x) форвардится и SNAT-ится внутри контейнера до выхода на хост.
+
+    @staticmethod
+    def _fw_rules(client_ip: str) -> list[str]:
+        return [f"FORWARD -s {client_ip}/32 -j DROP", f"FORWARD -d {client_ip}/32 -j DROP"]
+
+    def _ipt(self, args: str) -> str:
+        return f"sudo docker exec {self.spec.container} iptables {args}"
+
+    async def suspend_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        ip = (material.client_ip or "").strip()
+        if not ip:
+            return
+        for rule in self._fw_rules(ip):
+            # идемпотентно: добавить, только если такого правила ещё нет (в netns контейнера)
+            await ssh.run(f"{self._ipt(f'-C {rule}')} 2>/dev/null || {self._ipt(f'-I {rule}')}")
+
+    async def resume_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        ip = (material.client_ip or "").strip()
+        if not ip:
+            return
+        for rule in self._fw_rules(ip):
+            # снять правило, пока оно есть (на случай дублей — в цикле); отсутствие правила не ошибка
+            await ssh.run(f"while {self._ipt(f'-C {rule}')} 2>/dev/null; do {self._ipt(f'-D {rule}')}; done; true")
+
+    async def set_params(self, ssh: SshClient, new_params: AwgParams) -> None:
+        """Переписать obfuscation-строки в живом [Interface] awg0.conf и применить (syncconf).
+
+        Пиры ([Peer]) сохраняются — простой ~секунды. После вызова self._params — новые.
+        """
+        conf = await ssh.read_container_text(self.spec.container, self.spec.server_config_path)
+        new_conf = rewrite_interface_params(conf, new_params, self.spec.is_awg2)
+        await ssh.upload_to_container(self.spec.container, new_conf, self.spec.server_config_path, append=False)
+        await self._syncconf(ssh)
+        self._params = new_params
 
     async def _syncconf(self, ssh: SshClient) -> None:
         b, iface, path = self.spec.bin, self.spec.interface, self.spec.server_config_path

@@ -15,15 +15,26 @@
 from __future__ import annotations
 
 import re
+import secrets
 
+from vpnhub.infra.onlinestats import parse_hysteria_online
 from vpnhub.infra.provisioning import constants as c
 from vpnhub.infra.provisioning import errors, keys, script_runner, vpn_uri
 from vpnhub.infra.provisioning.provisioners import base
 from vpnhub.infra.provisioning.provisioners.base import ClientMaterial, ConfigArtifact, ServerMaterial
-from vpnhub.infra.provisioning.ssh import SshClient
+from vpnhub.infra.provisioning.ssh import SshClient, SshError
 
 # client_id/пароль генерим сами из [A-Za-z0-9]; валидируем перед подстановкой в файл/фильтрацию.
 _ID_RE = re.compile(r"[A-Za-z0-9]+")
+
+# traffic-stats API Hysteria2: слушает только на localhost, доступ по секрету в Authorization.
+_STATS_LISTEN = "127.0.0.1:9999"
+# awk: вытащить secret из уже настроенного блока trafficStats: (для перечитывания при повторном enable).
+# $2 экранирован (\\$2): команда идёт в `sh -c "..."`, и без экранирования внешний host-шелл
+# раскроет $2 в пустоту ДО awk — секрет не прочитается ("unauthorized" при запросе /online).
+_READ_SECRET_AWK = "awk '/^trafficStats:/{f=1} f&&/secret:/{print \\$2; exit}'"
+# hex-секрет валидируем перед подстановкой в Authorization-заголовок (anti-injection).
+_HEX_RE = re.compile(r"[0-9a-fA-F]+")
 
 
 class HysteriaProvisioner:
@@ -85,6 +96,31 @@ class HysteriaProvisioner:
         await ssh.upload_to_container(self.spec.container, new_text, self.spec.hysteria_users_path, append=False)
         await base.remove_client_row(ssh, self.spec, cid)
 
+    # ---- suspend / resume (лимит трафика, Этап 3b) ----
+    #
+    # suspend убирает строку `cid password` только из файла токенов (clientsTable НЕ трогаем);
+    # resume возвращает ТУ ЖЕ пару (cid из client_id, пароль из client_private_key). cid уникален —
+    # новый выданный конфиг «слот» не займёт, конфиг пользователя не меняется.
+
+    async def suspend_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cid = self._check_id(material.client_id)
+        raw = await ssh.read_container_text(self.spec.container, self.spec.hysteria_users_path)
+        kept = [ln for ln in raw.splitlines() if ln.split() and ln.split()[0] != cid]
+        if len(kept) == len([ln for ln in raw.splitlines() if ln.split()]):
+            return  # строки нет — no-op
+        new_text = ("\n".join(kept) + "\n") if kept else ""
+        await ssh.upload_to_container(self.spec.container, new_text, self.spec.hysteria_users_path, append=False)
+
+    async def resume_client(self, ssh: SshClient, material: ClientMaterial) -> None:
+        cid = self._check_id(material.client_id)
+        password = material.client_private_key
+        raw = await ssh.read_container_text(self.spec.container, self.spec.hysteria_users_path)
+        if any(ln.split() and ln.split()[0] == cid for ln in raw.splitlines()):
+            return  # уже на месте — no-op
+        await ssh.upload_to_container(
+            self.spec.container, f"{cid} {password}\n", self.spec.hysteria_users_path, append=True
+        )
+
     async def list_clients(self, ssh: SshClient) -> list[dict]:
         return await base.read_clients_table(ssh, self.spec)
 
@@ -101,6 +137,58 @@ class HysteriaProvisioner:
             raise errors.make("internal", "hysteria2: не удалось прочитать config.yaml")
         raw = await ssh.read_container_text(self.spec.container, self.spec.hysteria_users_path)
         return {parts[0] for ln in raw.splitlines() if (parts := ln.split())}
+
+    # ---- точная online-статистика (trafficStats API) ----
+
+    async def enable_stats(self, ssh: SshClient) -> str:
+        """Идемпотентно включить trafficStats API в config.yaml; вернуть его секрет (для коллектора).
+
+        Если блок уже есть — перечитываем секрет из конфига (без рестарта). Если нет — дописываем
+        top-level блок (listen 127.0.0.1:9999 + новый 32-hex secret) и рестартим контейнер.
+        Секрет нужен коллектору для Authorization при чтении /online — сохраняется в материале.
+        """
+        cfg = await ssh.read_container_text(self.spec.container, self.spec.hysteria_config_path)
+        if "listen:" not in cfg:
+            raise errors.make("internal", "hysteria2: не удалось прочитать config.yaml")
+        if re.search(r"^trafficStats:", cfg, re.MULTILINE):
+            secret = await self._read_stats_secret(ssh)
+            if secret:
+                return secret  # уже включено — контейнер не трогаем
+            # блок есть, но секрет не вычитался — пересоздаём блок ниже (редкий случай)
+        secret = secrets.token_hex(16)  # 32 hex-символа
+        block = f"\ntrafficStats:\n  listen: {_STATS_LISTEN}\n  secret: {secret}\n"
+        await ssh.upload_to_container(self.spec.container, block, self.spec.hysteria_config_path, append=True)
+        await ssh.run(f"sudo docker restart {self.spec.container}")
+        return secret
+
+    async def _read_stats_secret(self, ssh: SshClient) -> str:
+        """Перечитать секрет trafficStats из config.yaml (пусто, если нет). Валидируем как hex."""
+        cmd = f'sudo docker exec {self.spec.container} sh -c "{_READ_SECRET_AWK} {self.spec.hysteria_config_path}"'
+        try:
+            res = await ssh.run(cmd)
+        except SshError:
+            return ""
+        secret = res.stdout.strip()
+        return secret if _HEX_RE.fullmatch(secret) else ""
+
+    async def query_online(self, ssh: SshClient, secret: str) -> int | None:
+        """Read-only: онлайн-клиенты через GET /online. НИКОГДА не включает stats/не рестартит.
+
+        Без секрета (stats не включён) → None. Ошибка/пустой ответ → None. См. parse_hysteria_online.
+        """
+        if not secret or not _HEX_RE.fullmatch(secret):
+            return None
+        cmd = (
+            f"sudo docker exec {self.spec.container} curl -s "
+            f'-H "Authorization: {secret}" http://{_STATS_LISTEN}/online 2>/dev/null'
+        )
+        try:
+            res = await ssh.run(cmd)
+        except SshError:
+            return None
+        if res.exit_status != 0:
+            return None
+        return parse_hysteria_online(res.output)
 
     async def adopt(self, ssh: SshClient) -> ServerMaterial:
         """Считать материал уже установленного контейнера (obfs/cert/sni)."""

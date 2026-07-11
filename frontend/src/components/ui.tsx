@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "../lib/i18n";
 import { PLATFORM_GLYPH_D } from "../lib/platformGlyphs";
 import { generateRecoveryKey } from "../lib/recoveryKey";
 import type { VpnType } from "../lib/types";
@@ -8,6 +9,20 @@ import { VPN_LABEL } from "../lib/types";
 
 // ---------- icons ----------
 const PATHS: Record<string, ReactNode> = {
+  home: (
+    <>
+      <path d="M4 11l8-7 8 7" />
+      <path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9" />
+    </>
+  ),
+  // «Настройка устройства» (пункт nav.setup у участника) — документ/инструкция с чек-строками
+  file: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6M9 17h4" />
+    </>
+  ),
   servers: (
     <>
       <rect x="3" y="4" width="18" height="7" rx="2" />
@@ -37,6 +52,20 @@ const PATHS: Record<string, ReactNode> = {
     <>
       <rect x="7" y="3" width="10" height="18" rx="2.5" />
       <path d="M11 18h2" />
+    </>
+  ),
+  monitoring: (
+    <>
+      <path d="M3 12h4l2 6 4-14 2 8h6" />
+    </>
+  ),
+  finance: (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <rect x="7" y="11" width="3" height="5" rx="1" />
+      <rect x="12" y="7" width="3" height="9" rx="1" />
+      <rect x="17" y="9" width="3" height="7" rx="1" />
     </>
   ),
   // ---- иконки платформ устройств (имя = platform-ключ, см. Device.platform) ----
@@ -101,6 +130,12 @@ const PATHS: Record<string, ReactNode> = {
     <>
       <rect x="3" y="4" width="18" height="12" rx="2" />
       <path d="M8 20h8M12 16v4" />
+    </>
+  ),
+  events: (
+    <>
+      <path d="M4 5h16M4 12h16M4 19h10" />
+      <circle cx="19" cy="19" r="2" />
     </>
   ),
   profile: (
@@ -227,13 +262,14 @@ export function FilePicker({
   accept,
   file,
   onPick,
-  placeholder = "Файл не выбран",
+  placeholder,
 }: {
   accept?: string;
   file: File | null;
   onPick: (f: File | null) => void;
   placeholder?: string;
 }) {
+  const t = useT();
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div
@@ -260,10 +296,10 @@ export function FilePicker({
           whiteSpace: "nowrap",
         }}
       >
-        {file ? file.name : placeholder}
+        {file ? file.name : (placeholder ?? t("ui.fileNotChosen"))}
       </span>
       <span className="btn sm" style={{ flex: "none", pointerEvents: "none" }}>
-        Выбрать файл
+        {t("ui.chooseFile")}
       </span>
       <input
         ref={ref}
@@ -287,6 +323,7 @@ export function KeyInput({
   placeholder?: string;
   withGenerate?: boolean;
 }) {
+  const t = useT();
   const [show, setShow] = useState(false);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -301,7 +338,7 @@ export function KeyInput({
         />
         <button
           type="button"
-          title={show ? "Скрыть" : "Показать"}
+          title={show ? t("ui.hide") : t("ui.show")}
           onClick={() => setShow((s) => !s)}
           style={{
             position: "absolute",
@@ -332,7 +369,7 @@ export function KeyInput({
           }}
         >
           <Icon name="sparkles" size={15} />
-          Сгенерировать ключ
+          {t("ui.generateKey")}
         </Btn>
       )}
     </div>
@@ -348,10 +385,11 @@ export function Avatar({ name }: { name: string }) {
 }
 
 export function StatusBadge({ status }: { status: "online" | "offline" | "unknown" }) {
+  const t = useT();
   const map = {
-    online: { c: "ok", t: "онлайн" },
-    offline: { c: "danger", t: "офлайн" },
-    unknown: { c: "neutral", t: "не проверен" },
+    online: { c: "ok", t: t("status.online") },
+    offline: { c: "danger", t: t("status.offline") },
+    unknown: { c: "neutral", t: t("status.unchecked") },
   } as const;
   const s = map[status];
   return (
@@ -430,7 +468,7 @@ export function ScreenHeader({
   onBack,
 }: {
   title: string;
-  sub?: string;
+  sub?: ReactNode;
   action?: ReactNode;
   onBack?: () => void;
 }) {
@@ -459,5 +497,184 @@ export function Spinner() {
     <span className="spin" style={{ display: "inline-flex" }}>
       <Icon name="refresh" size={16} />
     </span>
+  );
+}
+
+// Плейсхолдер-заглушка с шиммером — показываем во время загрузки списков вместо
+// голого спиннера, чтобы каркас страницы не «прыгал».
+export function Skeleton({
+  width = "100%",
+  height = 16,
+  radius = 8,
+  style,
+}: {
+  width?: number | string;
+  height?: number | string;
+  radius?: number | string;
+  style?: React.CSSProperties;
+}) {
+  return <span className="skeleton" style={{ width, height, borderRadius: radius, ...style }} />;
+}
+
+// Готовый скелет-каркас карточки для сеток (Серверы, Группы и т.п.).
+export function SkeletonCard() {
+  return (
+    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Skeleton width={44} height={44} radius={13} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+          <Skeleton width="60%" height={15} />
+          <Skeleton width="35%" height={12} />
+        </div>
+      </div>
+      <Skeleton width="100%" height={12} />
+      <Skeleton width="45%" height={12} />
+    </div>
+  );
+}
+
+// Мультивыбор через выпадашку с чекбоксами и поиском (удобно, когда вариантов много):
+// пустой набор = «все». Поиск появляется при >8 вариантах. Закрывается по клику вне и по Esc.
+function toggleIn(arr: string[], v: string): string[] {
+  return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
+export function MultiSelect({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: [string, string][]; // [value, human label]
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const shown = query.trim()
+    ? options.filter(([, l]) => l.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+  const summary = selected.length === 0 ? t("ui.allOptions") : t("ui.selectedCount", { n: selected.length });
+
+  const trigger: CSSProperties = {
+    padding: "6px 10px",
+    borderRadius: "var(--r-sm)",
+    border: `1px solid ${selected.length ? "var(--accent, #3b82f6)" : "var(--border-strong)"}`,
+    background: "var(--surface)",
+    fontSize: 13,
+    color: "var(--text)",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" style={trigger} onClick={() => setOpen((o) => !o)}>
+        {label}: <b>{summary}</b> ▾
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 30,
+            top: "100%",
+            left: 0,
+            marginTop: 4,
+            minWidth: 240,
+            maxWidth: 340,
+            background: "var(--surface)",
+            border: "1px solid var(--border-strong)",
+            borderRadius: 10,
+            boxShadow: "var(--shadow, 0 8px 24px rgba(0,0,0,.18))",
+            padding: 6,
+          }}
+        >
+          {options.length > 8 && (
+            <input
+              autoFocus
+              placeholder={t("ui.searchEllipsis")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "6px 8px",
+                marginBottom: 4,
+                borderRadius: 7,
+                border: "1px solid var(--border)",
+                background: "var(--surface-2)",
+                fontSize: 13,
+                color: "var(--text)",
+              }}
+            />
+          )}
+          <div style={{ maxHeight: 260, overflowY: "auto" }}>
+            {shown.length === 0 ? (
+              <div className="muted-3" style={{ padding: 8, fontSize: 12.5 }}>
+                {t("common.nothingFound")}
+              </div>
+            ) : (
+              shown.map(([v, l]) => (
+                <label
+                  key={v}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "6px 8px",
+                    borderRadius: 7,
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(v)}
+                    onChange={() => onChange(toggleIn(selected, v))}
+                  />
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{l}</span>
+                </label>
+              ))
+            )}
+          </div>
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="muted-3"
+              style={{
+                width: "100%",
+                textAlign: "left",
+                padding: "6px 8px",
+                marginTop: 2,
+                fontSize: 12.5,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              {t("ui.resetFilter", { label: label.toLowerCase() })}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -70,13 +70,13 @@ def _encrypt(plaintext: bytes, passphrase: str) -> bytes:
 def _decrypt(blob: bytes, passphrase: str) -> bytes:
     head = 4 + _SALT_LEN + _NONCE_LEN
     if len(blob) < head or blob[:4] != _MAGIC:
-        raise BadRequest("Файл не является бэкапом VPN Hub")
+        raise BadRequest(key="backup.not_a_backup_file")
     salt = blob[4 : 4 + _SALT_LEN]
     nonce = blob[4 + _SALT_LEN : head]
     try:
         return AESGCM(_derive(passphrase, salt)).decrypt(nonce, blob[head:], _MAGIC)
     except InvalidTag:
-        raise BadRequest("Неверный ключ или повреждённый файл бэкапа") from None
+        raise BadRequest(key="backup.wrong_key_or_corrupted") from None
 
 
 def _ser(v: object) -> object:
@@ -131,11 +131,11 @@ class BackupService:
     async def set_key(self, key: str) -> None:
         """Задать/сменить мастер-ключ (из него выводятся ключи секретов и бэкапов)."""
         if not key or len(key) < 8:
-            raise BadRequest("Мастер-ключ — минимум 8 символов")
+            raise BadRequest(key="backup.master_key_too_short")
         if is_default_master_key(key):
-            raise BadRequest("Слишком простой мастер-ключ")
+            raise BadRequest(key="backup.master_key_too_simple")
         if self.settings.master_key:
-            raise BadRequest("Мастер-ключ задан через переменную окружения и не меняется из интерфейса")
+            raise BadRequest(key="backup.master_key_env_immutable")
         # apply_master: сохранит в БД, перешифрует существующие секреты под новый ключ
         await keyring.apply_master(self.uow, self.settings, key, source="db", persist=True)
 
@@ -144,7 +144,7 @@ class BackupService:
 
     async def set_frequency(self, freq: str) -> None:
         if freq not in ("off", *_FREQ_DAYS):
-            raise BadRequest("Недопустимая частота бэкапа")
+            raise BadRequest(key="backup.invalid_frequency")
         await self._set_setting(_FREQ_SETTING, freq)
 
     # --- логический дамп/восстановление (независимо от версии Postgres) ---
@@ -167,8 +167,8 @@ class BackupService:
             cur = (await tx.session.execute(text("SELECT version_num FROM alembic_version"))).scalar()
             if rev != cur:
                 raise BadRequest(
-                    f"Бэкап сделан на другой версии схемы (в бэкапе {rev}, сейчас {cur}). "
-                    "Восстановление возможно только на совпадающей версии приложения."
+                    key="backup.schema_version_mismatch",
+                    params={"backup_rev": rev, "current_rev": cur},
                 )
             names = ", ".join(f'"{t.name}"' for t in tables)
             await tx.session.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
@@ -188,7 +188,7 @@ class BackupService:
     def _path(self, name: str) -> str:
         # защита от path traversal: только basename с расширением .vhb внутри backup_dir
         if name != Path(name).name or not name.endswith(".vhb"):
-            raise BadRequest("Некорректное имя бэкапа")
+            raise BadRequest(key="backup.invalid_backup_name")
         return str(Path(self._dir) / name)
 
     def _files(self) -> list[tuple[str, float, int, str]]:
@@ -223,7 +223,7 @@ class BackupService:
     def backup_path(self, bid: str) -> str:
         path = self._path(bid)
         if not Path(path).is_file():
-            raise NotFound("Бэкап не найден")
+            raise NotFound(key="backup.not_found")
         return path
 
     def delete_backup(self, bid: str) -> None:
@@ -232,7 +232,7 @@ class BackupService:
     async def create_backup(self, kind: str = "manual") -> dict:
         key = await self._key()
         if not key:
-            raise BadRequest("Не задан ключ шифрования бэкапов")
+            raise BadRequest(key="backup.encryption_key_not_set")
         payload = json.dumps(await self._dump(), ensure_ascii=False, separators=(",", ":")).encode()
         blob = _encrypt(gzip.compress(payload), key)
         Path(self._dir).mkdir(parents=True, exist_ok=True)
@@ -244,7 +244,7 @@ class BackupService:
 
     async def restore_from_bytes(self, data: bytes, key: str) -> dict:
         if not key:
-            raise BadRequest("Введите мастер-ключ бэкапа")
+            raise BadRequest(key="backup.enter_master_key")
         # пользователь вводит мастер-ключ → пробуем производную парольную фразу, затем сам ключ
         # как «сырой» (legacy-бэкапы, сделанные старым backup-ключом напрямую).
         raw: bytes | None = None
@@ -255,11 +255,11 @@ class BackupService:
             except BadRequest:
                 continue
         if raw is None:
-            raise BadRequest("Неверный ключ или повреждённый файл бэкапа")
+            raise BadRequest(key="backup.wrong_key_or_corrupted")
         try:
             payload = json.loads(gzip.decompress(raw))
         except Exception:
-            raise BadRequest("Повреждённый файл бэкапа") from None
+            raise BadRequest(key="backup.corrupted_file") from None
         await self._load(payload)
         log.info("backup restored", size=len(data))
         return {"ok": True}

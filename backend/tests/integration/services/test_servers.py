@@ -217,6 +217,26 @@ async def test__create__valid__creates_server_with_fields(uow, settings, session
     assert created["status"] == "unknown"
 
 
+async def test__create__provider_metadata__stores_tariff(uow, settings, session_maker) -> None:
+    """Провайдерская метадата сохраняется вместе с сервером."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110041")
+    svc = ServerService(uow, settings)
+    # Act
+    created = await svc.create(
+        owner.id,
+        {
+            "name": "srv",
+            "ip": "203.0.113.41",
+            "location": "Москва",
+            "providerMetadata": {"providerPlan": "MSK-highmem-KVM-SSD-2"},
+        },
+    )
+    # Assert
+    assert created["providerMetadata"] == {"providerPlan": "MSK-highmem-KVM-SSD-2"}
+
+
 async def test__create__valid__creates_vpns_with_default_ports(uow, settings, session_maker) -> None:
     """create заводит ServerVpn для каждого типа VPN (VPN_TYPES) с портами из DEFAULT_PORTS."""
     # Arrange
@@ -261,6 +281,23 @@ async def test__update__changes_fields(uow, settings, session_maker) -> None:
     # Assert
     assert result["name"] == "новое"
     assert result["location"] == "NL"
+
+
+async def test__update__provider_metadata__replaces_tariff(uow, settings, session_maker) -> None:
+    """update обновляет провайдерскую метадату."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79001110072")
+        server = await make_server(s, owner_id=owner.id, name="srv", ip="203.0.113.72")
+    svc = ServerService(uow, settings)
+    # Act
+    result = await svc.update(
+        owner.id,
+        server.id,
+        {"providerMetadata": {"providerPlan": "KVM-SSD-1-PAR"}},
+    )
+    # Assert
+    assert result["providerMetadata"] == {"providerPlan": "KVM-SSD-1-PAR"}
 
 
 async def test__update__empty_location__raises_bad_request(uow, settings, session_maker) -> None:

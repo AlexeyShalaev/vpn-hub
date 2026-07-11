@@ -85,6 +85,55 @@ async def test__sync_server__ssh_unreachable__preserves_ledger_and_state(uow, se
     assert sp2.installed is True and sp2.state == "installed"  # состояние не затёрто
 
 
+async def test__ensure_monitoring__enables_stats_when_missing(uow, settings, monkeypatch):
+    """Усыновлённый stats-протокол без работающего мониторинга → sync включает точную статистику."""
+    calls: list[str] = []
+
+    async def fake_enable(spec, ssh):
+        calls.append(spec.id)
+        return True
+
+    monkeypatch.setattr(sync_mod, "enable_stats", fake_enable)
+    settings.stats_auto_enable = True
+    svc = SyncService(uow, settings)
+    xray = pc.spec_by_id("xray")
+
+    await svc._ensure_monitoring(object(), "srv", xray, stats_ok=set())
+    assert calls == ["xray"]  # мониторинга нет → доводим
+
+
+async def test__ensure_monitoring__skips_when_already_ok_or_disabled(uow, settings, monkeypatch):
+    """Не трогаем: мониторинг уже ok, не-stats-протокол, или stats_auto_enable=False."""
+    calls: list[str] = []
+
+    async def fake_enable(spec, ssh):
+        calls.append(spec.id)
+        return True
+
+    monkeypatch.setattr(sync_mod, "enable_stats", fake_enable)
+    svc = SyncService(uow, settings)
+    xray, awg = pc.spec_by_id("xray"), pc.spec_by_id("awg")
+
+    settings.stats_auto_enable = True
+    await svc._ensure_monitoring(object(), "srv", xray, stats_ok={"xray"})  # уже работает
+    await svc._ensure_monitoring(object(), "srv", awg, stats_ok=set())  # wg — без stats-API
+    settings.stats_auto_enable = False
+    await svc._ensure_monitoring(object(), "srv", xray, stats_ok=set())  # opt-out
+    assert calls == []  # ни в одном случае не включаем
+
+
+async def test__ensure_monitoring__swallows_errors(uow, settings, monkeypatch):
+    """Провал включения статистики не роняет sync (best-effort)."""
+
+    async def boom(spec, ssh):
+        raise SshError("boom")
+
+    monkeypatch.setattr(sync_mod, "enable_stats", boom)
+    settings.stats_auto_enable = True
+    svc = SyncService(uow, settings)
+    await svc._ensure_monitoring(object(), "srv", pc.spec_by_id("hysteria2"), stats_ok=set())  # не бросает
+
+
 async def test__sync_server__container_absent__drains_ledger_and_marks_absent(
     uow, settings, session_maker, monkeypatch
 ):

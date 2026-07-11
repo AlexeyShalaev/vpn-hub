@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 
+from vpnhub.core import audit_types
 from vpnhub.infra.db.orm import models as m
-from vpnhub.infra.provisioning import remediation
+from vpnhub.infra.provisioning import component_versions, remediation
 
 
 def rel_time(epoch: float | None) -> str | None:
@@ -93,6 +95,9 @@ def protocol_to_dict(p: m.ServerProtocol) -> dict:
         "errorCode": p.error_code,
         "remediation": _remediation_dict(p),
         "externalClients": p.external_clients,
+        "imageVersion": p.image_version,
+        "latestVersion": component_versions.latest_version(p.proto),
+        "updateAvailable": component_versions.update_available(p.proto, p.image_version),
     }
 
 
@@ -110,6 +115,9 @@ def server_to_dict(s: m.Server, secret: str | None = None) -> dict:
         "status": s.status,
         "latency": latency_str(s.latency_ms),
         "lastCheck": rel_time(s.last_check_at),
+        "bandwidthQuota": s.bandwidth_quota_bytes,  # квота трафика тарифа за период (null = безлимит)
+        "billingDay": s.billing_day,  # день сброса периода (1..31; null → 1-е число)
+        "providerMetadata": dict(s.provider_metadata or {}),
         "vpns": [vpn_to_dict(v) for v in sorted(s.vpns, key=lambda x: x.type)],
         "protocols": [protocol_to_dict(p) for p in sorted(s.protocols, key=lambda x: x.proto)],
     }
@@ -120,7 +128,16 @@ def pool_to_dict(p: m.Pool, server_ids: list[str]) -> dict:
 
 
 def member_to_dict(mb: m.GroupMember) -> dict:
-    return {"id": mb.id, "name": mb.display_name, "role": mb.role, "status": mb.status, "phone": mb.phone or ""}
+    return {
+        "id": mb.id,
+        "userId": mb.user_id,
+        "name": mb.display_name,
+        "role": mb.role,
+        "status": mb.status,
+        "phone": mb.phone or "",
+        "maxDevices": mb.max_devices,
+        "maxBytes": mb.max_bytes,
+    }
 
 
 def group_to_dict(g: m.Group, pools: list[str], servers: dict[str, list[str]]) -> dict:
@@ -128,6 +145,8 @@ def group_to_dict(g: m.Group, pools: list[str], servers: dict[str, list[str]]) -
         "id": g.id,
         "name": g.name,
         "token": g.token,
+        "maxDevices": g.max_devices,
+        "maxBytes": g.max_bytes,
         "members": [member_to_dict(mb) for mb in g.members],
         "access": {"pools": pools, "servers": servers},
     }
@@ -141,6 +160,29 @@ def device_to_dict(d: m.Device) -> dict:
         "configs": [
             {"serverId": c.server_id, "type": c.vpn_type, "proto": c.proto, "status": c.status} for c in d.configs
         ],
+    }
+
+
+def event_to_dict(e: m.AuditEvent) -> dict:
+    meta = {}
+    if e.meta_json:
+        try:
+            meta = json.loads(e.meta_json)
+        except (ValueError, TypeError):
+            meta = {}
+    return {
+        "id": e.id,
+        "at": time.strftime("%d.%m.%Y %H:%M", time.localtime(e.at)) if e.at else "",
+        "rel": rel_time(e.at),
+        "actorKind": e.actor_kind,
+        "actorId": e.actor_id,
+        "actorName": e.actor_name or "—",
+        "type": e.type,
+        "label": audit_types.label(e.type),
+        "targetKind": e.target_kind,
+        "targetId": e.target_id,
+        "ownerUserId": e.owner_user_id,
+        "meta": meta,
     }
 
 
