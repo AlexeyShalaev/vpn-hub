@@ -128,6 +128,21 @@ const ru = {
   "home.eventsAll": "Все события",
   "home.eventsEmpty": "Событий пока нет",
 
+  // подписи плиток супер-апп-лаунчера на «Главной»
+  "home.tileServers": "{online}/{total} онлайн",
+  "home.tileServersEmpty": "серверов пока нет",
+  "home.tileMonitoring": "трафик и онлайн",
+  "home.tileFinance": "расходы за 30 дней",
+  "home.tileGroups": "{groups} гр. · {members} участн.",
+  "home.tileGroupsEmpty": "групп пока нет",
+  "home.tileAccess": "выдача доступов",
+  "home.tileEvents": "журнал действий",
+  "home.tileUsers": "пользователи",
+  "home.tileSystem": "версия и бэкапы",
+  "home.tileAvailable": "доступные серверы",
+  "home.tileDevices": "мои устройства",
+  "home.tileSetup": "как подключиться",
+
   // «Настрой устройство» — справочные инструкции по платформам
   "nav.setup": "Настройка",
   "setup.title": "Настрой устройство",
@@ -141,6 +156,7 @@ const ru = {
   "setup.vendorApps": "Приложения по формату конфига",
   "setup.vendorAmnezia": "Для конфигов Amnezia (vpn://)",
   "setup.vendorOutline": "Для конфигов Outline (ss://)",
+  "setup.vendorOpenvpn": "Для конфигов OpenVPN (.ovpn)",
   "setup.openInApp": "Открыть в приложении",
   // платформы
   "setup.platformIos": "iPhone / iPad (iOS)",
@@ -285,6 +301,21 @@ const en = {
   "home.eventsAll": "All events",
   "home.eventsEmpty": "No events yet",
 
+  // super-app launcher tile subtitles on Home
+  "home.tileServers": "{online}/{total} online",
+  "home.tileServersEmpty": "no servers yet",
+  "home.tileMonitoring": "traffic & online",
+  "home.tileFinance": "cost, last 30 days",
+  "home.tileGroups": "{groups} grp · {members} members",
+  "home.tileGroupsEmpty": "no groups yet",
+  "home.tileAccess": "grant access",
+  "home.tileEvents": "activity log",
+  "home.tileUsers": "manage users",
+  "home.tileSystem": "version & backups",
+  "home.tileAvailable": "available servers",
+  "home.tileDevices": "my devices",
+  "home.tileSetup": "how to connect",
+
   // "Set up your device" — per-platform reference instructions
   "nav.setup": "Setup",
   "setup.title": "Set up your device",
@@ -298,6 +329,7 @@ const en = {
   "setup.vendorApps": "Apps by config format",
   "setup.vendorAmnezia": "For Amnezia configs (vpn://)",
   "setup.vendorOutline": "For Outline configs (ss://)",
+  "setup.vendorOpenvpn": "For OpenVPN configs (.ovpn)",
   "setup.openInApp": "Open in app",
   // platforms
   "setup.platformIos": "iPhone / iPad (iOS)",

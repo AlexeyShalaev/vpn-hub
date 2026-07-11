@@ -4,11 +4,11 @@ import { PhoneField } from "../components/PhoneField";
 import { Btn, Field, FilePicker, Icon, KeyInput } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { subscribeEvents } from "../lib/events";
-import { type TKey, useT } from "../lib/i18n";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
 import type { Me } from "../lib/types";
-import { useNav } from "../nav";
+import { NAV_META, useNav } from "../nav";
 import { AccessScreen } from "../screens/Access";
 import { AvailableScreen } from "../screens/Available";
 import { CatalogScreen } from "../screens/Catalog";
@@ -438,22 +438,6 @@ function SetupScreen({ keyFromEnv }: { keyFromEnv: boolean }) {
   );
 }
 
-const NAV_META: Record<string, { labelKey: TKey; icon: string }> = {
-  home: { labelKey: "nav.home", icon: "home" },
-  servers: { labelKey: "nav.servers", icon: "servers" },
-  monitoring: { labelKey: "nav.monitoring", icon: "monitoring" },
-  finance: { labelKey: "nav.finance", icon: "finance" },
-  groups: { labelKey: "nav.groups", icon: "groups" },
-  access: { labelKey: "nav.access", icon: "access" },
-  available: { labelKey: "nav.available", icon: "available" },
-  devices: { labelKey: "nav.devices", icon: "devices" },
-  setup: { labelKey: "nav.setup", icon: "file" },
-  events: { labelKey: "nav.events", icon: "events" },
-  users: { labelKey: "nav.users", icon: "users" },
-  system: { labelKey: "nav.system", icon: "system" },
-  profile: { labelKey: "nav.profile", icon: "profile" },
-};
-
 function Shell({ me }: { me: Me }) {
   const { screen, go } = useNav();
   const viewRole = useStore((s) => s.viewRole);
@@ -465,9 +449,19 @@ function Shell({ me }: { me: Me }) {
   useEffect(() => subscribeEvents(qc), [qc]);
 
   const ownerItems = ["home", "servers", "monitoring", "finance", "groups", "access", "events"];
-  const memberItems = ["available", "devices", "setup"];
+  const memberItems = ["home", "available", "devices", "setup"];
   const main = viewRole === "owner" ? ownerItems : memberItems;
   const adminItems = me.isAdmin ? ["users", "system"] : [];
+
+  // Мобильная нижняя навигация — компактно, 3 пункта: Главная, основной раздел роли, Профиль.
+  // Остальные разделы открываются с «Главной» (лаунчер-грид, как в супераппе).
+  const bottomItems = viewRole === "owner" ? ["home", "servers", "profile"] : ["home", "available", "profile"];
+  const bottomActive = (id: string): boolean => {
+    if (id === "profile") return screen === "profile";
+    if (id === activeTop) return true;
+    // «Главная» подсвечена и когда открыт раздел из лаунчера (не серверы/доступные/профиль).
+    return id === "home" && activeTop !== "servers" && activeTop !== "available" && screen !== "profile";
+  };
 
   const activeTop =
     screen === "server" || screen === "serverForm" || screen === "catalog"
@@ -561,13 +555,9 @@ function Shell({ me }: { me: Me }) {
       </main>
 
       <nav className="bottom-nav">
-        {[...main, "profile"].map((id) => (
-          <button
-            key={id}
-            className={activeTop === id || (id === "profile" && screen === "profile") ? "active" : ""}
-            onClick={() => go(id as never)}
-          >
-            <Icon name={NAV_META[id].icon} size={21} />
+        {bottomItems.map((id) => (
+          <button key={id} className={bottomActive(id) ? "active" : ""} onClick={() => go(id as never)}>
+            <Icon name={NAV_META[id].icon} size={22} />
             {t(NAV_META[id].labelKey)}
           </button>
         ))}

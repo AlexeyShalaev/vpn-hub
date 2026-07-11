@@ -326,25 +326,37 @@ export function FinanceScreen() {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <ScreenHeader
-        title="Финансы"
-        sub="Затраты на инфраструктуру, утилизация трафика и ориентиры продажи."
-        action={
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {PERIODS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`chip${period === p.id ? " selected" : ""}`}
-                onClick={() => setPeriod(p.id)}
-                style={{ height: 34, padding: "0 12px", fontSize: 12.5 }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        }
-      />
+      <ScreenHeader title="Финансы" sub="Затраты на инфраструктуру, утилизация трафика и ориентиры продажи." />
+
+      {/* Отдельная строка выбора периода: таблетки на десктопе, компактный select на телефоне —
+          иначе длинное описание и период не помещаются в одну строку. */}
+      <div className="period-controls">
+        <div className="period-pills">
+          {PERIODS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`chip${period === p.id ? " selected" : ""}`}
+              onClick={() => setPeriod(p.id)}
+              style={{ height: 34, padding: "0 12px", fontSize: 12.5 }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <select
+          className="period-select"
+          value={period}
+          onChange={(e) => setPeriod(e.target.value as PeriodId)}
+          aria-label="Период"
+        >
+          {PERIODS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {reportQ.isLoading ? (
         <div className="card" style={{ display: "flex", justifyContent: "center", padding: 42 }}>

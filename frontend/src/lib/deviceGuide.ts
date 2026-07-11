@@ -106,10 +106,22 @@ export const AMNEZIA_APP: GuideApp = {
   storeKey: "setup.storeSite",
   url: "https://amnezia.org/en/downloads",
 };
+// DefaultVPN — лёгкий iOS-клиент AmneziaWG (альтернатива AmneziaVPN для vpn://-конфигов на iPhone/iPad).
+export const DEFAULTVPN_APP: GuideApp = {
+  name: "DefaultVPN",
+  storeKey: "setup.storeAppStore",
+  url: "https://apps.apple.com/ru/app/defaultvpn/id6744725017",
+};
 export const OUTLINE_APP: GuideApp = {
   name: "Outline",
   storeKey: "setup.storeSite",
   url: "https://getoutline.org/get-started/#step-3",
+};
+// OpenVPN Connect — официальный клиент .ovpn на все платформы (страница со всеми клиентами).
+export const OPENVPN_APP: GuideApp = {
+  name: "OpenVPN Connect",
+  storeKey: "setup.storeSite",
+  url: "https://openvpn.net/client/",
 };
 
 // ── Deep-link «Открыть в приложении» по ФОРМАТУ конфига ──────────────────────────

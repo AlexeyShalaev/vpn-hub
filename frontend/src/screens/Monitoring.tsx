@@ -297,31 +297,52 @@ export function MonitoringScreen() {
       <ScreenHeader
         title={t("nav.monitoring")}
         sub="Кто онлайн, по какому протоколу и сколько трафика — по всем вашим серверам"
-        action={
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {freshness != null && (
-              <span className="muted-3" style={{ fontSize: 12 }} title="Свежесть последнего сбора по SSH">
-                обновлено {fmtAgo(freshness)}
-              </span>
-            )}
-            {PERIODS.map((p) => (
-              <Btn key={p} variant={p === period ? "primary" : "ghost"} sm onClick={() => setPeriod(p)}>
-                {PERIOD_LABEL[p]}
-              </Btn>
-            ))}
-            <Btn
-              variant="ghost"
-              sm
-              onClick={() => mq.refetch()}
-              disabled={mq.isFetching}
-              title="Обновить метрики"
-              aria-label="Обновить"
-            >
-              {mq.isFetching ? <Spinner /> : <Icon name="refresh" size={16} />}
-            </Btn>
-          </div>
-        }
       />
+
+      {/* Отдельная строка управления: на десктопе — таблетки-периоды, на мобиле — компактный select
+          (иначе описание и период не помещаются в одну строку). Свежесть и «обновить» — справа. */}
+      <div className="period-controls">
+        <div className="period-pills">
+          {PERIODS.map((p) => (
+            <Btn key={p} variant={p === period ? "primary" : "ghost"} sm onClick={() => setPeriod(p)}>
+              {PERIOD_LABEL[p]}
+            </Btn>
+          ))}
+        </div>
+        <select
+          className="period-select"
+          value={period}
+          onChange={(e) => setPeriod(e.target.value as Period)}
+          aria-label="Период"
+        >
+          {PERIODS.map((p) => (
+            <option key={p} value={p}>
+              {PERIOD_LABEL[p]}
+            </option>
+          ))}
+        </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+          {freshness != null && (
+            <span
+              className="muted-3"
+              style={{ fontSize: 12, whiteSpace: "nowrap" }}
+              title="Свежесть последнего сбора по SSH"
+            >
+              обновлено {fmtAgo(freshness)}
+            </span>
+          )}
+          <Btn
+            variant="ghost"
+            sm
+            onClick={() => mq.refetch()}
+            disabled={mq.isFetching}
+            title="Обновить метрики"
+            aria-label="Обновить"
+          >
+            {mq.isFetching ? <Spinner /> : <Icon name="refresh" size={16} />}
+          </Btn>
+        </div>
+      </div>
 
       {/* сводка */}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>

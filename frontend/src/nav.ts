@@ -1,4 +1,23 @@
 import { create } from "zustand";
+import type { TKey } from "./lib/i18n";
+
+// метаданные пунктов навигации (иконка + i18n-ключ). Общий источник для сайдбара, нижней навигации
+// и лаунчера на «Главной» — чтобы не дублировать иконки/подписи по разным файлам.
+export const NAV_META: Record<string, { labelKey: TKey; icon: string }> = {
+  home: { labelKey: "nav.home", icon: "home" },
+  servers: { labelKey: "nav.servers", icon: "servers" },
+  monitoring: { labelKey: "nav.monitoring", icon: "monitoring" },
+  finance: { labelKey: "nav.finance", icon: "finance" },
+  groups: { labelKey: "nav.groups", icon: "groups" },
+  access: { labelKey: "nav.access", icon: "access" },
+  available: { labelKey: "nav.available", icon: "available" },
+  devices: { labelKey: "nav.devices", icon: "devices" },
+  setup: { labelKey: "nav.setup", icon: "file" },
+  events: { labelKey: "nav.events", icon: "events" },
+  users: { labelKey: "nav.users", icon: "users" },
+  system: { labelKey: "nav.system", icon: "system" },
+  profile: { labelKey: "nav.profile", icon: "profile" },
+};
 
 export type Screen =
   | "home"

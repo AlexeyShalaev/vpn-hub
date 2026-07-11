@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Btn, Icon, ScreenHeader } from "../components/ui";
 import {
   AMNEZIA_APP,
+  DEFAULTVPN_APP,
   GUIDE_PLATFORMS,
   type GuideApp,
   type GuidePlatform,
+  OPENVPN_APP,
   OUTLINE_APP,
   PLATFORM_GUIDES,
 } from "../lib/deviceGuide";
@@ -86,10 +88,18 @@ export function SetupScreen() {
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 12, color: "var(--text-3)" }}>{t("setup.vendorAmnezia")}</div>
           <AppRow app={AMNEZIA_APP} openLabel={t("setup.openStore")} storeLabel={t(AMNEZIA_APP.storeKey)} />
+          {/* DefaultVPN есть только в App Store — показываем лишь для iPhone/iPad */}
+          {platform === "ios" && (
+            <AppRow app={DEFAULTVPN_APP} openLabel={t("setup.openStore")} storeLabel={t(DEFAULTVPN_APP.storeKey)} />
+          )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 12, color: "var(--text-3)" }}>{t("setup.vendorOutline")}</div>
           <AppRow app={OUTLINE_APP} openLabel={t("setup.openStore")} storeLabel={t(OUTLINE_APP.storeKey)} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 12, color: "var(--text-3)" }}>{t("setup.vendorOpenvpn")}</div>
+          <AppRow app={OPENVPN_APP} openLabel={t("setup.openStore")} storeLabel={t(OPENVPN_APP.storeKey)} />
         </div>
       </div>
 
