@@ -27,6 +27,56 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.9.0",
+        "date": "2026-07-12",
+        "notes": [
+            {
+                "ru": "Полная двуязычность: весь интерфейс и ответы сервера переключаются между русским и английским",
+                "en": "Full bilingual support: the entire UI and server responses switch between Russian and English",
+            },
+            {
+                "ru": "Мониторинг: дашборды трафика, ресурсы серверов по SSH (CPU/RAM/диск/аптайм) и честный онлайн по протоколам",  # noqa: E501
+                "en": "Monitoring: traffic dashboards, server resources over SSH (CPU/RAM/disk/uptime) and accurate per-protocol online counts",  # noqa: E501
+            },
+            {
+                "ru": "Помесячный мониторинг клиентов и ярусное хранение метрик с ретеншеном и лимитом по диску",
+                "en": "Per-client monitoring and tiered metrics storage with retention and a disk-usage cap",
+            },
+            {
+                "ru": "Финансы: учёт стоимости серверов, сводка расходов и подбор тарифов провайдеров с приведением валют к одной по курсу ЦБ",  # noqa: E501
+                "en": "Finance: server cost accounting, a spend overview, and a provider tariff finder with single-currency conversion at CBR rates",  # noqa: E501
+            },
+            {
+                "ru": "Лимиты: на устройства, на конфиги по каждому протоколу и на трафик за период — с реальной приостановкой доступа при превышении",  # noqa: E501
+                "en": "Limits: on devices, on configs per protocol, and on traffic per period — with a real access cutoff when exceeded",  # noqa: E501
+            },
+            {
+                "ru": "Протоколы: добавлены Hysteria2 и Xray XHTTP, мультихоп-цепочки через Xray, установка и выдача протоколов Amnezia по одному, настройка обфускации/Reality в UI",  # noqa: E501
+                "en": "Protocols: added Hysteria2 and Xray XHTTP, multi-hop chains via Xray, per-protocol Amnezia install and single-protocol issuance, and obfuscation/Reality settings in the UI",  # noqa: E501
+            },
+            {
+                "ru": "Обновления из панели во всех режимах развёртывания (compose/scripts/k8s) с подсказками и автоисправлением ошибок установки",  # noqa: E501
+                "en": "In-panel updates across all deploy modes (compose/scripts/k8s), with hints and auto-fix for provisioning errors",  # noqa: E501
+            },
+            {
+                "ru": "Аудит-лог действий, обновления в реальном времени (SSE), чеклист онбординга, «Главная» как супер-апп и гид по настройке устройств",  # noqa: E501
+                "en": "An action audit log, real-time updates (SSE), an onboarding checklist, a super-app home screen, and a device setup guide",  # noqa: E501
+            },
+            {
+                "ru": "Двуязычный курируемый список изменений в панели и выбор темы: системная, тёмная или светлая",
+                "en": "A curated bilingual changelog in the panel and a theme selector: system, dark, or light",
+            },
+            {
+                "ru": "Администрирование: раздел «Система» с методом развёртывания и использованием диска, а также резервные копии",  # noqa: E501
+                "en": "Administration: a System section showing the deployment method and disk usage, plus backups",
+            },
+            {
+                "ru": "Инфраструктура: тестирование миграций, arm64-образ, упрочнение безопасности (сессии, rate-limit, CSRF/CSP, шифрование секретов мастер-ключом) и переход фронтенда на TypeScript 6 и Vite 8",  # noqa: E501
+                "en": "Infrastructure: migration testing, an arm64 image, security hardening (sessions, rate limiting, CSRF/CSP, master-key secret encryption), and moving the frontend to TypeScript 6 and Vite 8",  # noqa: E501
+            },
+        ],
+    },
+    {
         "v": "0.8.0",
         "date": "2026-07-05",
         "notes": [

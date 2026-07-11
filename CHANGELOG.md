@@ -5,6 +5,20 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.9.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.8.0...v0.9.0) - 2026-07-12
+
+- Full bilingual support: the entire UI and server responses switch between Russian and English
+- Monitoring: traffic dashboards, server resources over SSH (CPU/RAM/disk/uptime) and accurate per-protocol online counts
+- Per-client monitoring and tiered metrics storage with retention and a disk-usage cap
+- Finance: server cost accounting, a spend overview, and a provider tariff finder with single-currency conversion at CBR rates
+- Limits: on devices, on configs per protocol, and on traffic per period — with a real access cutoff when exceeded
+- Protocols: added Hysteria2 and Xray XHTTP, multi-hop chains via Xray, per-protocol Amnezia install and single-protocol issuance, and obfuscation/Reality settings in the UI
+- In-panel updates across all deploy modes (compose/scripts/k8s), with hints and auto-fix for provisioning errors
+- An action audit log, real-time updates (SSE), an onboarding checklist, a super-app home screen, and a device setup guide
+- A curated bilingual changelog in the panel and a theme selector: system, dark, or light
+- Administration: a System section showing the deployment method and disk usage, plus backups
+- Infrastructure: migration testing, an arm64 image, security hardening (sessions, rate limiting, CSRF/CSP, master-key secret encryption), and moving the frontend to TypeScript 6 and Vite 8
+
 ## [0.8.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.7.0...v0.8.0) - 2026-07-05
 
 - A device's issued configs are grouped by server
