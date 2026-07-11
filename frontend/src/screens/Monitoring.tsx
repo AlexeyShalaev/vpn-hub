@@ -6,7 +6,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { LineChart } from "../components/chart";
 import { Btn, Empty, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
-import { useT } from "../lib/i18n";
+import type { TFunc } from "../lib/i18n";
+import { tg, useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { CollectionHealth, MonitoringClient } from "../lib/types";
 import { useStore } from "../store";
@@ -22,72 +23,89 @@ function collectionFreshness(collection?: Record<string, CollectionHealth>): num
 }
 
 // честный диагноз пустого мониторинга вместо общей фразы «нет данных» — по статусам сбора
-function collectionDiagnosis(collection?: Record<string, CollectionHealth>): string {
+function collectionDiagnosis(t: TFunc, collection?: Record<string, CollectionHealth>): string {
   const servers = collection ? Object.values(collection) : [];
-  if (servers.length === 0)
-    return "Добавьте сервер и установите протокол — статистика начнёт собираться автоматически.";
+  if (servers.length === 0) return t("mon.diagAddServer");
   const protos = servers.flatMap((c) => c.protocols);
-  if (protos.length === 0) return "На серверах нет установленных протоколов. Установите протокол — сбор включится сам.";
+  if (protos.length === 0) return t("mon.diagNoProtocols");
   const statuses = new Set(protos.map((p) => p.status));
-  if (statuses.has("ok")) return "Данные собираются, но за выбранный период трафика ещё нет.";
-  if (statuses.has("unreachable"))
-    return "Серверы недоступны по SSH — проверьте доступ. Как только связь появится, сбор возобновится.";
-  if (statuses.has("container_down")) return "Контейнеры протоколов остановлены. Запустите их — сбор возобновится.";
-  if (statuses.has("stats_disabled"))
-    return "Точная статистика включается автоматически — данные появятся при ближайшем сборе (обычно пара минут).";
-  return "Статистика собирается в фоне по SSH — данные появятся при ближайшем сборе.";
+  if (statuses.has("ok")) return t("mon.diagNoTrafficYet");
+  if (statuses.has("unreachable")) return t("mon.diagUnreachable");
+  if (statuses.has("container_down")) return t("mon.diagContainerDown");
+  if (statuses.has("stats_disabled")) return t("mon.diagStatsDisabled");
+  return t("mon.diagCollectingBackground");
 }
 
 const PERIODS = ["1h", "24h", "7d", "30d", "90d", "365d"] as const;
 type Period = (typeof PERIODS)[number];
-const PERIOD_LABEL: Record<Period, string> = {
-  "1h": "1 час",
-  "24h": "24 часа",
-  "7d": "7 дней",
-  "30d": "30 дней",
-  "90d": "90 дней",
-  "365d": "Год",
-};
+function periodLabel(t: TFunc, p: Period): string {
+  switch (p) {
+    case "1h":
+      return t("mon.period1h");
+    case "24h":
+      return t("period.24h");
+    case "7d":
+      return t("period.7d");
+    case "30d":
+      return t("period.30d");
+    case "90d":
+      return t("period.90d");
+    case "365d":
+      return t("mon.periodYear");
+  }
+}
 
-const PROTO_LABEL: Record<string, string> = {
-  awg: "AmneziaWG",
-  awg_legacy: "AWG Legacy",
-  xray: "Xray",
-  xray_xhttp: "Xray XHTTP",
-  hysteria2: "Hysteria2",
-  openvpn: "OpenVPN",
-  outline: "Outline",
-};
+function protoLabel(t: TFunc, p: string): string {
+  switch (p) {
+    case "awg":
+      return t("proto.awg");
+    case "awg_legacy":
+      return t("proto.awgLegacy");
+    case "xray":
+      return t("proto.xray");
+    case "xray_xhttp":
+      return t("proto.xrayXhttp");
+    case "hysteria2":
+      return t("proto.hysteria2");
+    case "openvpn":
+      return t("proto.openvpn");
+    case "outline":
+      return t("proto.outline");
+    default:
+      return p;
+  }
+}
 
 // человекочитаемые байты (как в ServerDetail)
+const BYTE_UNIT_KEYS = ["unit.byte", "unit.kilobyte", "unit.megabyte", "unit.gigabyte", "unit.terabyte"] as const;
 export const fmtBytes = (n: number | null | undefined): string => {
   if (n == null) return "—";
-  const u = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
   let v = n;
   let i = 0;
-  while (v >= 1024 && i < u.length - 1) {
+  while (v >= 1024 && i < BYTE_UNIT_KEYS.length - 1) {
     v /= 1024;
     i++;
   }
-  return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${tg(BYTE_UNIT_KEYS[i])}`;
 };
-export const fmtSpeed = (bytesPerSec: number): string => (bytesPerSec > 0 ? `${fmtBytes(bytesPerSec)}/с` : "—");
+export const fmtSpeed = (bytesPerSec: number): string =>
+  bytesPerSec > 0 ? `${fmtBytes(bytesPerSec)}/${tg("unit.perSecond")}` : "—";
 
-const fmtAgo = (at: number | null): string => {
+const fmtAgo = (t: TFunc, at: number | null): string => {
   if (at == null) return "—";
   const s = Math.max(0, Math.floor(Date.now() / 1000 - at));
-  if (s < 60) return "только что";
-  if (s < 3600) return `${Math.floor(s / 60)} мин назад`;
-  if (s < 86400) return `${Math.floor(s / 3600)} ч назад`;
-  return `${Math.floor(s / 86400)} дн назад`;
+  if (s < 60) return t("mon.justNow");
+  if (s < 3600) return t("mon.minutesAgo", { n: Math.floor(s / 60) });
+  if (s < 86400) return t("mon.hoursAgo", { n: Math.floor(s / 3600) });
+  return t("mon.daysAgo", { n: Math.floor(s / 86400) });
 };
 
 type SortKey = "traffic" | "speed" | "name";
 
-function OnlineDot({ online }: { online: boolean }) {
+function OnlineDot({ online, title }: { online: boolean; title: string }) {
   return (
     <span
-      title={online ? "онлайн" : "офлайн"}
+      title={title}
       style={{
         display: "inline-block",
         width: 9,
@@ -117,10 +135,10 @@ function SummaryTile({ label, value, sub }: { label: string; value: string; sub?
   );
 }
 
-function clientName(c: MonitoringClient): string {
+function clientName(t: TFunc, c: MonitoringClient): string {
   if (c.userName || c.deviceName) return [c.userName, c.deviceName].filter(Boolean).join(" · ");
   // external-клиент (заведён мимо панели) — покажем имя из Amnezia clientsTable, если оно есть
-  if (c.external) return c.extName || "Внешний клиент";
+  if (c.external) return c.extName || t("mon.externalClient");
   return c.clientId ?? "—";
 }
 
@@ -138,6 +156,7 @@ export function ClientTrafficModal({
   periodLabel: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const sid = client.serverId ?? "";
   const tq = useQuery({
     queryKey: ["serverTraffic", sid, period],
@@ -168,35 +187,37 @@ export function ClientTrafficModal({
   const hasData = rxPoints.length > 0 || txPoints.length > 0;
   // подпись интервала точки графика по ярусу series (0 = сырьё/интервал сбора)
   const bucket = tq.data?.seriesBucketSeconds ?? 0;
-  const bucketLabel = bucket >= 86400 ? "за сутки" : bucket >= 3600 ? "за час" : "за интервал";
+  const bucketLabel = bucket >= 86400 ? t("mon.perDay") : bucket >= 3600 ? t("mon.perHour") : t("mon.perInterval");
 
   return (
-    <Modal title={`Трафик клиента · ${clientName(client)}`} onClose={onClose} wide>
+    <Modal title={t("mon.clientTrafficTitle", { name: clientName(t, client) })} onClose={onClose} wide>
       <div className="stack" style={{ gap: 12 }}>
         <div className="muted-3" style={{ fontSize: 12.5 }}>
-          {PROTO_LABEL[client.proto] ?? client.proto}
-          {client.serverName ? ` · ${client.serverName}` : ""} · за {periodLabel} · значения в МБ {bucketLabel}
+          {protoLabel(t, client.proto)}
+          {client.serverName ? ` · ${client.serverName}` : ""}
+          {" · "}
+          {t("mon.forPeriodValuesInMb", { period: periodLabel, bucket: bucketLabel })}
         </div>
         {tq.isLoading ? (
           <div style={{ padding: 24, textAlign: "center" }}>
             <Spinner />
           </div>
         ) : !hasData ? (
-          <Empty title="Пока нет точек трафика" sub="История накапливается по мере сбора статистики в фоне." />
+          <Empty title={t("mon.noTrafficPointsYet")} sub={t("mon.historyAccumulatesHint")} />
         ) : (
           <LineChart
             lines={[
-              { points: txPoints, color: "#3b82f6", label: "Скачано (download), МБ" },
-              { points: rxPoints, color: "#22c55e", label: "Отдано (upload), МБ" },
+              { points: txPoints, color: "#3b82f6", label: t("mon.downloadedMb") },
+              { points: rxPoints, color: "#22c55e", label: t("mon.uploadedMb") },
             ]}
           />
         )}
         <div className="rowflex" style={{ gap: 16, fontSize: 13, flexWrap: "wrap" }}>
           <span>
-            Всего скачано: <b>{fmtBytes(client.txTotal)}</b>
+            {t("mon.totalDownloaded")} <b>{fmtBytes(client.txTotal)}</b>
           </span>
           <span>
-            Всего отдано: <b>{fmtBytes(client.rxTotal)}</b>
+            {t("mon.totalUploaded")} <b>{fmtBytes(client.rxTotal)}</b>
           </span>
         </div>
       </div>
@@ -230,9 +251,9 @@ export function MonitoringScreen() {
       v.pause ? q.pauseServerClient(v.sid, v.cid) : q.resumeServerClient(v.sid, v.cid),
     onSuccess: (_r, v) => {
       qc.invalidateQueries({ queryKey: ["monitoring"] });
-      toast(v.pause ? "Конфиг приостановлен" : "Конфиг возобновлён");
+      toast(v.pause ? t("mon.configPaused") : t("mon.configResumed"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("common.error")),
   });
 
   const clients = mq.data?.clients ?? [];
@@ -246,8 +267,8 @@ export function MonitoringScreen() {
     return [...seen.entries()] as [string, string][];
   }, [clients]);
   const protoOpts = useMemo(
-    () => [...new Set(clients.map((c) => c.proto))].map((p) => [p, PROTO_LABEL[p] ?? p] as [string, string]),
-    [clients],
+    () => [...new Set(clients.map((c) => c.proto))].map((p) => [p, protoLabel(t, p)] as [string, string]),
+    [clients, t],
   );
   const userOpts = useMemo(() => {
     const seen = new Set<string>();
@@ -268,7 +289,7 @@ export function MonitoringScreen() {
     const cmp: Record<SortKey, (a: MonitoringClient, b: MonitoringClient) => number> = {
       traffic: (a, b) => b.rxTotal + b.txTotal - (a.rxTotal + a.txTotal),
       speed: (a, b) => b.rxSpeed + b.txSpeed - (a.rxSpeed + a.txSpeed),
-      name: (a, b) => clientName(a).localeCompare(clientName(b), "ru"),
+      name: (a, b) => clientName(t, a).localeCompare(clientName(t, b), "ru"),
     };
     // онлайн — всегда выше при равенстве по остальным критериям
     out = [...out].sort((a, b) => cmp[sort](a, b) || Number(b.online) - Number(a.online));
@@ -294,10 +315,7 @@ export function MonitoringScreen() {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <ScreenHeader
-        title={t("nav.monitoring")}
-        sub="Кто онлайн, по какому протоколу и сколько трафика — по всем вашим серверам"
-      />
+      <ScreenHeader title={t("nav.monitoring")} sub={t("mon.headerSub")} />
 
       {/* Отдельная строка управления: на десктопе — таблетки-периоды, на мобиле — компактный select
           (иначе описание и период не помещаются в одну строку). Свежесть и «обновить» — справа. */}
@@ -305,7 +323,7 @@ export function MonitoringScreen() {
         <div className="period-pills">
           {PERIODS.map((p) => (
             <Btn key={p} variant={p === period ? "primary" : "ghost"} sm onClick={() => setPeriod(p)}>
-              {PERIOD_LABEL[p]}
+              {periodLabel(t, p)}
             </Btn>
           ))}
         </div>
@@ -313,22 +331,18 @@ export function MonitoringScreen() {
           className="period-select"
           value={period}
           onChange={(e) => setPeriod(e.target.value as Period)}
-          aria-label="Период"
+          aria-label={t("mon.periodAriaLabel")}
         >
           {PERIODS.map((p) => (
             <option key={p} value={p}>
-              {PERIOD_LABEL[p]}
+              {periodLabel(t, p)}
             </option>
           ))}
         </select>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
           {freshness != null && (
-            <span
-              className="muted-3"
-              style={{ fontSize: 12, whiteSpace: "nowrap" }}
-              title="Свежесть последнего сбора по SSH"
-            >
-              обновлено {fmtAgo(freshness)}
+            <span className="muted-3" style={{ fontSize: 12, whiteSpace: "nowrap" }} title={t("mon.freshnessHint")}>
+              {t("mon.updatedAgo", { ago: fmtAgo(t, freshness) })}
             </span>
           )}
           <Btn
@@ -336,8 +350,8 @@ export function MonitoringScreen() {
             sm
             onClick={() => mq.refetch()}
             disabled={mq.isFetching}
-            title="Обновить метрики"
-            aria-label="Обновить"
+            title={t("mon.refreshMetrics")}
+            aria-label={t("mon.refresh")}
           >
             {mq.isFetching ? <Spinner /> : <Icon name="refresh" size={16} />}
           </Btn>
@@ -347,20 +361,38 @@ export function MonitoringScreen() {
       {/* сводка */}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
         <SummaryTile
-          label="Онлайн сейчас"
+          label={t("mon.onlineNow")}
           value={summary ? String(summary.clientsOnline) : "—"}
-          sub={summary ? `из ${summary.clientsTotal} клиентов` : undefined}
+          sub={summary ? t("mon.ofClients", { n: summary.clientsTotal }) : undefined}
         />
-        <SummaryTile label="Скачано (download)" value={fmtBytes(summary?.txTotal)} sub={`за ${PERIOD_LABEL[period]}`} />
-        <SummaryTile label="Отдано (upload)" value={fmtBytes(summary?.rxTotal)} sub={`за ${PERIOD_LABEL[period]}`} />
-        <SummaryTile label="Серверов" value={summary ? String(summary.serversTotal) : "—"} />
+        <SummaryTile
+          label={t("mon.downloadedLabel")}
+          value={fmtBytes(summary?.txTotal)}
+          sub={t("mon.forPeriod", { period: periodLabel(t, period) })}
+        />
+        <SummaryTile
+          label={t("mon.uploadedLabel")}
+          value={fmtBytes(summary?.rxTotal)}
+          sub={t("mon.forPeriod", { period: periodLabel(t, period) })}
+        />
+        <SummaryTile label={t("mon.serversLabel")} value={summary ? String(summary.serversTotal) : "—"} />
       </div>
 
       {/* фильтры (мультивыбор через выпадашки: пусто = все) + сортировка */}
       <div className="rowflex" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <MultiSelect label="Серверы" options={serverOpts} selected={selServers} onChange={setSelServers} />
-        <MultiSelect label="Протоколы" options={protoOpts} selected={selProtos} onChange={setSelProtos} />
-        <MultiSelect label="Пользователи" options={userOpts} selected={selUsers} onChange={setSelUsers} />
+        <MultiSelect
+          label={t("mon.serversFilterLabel")}
+          options={serverOpts}
+          selected={selServers}
+          onChange={setSelServers}
+        />
+        <MultiSelect
+          label={t("mon.protocolsFilterLabel")}
+          options={protoOpts}
+          selected={selProtos}
+          onChange={setSelProtos}
+        />
+        <MultiSelect label={t("mon.usersFilterLabel")} options={userOpts} selected={selUsers} onChange={setSelUsers} />
         {anyFilter && (
           <Btn
             variant="ghost"
@@ -371,19 +403,19 @@ export function MonitoringScreen() {
               setSelUsers([]);
             }}
           >
-            Сбросить
+            {t("mon.resetFilters")}
           </Btn>
         )}
         <span className="muted-3" style={{ fontSize: 12 }}>
-          Показано: {rows.length}
+          {t("mon.shown", { n: rows.length })}
         </span>
         <div style={{ flex: 1 }} />
         <span className="muted-3" style={{ fontSize: 12 }}>
-          Сортировка:
+          {t("mon.sortLabel")}
         </span>
         {(["traffic", "speed", "name"] as SortKey[]).map((s) => (
           <Btn key={s} variant={s === sort ? "primary" : "ghost"} sm onClick={() => setSort(s)}>
-            {s === "traffic" ? "по трафику" : s === "speed" ? "по скорости" : "по имени"}
+            {s === "traffic" ? t("mon.sortByTraffic") : s === "speed" ? t("mon.sortBySpeed") : t("mon.sortByName")}
           </Btn>
         ))}
       </div>
@@ -398,11 +430,11 @@ export function MonitoringScreen() {
           // сбой запроса ≠ «нет данных»: данные не потеряны, предлагаем повторить
           <div style={{ padding: 8 }}>
             <Empty
-              title="Не удалось загрузить мониторинг"
-              sub="Это сбой запроса, а не отсутствие данных. Нажмите «Обновить»."
+              title={t("mon.loadFailedTitle")}
+              sub={t("mon.loadFailedSub")}
               action={
                 <Btn variant="primary" sm onClick={() => mq.refetch()} disabled={mq.isFetching}>
-                  {mq.isFetching ? <Spinner /> : "Обновить"}
+                  {mq.isFetching ? <Spinner /> : t("mon.refresh")}
                 </Btn>
               }
             />
@@ -410,10 +442,8 @@ export function MonitoringScreen() {
         ) : rows.length === 0 ? (
           <div style={{ padding: 8 }}>
             <Empty
-              title="Пока нет данных о трафике"
-              sub={
-                clients.length === 0 ? collectionDiagnosis(mq.data?.collection) : "Под текущие фильтры нет клиентов."
-              }
+              title={t("mon.noTrafficDataYet")}
+              sub={clients.length === 0 ? collectionDiagnosis(t, mq.data?.collection) : t("mon.noClientsUnderFilters")}
             />
           </div>
         ) : (
@@ -421,14 +451,14 @@ export function MonitoringScreen() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={th}>Клиент</th>
-                  <th style={th}>Протокол</th>
-                  <th style={th}>Сервер</th>
-                  <th style={{ ...th, textAlign: "center" }}>Онлайн</th>
-                  <th style={{ ...th, textAlign: "right" }}>Скачал</th>
-                  <th style={{ ...th, textAlign: "right" }}>Отдал</th>
-                  <th style={{ ...th, textAlign: "right" }}>Скорость ↓/↑</th>
-                  <th style={{ ...th, textAlign: "right" }}>Активность</th>
+                  <th style={th}>{t("mon.colClient")}</th>
+                  <th style={th}>{t("mon.colProtocol")}</th>
+                  <th style={th}>{t("mon.colServer")}</th>
+                  <th style={{ ...th, textAlign: "center" }}>{t("mon.colOnline")}</th>
+                  <th style={{ ...th, textAlign: "right" }}>{t("mon.colDownloaded")}</th>
+                  <th style={{ ...th, textAlign: "right" }}>{t("mon.colUploaded")}</th>
+                  <th style={{ ...th, textAlign: "right" }}>{t("mon.colSpeed")}</th>
+                  <th style={{ ...th, textAlign: "right" }}>{t("mon.colActivity")}</th>
                   <th style={{ ...th, textAlign: "center" }} />
                 </tr>
               </thead>
@@ -438,34 +468,36 @@ export function MonitoringScreen() {
                     key={`${c.serverId}:${c.proto}:${c.clientId}`}
                     onClick={() => c.serverId && setSelected(c)}
                     style={c.serverId ? { cursor: "pointer" } : undefined}
-                    title={c.serverId ? "Показать график трафика" : undefined}
+                    title={c.serverId ? t("mon.showTrafficChart") : undefined}
                   >
                     <td style={td}>
-                      <div style={{ fontWeight: 600 }}>{clientName(c)}</div>
+                      <div style={{ fontWeight: 600 }}>{clientName(t, c)}</div>
                       {c.external && (
                         <div className="muted-3" style={{ fontSize: 11.5 }}>
-                          вне панели
+                          {t("mon.outsidePanel")}
                         </div>
                       )}
                     </td>
                     <td style={td}>
-                      <span className="badge">{PROTO_LABEL[c.proto] ?? c.proto}</span>
+                      <span className="badge">{protoLabel(t, c.proto)}</span>
                     </td>
                     <td style={{ ...td, color: "var(--text-2)" }}>{c.serverName || "—"}</td>
                     <td style={{ ...td, textAlign: "center" }}>
-                      <OnlineDot online={c.online} />
+                      <OnlineDot online={c.online} title={c.online ? t("status.online") : t("status.offline")} />
                     </td>
                     <td style={num}>{fmtBytes(c.txTotal)}</td>
                     <td style={num}>{fmtBytes(c.rxTotal)}</td>
                     <td style={num}>{c.online ? `${fmtSpeed(c.txSpeed)} / ${fmtSpeed(c.rxSpeed)}` : "—"}</td>
-                    <td style={{ ...num, color: "var(--text-3)" }}>{c.online ? "сейчас" : fmtAgo(c.lastSeen)}</td>
+                    <td style={{ ...num, color: "var(--text-3)" }}>
+                      {c.online ? t("mon.rightNow") : fmtAgo(t, c.lastSeen)}
+                    </td>
                     <td style={{ ...td, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
                       {!c.external && c.configId && c.serverId && c.status !== "revoked" && (
                         <Btn
                           variant="ghost"
                           sm
                           disabled={pauseMut.isPending}
-                          title={c.status === "active" ? "Приостановить конфиг" : "Возобновить конфиг"}
+                          title={c.status === "active" ? t("mon.pauseConfig") : t("mon.resumeConfig")}
                           onClick={() =>
                             pauseMut.mutate({
                               sid: c.serverId as string,
@@ -489,7 +521,7 @@ export function MonitoringScreen() {
       {mq.isError && (
         <div className="muted" style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
           <Icon name="refresh" size={15} />
-          Не удалось загрузить мониторинг. Обновление произойдёт автоматически.
+          {t("mon.loadFailedAutoRetry")}
         </div>
       )}
 
@@ -497,7 +529,7 @@ export function MonitoringScreen() {
         <ClientTrafficModal
           client={selected}
           period={period}
-          periodLabel={PERIOD_LABEL[period]}
+          periodLabel={periodLabel(t, period)}
           onClose={() => setSelected(null)}
         />
       )}

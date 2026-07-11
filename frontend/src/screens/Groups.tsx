@@ -7,14 +7,6 @@ import type { Group, Pool } from "../lib/types";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
 
-function plural(n: number, a: string, b: string, c: string): string {
-  const n10 = n % 10;
-  const n100 = n % 100;
-  if (n10 === 1 && n100 !== 11) return a;
-  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return b;
-  return c;
-}
-
 function mono2(name: string): string {
   return (name || "?").slice(0, 2).toUpperCase();
 }
@@ -50,7 +42,7 @@ export function GroupsScreen() {
       qc.invalidateQueries({ queryKey: ["groups"] });
       setCreating(false);
       setName("");
-      toast("Сохранено");
+      toast(t("groups.groupSaved"));
       go("group", { groupId: g.id });
     },
   });
@@ -67,19 +59,19 @@ export function GroupsScreen() {
           name: g.name,
           token: g.token,
           mono: mono2(g.name),
-          memberLabel: `${g.members.length} ${plural(g.members.length, "участник", "участника", "участников")}`,
-          accessSummary: count ? `${count} ${plural(count, "сервер", "сервера", "серверов")}` : "без доступов",
+          memberLabel: t("groups.membersCount", { n: g.members.length }),
+          accessSummary: count ? t("groups.serversCount", { n: count }) : t("groups.noAccess"),
           avatars: g.members.slice(0, 4),
           extra: g.members.length > 4 ? `+${g.members.length - 4}` : "",
         };
       }),
-    [groups, pools],
+    [groups, pools, t],
   );
 
   function submit() {
     const n = name.trim();
     if (!n) {
-      toast("Введите название");
+      toast(t("groups.enterName"));
       return;
     }
     createMut.mutate({ name: n });
@@ -88,13 +80,13 @@ export function GroupsScreen() {
   const action = (
     <Btn variant="primary" onClick={() => setCreating(true)}>
       <Icon name="plus" size={18} />
-      Создать группу
+      {t("groups.createGroup")}
     </Btn>
   );
 
   return (
     <div className="stack">
-      <ScreenHeader title="Группы" sub="Кому вы раздаёте доступ" action={action} />
+      <ScreenHeader title={t("groups.title")} sub={t("groups.subtitle")} action={action} />
 
       {groupsQ.isLoading ? (
         <div className="grid">
@@ -104,11 +96,11 @@ export function GroupsScreen() {
         </div>
       ) : groups.length === 0 ? (
         <Empty
-          title="Нет групп"
-          sub="Создайте группу — например «Семья» — и пригласите близких по ссылке."
+          title={t("groups.noGroups")}
+          sub={t("groups.noGroupsHint")}
           action={
             <Btn variant="primary" onClick={() => setCreating(true)}>
-              Создать группу
+              {t("groups.createGroup")}
             </Btn>
           }
         />
@@ -175,7 +167,7 @@ export function GroupsScreen() {
               >
                 <Icon name="access" size={15} />
                 <span className="muted" style={{ fontSize: 13 }}>
-                  Доступ: {c.accessSummary}
+                  {t("groups.accessSummary", { summary: c.accessSummary })}
                 </span>
                 <div style={{ flex: 1 }} />
                 {/* Быстрый шаринг инвайт-ссылки прямо из списка — без захода в детали.
@@ -208,7 +200,7 @@ export function GroupsScreen() {
 
       {creating && (
         <Modal
-          title="Новая группа"
+          title={t("groups.newGroup")}
           onClose={() => {
             setCreating(false);
             setName("");
@@ -222,20 +214,20 @@ export function GroupsScreen() {
                   setName("");
                 }}
               >
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn variant="primary" block onClick={submit} disabled={createMut.isPending}>
-                {createMut.isPending ? "Сохранение…" : "Сохранить"}
+                {createMut.isPending ? t("common.saving") : t("common.save")}
               </Btn>
             </>
           }
         >
-          <Field label="Название группы">
+          <Field label={t("groups.groupName")}>
             <input
               className="input"
               value={name}
               autoFocus
-              placeholder="Семья"
+              placeholder={t("groups.groupNamePlaceholder")}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") submit();

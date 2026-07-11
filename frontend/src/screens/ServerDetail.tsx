@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
+import { type TFunc, type TKey, useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import {
   bytesToTrafficInput,
@@ -11,7 +12,7 @@ import {
   trafficValueToBytes,
 } from "../lib/trafficUnits";
 import type { MonitoringClient, Protocol, Server, ServerMetricSample, Vpn, VpnType } from "../lib/types";
-import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_DESC, VPN_ICON, VPN_LABEL } from "../lib/types";
+import { PROTO_STATE_LABEL, VENDOR_PROTOCOLS, VPN_ICON, VPN_LABEL, vpnDesc } from "../lib/types";
 import { vpnLogo } from "../lib/vpnLogos";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
@@ -28,9 +29,15 @@ const hasRunningXray = (s: Server): boolean =>
   (s.protocols ?? []).some((p) => p.proto === "xray" && p.installed && p.running);
 
 // человекочитаемые размеры/время для карточки ресурсов
-const fmtBytes = (n: number | null): string => {
+const fmtBytes = (t: TFunc, n: number | null): string => {
   if (n == null) return "—";
-  const u = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  const u = [
+    t("srvDetail.unitByte"),
+    t("srvDetail.unitKb"),
+    t("srvDetail.unitMb"),
+    t("srvDetail.unitGb"),
+    t("srvDetail.unitTb"),
+  ];
   let v = n;
   let i = 0;
   while (v >= 1024 && i < u.length - 1) {
@@ -39,14 +46,14 @@ const fmtBytes = (n: number | null): string => {
   }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
 };
-const fmtUptime = (s: number | null): string => {
+const fmtUptime = (t: TFunc, s: number | null): string => {
   if (s == null) return "—";
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (d > 0) return `${d}д ${h}ч`;
-  if (h > 0) return `${h}ч ${m}м`;
-  return `${m}м`;
+  if (d > 0) return t("srvDetail.uptimeDaysHours", { d, h });
+  if (h > 0) return t("srvDetail.uptimeHoursMin", { h, m });
+  return t("srvDetail.uptimeMin", { m });
 };
 const pct = (used: number | null, total: number | null): number | null =>
   used != null && total != null && total > 0 ? Math.round((used / total) * 100) : null;
@@ -68,20 +75,24 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
   );
 }
 
-const PROTO_ONLINE_LABEL: Record<string, string> = {
-  awg: "AmneziaWG",
-  awg_legacy: "AWG Legacy",
-  xray: "Xray",
-  xray_xhttp: "Xray XHTTP",
-  hysteria2: "Hysteria2",
-  openvpn: "OpenVPN",
-  outline: "Outline",
+// ключи i18n для проколов вендоров (переиспользуем общие proto.* ключи)
+const PROTO_LABEL_KEY: Record<string, TKey> = {
+  awg: "proto.awg",
+  awg_legacy: "proto.awgLegacy",
+  xray: "proto.xray",
+  xray_xhttp: "proto.xrayXhttp",
+  hysteria2: "proto.hysteria2",
+  openvpn: "proto.openvpn",
+  outline: "proto.outline",
 };
+const protoLabel = (t: TFunc, proto: string): string => (PROTO_LABEL_KEY[proto] ? t(PROTO_LABEL_KEY[proto]) : proto);
 // подсказка, ПОЧЕМУ online неизвестен (—) для протокола
-const ONLINE_NA_HINT: Record<string, string> = {
-  outline: "Shadowsocks не поддерживает счётчик онлайн-сессий",
-  openvpn: "Онлайн для OpenVPN пока не поддержан",
-};
+const onlineNaHint = (t: TFunc, proto: string): string | undefined =>
+  proto === "outline"
+    ? t("srvDetail.onlineNaOutline")
+    : proto === "openvpn"
+      ? t("srvDetail.onlineNaOpenvpn")
+      : undefined;
 // протоколы с точной статистикой (Xray Stats API / Hysteria2 trafficStats) — включается автоматически
 const STATS_ENABLABLE = ["xray", "xray_xhttp", "hysteria2"];
 
@@ -89,14 +100,17 @@ const STATS_ENABLABLE = ["xray", "xray_xhttp", "hysteria2"];
 // Сбор — в monitor-тике по SSH (best-effort); поллинг здесь — как и остальной ServerDetail.
 const METRIC_PERIODS = ["24h", "7d", "30d", "180d"] as const;
 type MetricPeriod = (typeof METRIC_PERIODS)[number];
-const METRIC_PERIOD_LABEL: Record<MetricPeriod, string> = {
-  "24h": "24 часа",
-  "7d": "7 дней",
-  "30d": "30 дней",
-  "180d": "180 дней",
-};
+const metricPeriodLabel = (t: TFunc, p: MetricPeriod): string =>
+  p === "24h"
+    ? t("period.24h")
+    : p === "7d"
+      ? t("period.7d")
+      : p === "30d"
+        ? t("period.30d")
+        : t("srvDetail.period180d");
 
 function ServerMetricsCard({ serverId, online }: { serverId: string; online: boolean }) {
+  const t = useT();
   const [period, setPeriod] = useState<MetricPeriod>("24h");
   const mq = useQuery({
     queryKey: ["serverMetrics", serverId, period],
@@ -123,12 +137,12 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
     <div className="card stack">
       <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <div className="muted-3" style={label}>
-          Ресурсы сервера
+          {t("srvDetail.serverResources")}
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           {METRIC_PERIODS.map((p) => (
             <Btn key={p} variant={p === period ? "primary" : "ghost"} sm onClick={() => setPeriod(p)}>
-              {METRIC_PERIOD_LABEL[p]}
+              {metricPeriodLabel(t, p)}
             </Btn>
           ))}
         </div>
@@ -138,57 +152,55 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
         <Spinner />
       ) : !cur ? (
         <p className="muted" style={{ fontSize: 13 }}>
-          {online
-            ? "Метрики появятся после ближайшего цикла мониторинга (собираются по SSH)."
-            : "Сервер офлайн — метрики ресурсов не собираются."}
+          {online ? t("srvDetail.metricsWillAppear") : t("srvDetail.metricsOfflineHint")}
         </p>
       ) : (
         <>
           <div className="grid">
             <Metric label="CPU" value={cur.cpuPct != null ? `${cur.cpuPct}%` : "—"} sub={`load ${cur.load1 ?? "—"}`} />
             <Metric
-              label="Память"
+              label={t("srvDetail.memory")}
               value={memPct != null ? `${memPct}%` : "—"}
-              sub={`${fmtBytes(cur.memUsed)} / ${fmtBytes(cur.memTotal)}`}
+              sub={`${fmtBytes(t, cur.memUsed)} / ${fmtBytes(t, cur.memTotal)}`}
             />
             <Metric
-              label="Диск /"
+              label={t("srvDetail.diskRoot")}
               value={diskPct != null ? `${diskPct}%` : "—"}
-              sub={`${fmtBytes(cur.diskUsed)} / ${fmtBytes(cur.diskTotal)}`}
+              sub={`${fmtBytes(t, cur.diskUsed)} / ${fmtBytes(t, cur.diskTotal)}`}
             />
-            <Metric label="Аптайм" value={fmtUptime(cur.uptimeS)} />
-            <Metric label="TCP-соединения" value={cur.tcpEstab != null ? String(cur.tcpEstab) : "—"} />
+            <Metric label={t("srvDetail.uptime")} value={fmtUptime(t, cur.uptimeS)} />
+            <Metric label={t("srvDetail.tcpConnections")} value={cur.tcpEstab != null ? String(cur.tcpEstab) : "—"} />
             {cur.onlineClients != null && (
-              <Metric label="Онлайн-клиенты" value={String(cur.onlineClients)} sub="всего по протоколам" />
+              <Metric
+                label={t("srvDetail.onlineClients")}
+                value={String(cur.onlineClients)}
+                sub={t("srvDetail.totalByProtocols")}
+              />
             )}
           </div>
 
           {/* Честный online по протоколам: число — точное; «—» = неизвестно (stats не включён / нет счётчика) */}
           <div className="stack" style={{ gap: 8 }}>
-            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Онлайн по протоколам</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{t("srvDetail.onlineByProtocol")}</div>
             <div className="rowflex" style={{ gap: 6, flexWrap: "wrap" }}>
               {Object.entries(cur.onlineByProto ?? {}).map(([proto, n]) => (
                 <span
                   key={proto}
                   className={`badge ${n == null ? "" : "ok"}`}
-                  title={
-                    n == null
-                      ? (ONLINE_NA_HINT[proto] ?? "Точная статистика включается автоматически при ближайшем сборе")
-                      : ""
-                  }
+                  title={n == null ? (onlineNaHint(t, proto) ?? t("srvDetail.statsAutoEnableHint")) : ""}
                 >
-                  {PROTO_ONLINE_LABEL[proto] ?? proto}: {n == null ? "—" : n}
+                  {protoLabel(t, proto)}: {n == null ? "—" : n}
                 </span>
               ))}
               {Object.keys(cur.onlineByProto ?? {}).length === 0 && (
                 <span className="muted-3" style={{ fontSize: 12.5 }}>
-                  нет данных
+                  {t("srvDetail.noData")}
                 </span>
               )}
             </div>
             {Object.entries(cur.onlineByProto ?? {}).some(([p, n]) => STATS_ENABLABLE.includes(p) && n == null) && (
               <div className="muted-3" style={{ fontSize: 12 }}>
-                Точная статистика Xray/Hysteria2 включается автоматически — цифры появятся после ближайшего сбора.
+                {t("srvDetail.statsAutoEnableLong")}
               </div>
             )}
           </div>
@@ -196,18 +208,22 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
           {samples.length > 1 && (
             <div className="stack" style={{ gap: 14, marginTop: 4 }}>
               <div>
-                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>CPU / память (%)</div>
+                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>
+                  {t("srvDetail.cpuMemoryChartTitle")}
+                </div>
                 <LineChart
                   height={130}
                   lines={[
-                    line((s) => s.cpuPct, "#3b82f6", "CPU %"),
-                    line((s) => pct(s.memUsed, s.memTotal), "#a855f7", "Память %"),
+                    line((s) => s.cpuPct, "#3b82f6", t("srvDetail.cpuPct")),
+                    line((s) => pct(s.memUsed, s.memTotal), "#a855f7", t("srvDetail.memoryPct")),
                   ]}
                 />
               </div>
               <div>
-                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>TCP-соединения</div>
-                <LineChart height={130} lines={[line((s) => s.tcpEstab, "#22c55e", "TCP established")]} />
+                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>
+                  {t("srvDetail.tcpConnections")}
+                </div>
+                <LineChart height={130} lines={[line((s) => s.tcpEstab, "#22c55e", t("srvDetail.tcpEstablished"))]} />
               </div>
             </div>
           )}
@@ -217,27 +233,19 @@ function ServerMetricsCard({ serverId, online }: { serverId: string; online: boo
   );
 }
 
-const PROTO_TRAFFIC_LABEL: Record<string, string> = {
-  awg: "AmneziaWG",
-  awg_legacy: "AWG Legacy",
-  xray: "Xray",
-  xray_xhttp: "Xray XHTTP",
-  hysteria2: "Hysteria2",
-  openvpn: "OpenVPN",
-  outline: "Outline",
-};
-const clientLabel = (c: MonitoringClient): string =>
+const clientLabel = (t: TFunc, c: MonitoringClient): string =>
   c.userName || c.deviceName
     ? [c.userName, c.deviceName].filter(Boolean).join(" · ")
     : c.external
       ? // external-клиент (заведён мимо панели) — имя из Amnezia clientsTable, если есть
-        c.extName || "Внешний клиент"
+        c.extName || t("srvDetail.externalClient")
       : (c.clientId ?? "—");
-const fmtSpeed = (bps: number): string => (bps > 0 ? `${fmtBytes(bps)}/с` : "—");
+const fmtSpeed = (t: TFunc, bps: number): string => (bps > 0 ? `${fmtBytes(t, bps)}/${t("srvDetail.perSecond")}` : "—");
 
 // Карточка «Клиенты сервера»: per-client трафик+онлайн этого сервера (переиспользует global
 // overview через per-server endpoint /servers/{id}/traffic). Онлайн — точка, трафик — за 24ч.
 function ServerClientsCard({ serverId, online }: { serverId: string; online: boolean }) {
+  const t = useT();
   const tq = useQuery({
     queryKey: ["serverTraffic", serverId],
     queryFn: () => q.serverTraffic(serverId, "24h"),
@@ -271,27 +279,25 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
   return (
     <div className="card stack">
       <div className="muted-3" style={label}>
-        Клиенты сервера · трафик за 24ч
+        {t("srvDetail.clientsTrafficTitle")}
       </div>
       {tq.isLoading ? (
         <Spinner />
       ) : clients.length === 0 ? (
         <p className="muted" style={{ fontSize: 13 }}>
-          {online
-            ? "Данных о клиентах ещё нет — статистика собирается в фоне по SSH и появится после ближайшего сбора."
-            : "Сервер офлайн — статистика клиентов не собирается."}
+          {online ? t("srvDetail.clientsWillAppear") : t("srvDetail.clientsOfflineHint")}
         </p>
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={th}>Клиент</th>
-                <th style={th}>Протокол</th>
-                <th style={{ ...th, textAlign: "center" }}>Онлайн</th>
-                <th style={{ ...th, textAlign: "right" }}>Скачал</th>
-                <th style={{ ...th, textAlign: "right" }}>Отдал</th>
-                <th style={{ ...th, textAlign: "right" }}>Скорость ↓/↑</th>
+                <th style={th}>{t("srvDetail.client")}</th>
+                <th style={th}>{t("srvDetail.protocol")}</th>
+                <th style={{ ...th, textAlign: "center" }}>{t("status.online")}</th>
+                <th style={{ ...th, textAlign: "right" }}>{t("srvDetail.downloaded")}</th>
+                <th style={{ ...th, textAlign: "right" }}>{t("srvDetail.uploaded")}</th>
+                <th style={{ ...th, textAlign: "right" }}>{t("srvDetail.speedDownUp")}</th>
               </tr>
             </thead>
             <tbody>
@@ -300,22 +306,22 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
                   key={`${c.proto}:${c.clientId}`}
                   onClick={() => setSelected({ ...c, serverId })}
                   style={{ cursor: "pointer" }}
-                  title="Показать график трафика"
+                  title={t("srvDetail.showTrafficChart")}
                 >
                   <td style={td}>
-                    <div style={{ fontWeight: 600 }}>{clientLabel(c)}</div>
+                    <div style={{ fontWeight: 600 }}>{clientLabel(t, c)}</div>
                     {c.external && (
                       <div className="muted-3" style={{ fontSize: 11 }}>
-                        вне панели
+                        {t("srvDetail.outsidePanel")}
                       </div>
                     )}
                   </td>
                   <td style={td}>
-                    <span className="badge">{PROTO_TRAFFIC_LABEL[c.proto] ?? c.proto}</span>
+                    <span className="badge">{protoLabel(t, c.proto)}</span>
                   </td>
                   <td style={{ ...td, textAlign: "center" }}>
                     <span
-                      title={c.online ? "онлайн" : "офлайн"}
+                      title={c.online ? t("status.online") : t("status.offline")}
                       style={{
                         display: "inline-block",
                         width: 9,
@@ -325,9 +331,9 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
                       }}
                     />
                   </td>
-                  <td style={num}>{fmtBytes(c.txTotal)}</td>
-                  <td style={num}>{fmtBytes(c.rxTotal)}</td>
-                  <td style={num}>{c.online ? `${fmtSpeed(c.txSpeed)} / ${fmtSpeed(c.rxSpeed)}` : "—"}</td>
+                  <td style={num}>{fmtBytes(t, c.txTotal)}</td>
+                  <td style={num}>{fmtBytes(t, c.rxTotal)}</td>
+                  <td style={num}>{c.online ? `${fmtSpeed(t, c.txSpeed)} / ${fmtSpeed(t, c.rxSpeed)}` : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -335,7 +341,12 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
         </div>
       )}
       {selected && (
-        <ClientTrafficModal client={selected} period="24h" periodLabel="24 часа" onClose={() => setSelected(null)} />
+        <ClientTrafficModal
+          client={selected}
+          period="24h"
+          periodLabel={t("period.24h")}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );
@@ -345,6 +356,7 @@ function ServerClientsCard({ serverId, online }: { serverId: string; online: boo
 // фактическое использование за текущий период — суммарно по серверу и по пользователям (топ-жоры).
 // Пер-user превышение честно отсекается на Этапе 3b; здесь — учёт, индикатор и предупреждения.
 function ServerTrafficQuotaCard({ server }: { server: Server }) {
+  const t = useT();
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
   const uq = useQuery({
@@ -369,9 +381,9 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
       qc.invalidateQueries({ queryKey: ["server", server.id] });
       qc.invalidateQueries({ queryKey: ["serverUsage", server.id] });
       setEditing(false);
-      toast("Квота сохранена");
+      toast(t("srvDetail.quotaSaved"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось сохранить квоту"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.quotaSaveFailed")),
   });
 
   const label = { fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const };
@@ -381,7 +393,9 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
   const quotaPct = quota && quota > 0 ? Math.round((used / quota) * 100) : null;
   const quotaColor =
     quotaPct == null ? "var(--text-2)" : quotaPct >= 100 ? "var(--danger)" : quotaPct >= 80 ? "#d97706" : "var(--ok)";
-  const dayLabel = server.billingDay ? `${server.billingDay}-е число` : "1-е число (по умолчанию)";
+  const dayLabel = server.billingDay
+    ? t("srvDetail.dayOfMonth", { day: server.billingDay })
+    : t("srvDetail.dayOfMonthDefault");
 
   const openEdit = () => {
     const quotaInput = bytesToTrafficInput(server.bandwidthQuota);
@@ -395,30 +409,31 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
     <div className="card stack">
       <div className="rowflex" style={{ justifyContent: "space-between", gap: 12 }}>
         <div className="muted-3" style={label}>
-          Трафик и квота · текущий период
+          {t("srvDetail.trafficQuotaTitle")}
         </div>
         <Btn sm onClick={openEdit}>
           <Icon name="edit" size={15} />
-          Квота
+          {t("srvDetail.quota")}
         </Btn>
       </div>
 
       <div className="rowflex" style={{ gap: 14, flexWrap: "wrap" }}>
         <div style={{ minWidth: 160 }}>
           <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 3 }}>
-            Использовано сервером
+            {t("srvDetail.usedByServer")}
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, color: quotaColor }}>
-            {fmtBytes(used)}
+            {fmtBytes(t, used)}
             {quota ? (
               <span className="muted-3" style={{ fontSize: 13, fontWeight: 500 }}>
                 {" "}
-                / {fmtBytes(quota)}
+                / {fmtBytes(t, quota)}
               </span>
             ) : null}
           </div>
           <div className="muted-3" style={{ fontSize: 11.5, marginTop: 2 }}>
-            {quota ? `${quotaPct}% квоты тарифа` : "квота не задана (безлимит)"} · сброс: {dayLabel}
+            {quota ? t("srvDetail.pctOfQuota", { pct: quotaPct ?? 0 }) : t("srvDetail.quotaUnlimited")} ·{" "}
+            {t("srvDetail.resetLabel", { day: dayLabel })}
           </div>
         </div>
       </div>
@@ -432,7 +447,7 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
       {usage && usage.users.length > 0 && (
         <div className="stack" style={{ gap: 4 }}>
           <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
-            Пользователи за период
+            {t("srvDetail.usersForPeriod")}
           </div>
           {usage.users.slice(0, 8).map((u) => {
             const over = u.limit != null && u.used >= u.limit;
@@ -442,9 +457,9 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
               <div key={u.userId} className="rowflex" style={{ justifyContent: "space-between", gap: 8, fontSize: 13 }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</span>
                 <span style={{ color: col, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flex: "none" }}>
-                  {fmtBytes(u.used)}
-                  {u.limit != null ? ` / ${fmtBytes(u.limit)}` : ""}
-                  {over ? " · лимит" : ""}
+                  {fmtBytes(t, u.used)}
+                  {u.limit != null ? ` / ${fmtBytes(t, u.limit)}` : ""}
+                  {over ? ` · ${t("srvDetail.limitReached")}` : ""}
                 </span>
               </div>
             );
@@ -454,24 +469,23 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
 
       {editing && (
         <Modal
-          title="Квота сетевого трафика сервера"
+          title={t("srvDetail.trafficQuotaModalTitle")}
           onClose={() => setEditing(false)}
           footer={
             <>
               <Btn variant="ghost" block onClick={() => setEditing(false)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn variant="primary" block disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
-                Сохранить
+                {t("common.save")}
               </Btn>
             </>
           }
         >
           <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
-            Квота сетевого трафика вашего тарифа за период (панель предупредит при приближении). Пусто — безлимитный
-            тариф. День сброса — обычно день оплаты VPS; пусто — 1-е число месяца.
+            {t("srvDetail.trafficQuotaHelp")}
           </p>
-          <Field label="Квота сетевого трафика за период">
+          <Field label={t("srvDetail.trafficQuotaFieldLabel")}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 92px", gap: 8 }}>
               <input
                 className="input"
@@ -479,7 +493,7 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
                 min={0}
                 step={quotaUnit === "B" ? 1 : 0.1}
                 value={quotaValue}
-                placeholder="пусто — безлимит"
+                placeholder={t("srvDetail.emptyUnlimited")}
                 autoFocus
                 onChange={(e) => setQuotaValue(e.target.value)}
               />
@@ -500,14 +514,14 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
               </select>
             </div>
           </Field>
-          <Field label="День сброса периода (1–31)">
+          <Field label={t("srvDetail.billingDayFieldLabel")}>
             <input
               className="input"
               type="number"
               min={1}
               max={31}
               value={billingDay}
-              placeholder="пусто — 1-е число"
+              placeholder={t("srvDetail.emptyFirstDay")}
               onChange={(e) => setBillingDay(e.target.value)}
             />
           </Field>
@@ -517,7 +531,12 @@ function ServerTrafficQuotaCard({ server }: { server: Server }) {
   );
 }
 
-const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
+const pricePeriodLabel = (t: TFunc, period: string): string =>
+  period === "minute"
+    ? t("srvDetail.periodMinuteShort")
+    : period === "day"
+      ? t("srvDetail.periodDayShort")
+      : t("srvDetail.periodMonthShort");
 const CURRENCIES = ["RUB", "USD", "EUR", "KZT", "UAH", "GBP"];
 const fmtMoney = (a: number, cur: string): string =>
   `${a.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${cur}`;
@@ -526,6 +545,7 @@ const fmtMoney = (a: number, cur: string): string =>
 // Цена меняется во времени — история хранится сегментами, расход считается по фактически
 // действовавшей цене (см. services/finance). Разные валюты показываем раздельно.
 function ServerCostCard({ serverId }: { serverId: string }) {
+  const t = useT();
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
   const priceQ = useQuery({ queryKey: ["serverPrice", serverId], queryFn: () => q.getServerPrice(serverId), retry: 2 });
@@ -550,9 +570,9 @@ function ServerCostCard({ serverId }: { serverId: string }) {
       qc.invalidateQueries({ queryKey: ["serverPrice", serverId] });
       qc.invalidateQueries({ queryKey: ["serverCost", serverId] });
       setEditing(false);
-      toast("Цена сохранена");
+      toast(t("srvDetail.priceSaved"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось сохранить цену"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.priceSaveFailed")),
   });
 
   const openEdit = () => {
@@ -570,31 +590,33 @@ function ServerCostCard({ serverId }: { serverId: string }) {
     <div className="card stack">
       <div className="rowflex" style={{ justifyContent: "space-between", gap: 12 }}>
         <div className="muted-3" style={label}>
-          Стоимость
+          {t("srvDetail.cost")}
         </div>
         <Btn sm onClick={openEdit}>
           <Icon name="edit" size={15} />
-          {price ? "Изменить" : "Задать цену"}
+          {price ? t("common.edit") : t("srvDetail.setPrice")}
         </Btn>
       </div>
 
       <div className="rowflex" style={{ gap: 24, flexWrap: "wrap" }}>
         <div>
           <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 3 }}>
-            Цена
+            {t("srvDetail.price")}
           </div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>
-            {price ? `${fmtMoney(price.amount, price.currency)} / ${PRICE_PERIOD_LABEL[price.period]}` : "не задана"}
+            {price
+              ? `${fmtMoney(price.amount, price.currency)} / ${pricePeriodLabel(t, price.period)}`
+              : t("srvDetail.priceNotSet")}
           </div>
           {price?.period === "month" && price.anchorDay ? (
             <div className="muted-3" style={{ fontSize: 11.5, marginTop: 2 }}>
-              обновление {price.anchorDay}-го числа
+              {t("srvDetail.updatesOnDay", { day: price.anchorDay })}
             </div>
           ) : null}
         </div>
         <div>
           <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 3 }}>
-            Расход за 30 дней
+            {t("srvDetail.spendFor30Days")}
           </div>
           {cost.length === 0 ? (
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-3)" }}>—</div>
@@ -610,37 +632,36 @@ function ServerCostCard({ serverId }: { serverId: string }) {
 
       {editing && (
         <Modal
-          title="Стоимость сервера"
+          title={t("srvDetail.serverCostModalTitle")}
           onClose={() => setEditing(false)}
           footer={
             <>
               <Btn variant="ghost" block onClick={() => setEditing(false)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn variant="primary" block disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
-                Сохранить
+                {t("common.save")}
               </Btn>
             </>
           }
         >
           <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
-            Цена аренды сервера. При изменении сохраняется история — расход считается по фактически действовавшей цене
-            за каждый период. Пусто — сервер бесплатный.
+            {t("srvDetail.serverCostHelp")}
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
-            <Field label="Цена за период">
+            <Field label={t("srvDetail.pricePerPeriod")}>
               <input
                 className="input"
                 type="number"
                 min={0}
                 step="0.01"
                 value={amount}
-                placeholder="пусто — бесплатно"
+                placeholder={t("srvDetail.emptyFree")}
                 autoFocus
                 onChange={(e) => setAmount(e.target.value)}
               />
             </Field>
-            <Field label="Валюта">
+            <Field label={t("srvDetail.currency")}>
               <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
                 {CURRENCIES.map((c) => (
                   <option key={c} value={c}>
@@ -650,7 +671,7 @@ function ServerCostCard({ serverId }: { serverId: string }) {
               </select>
             </Field>
           </div>
-          <Field label="Период оплаты">
+          <Field label={t("srvDetail.paymentPeriod")}>
             <div style={{ display: "flex", gap: 8 }}>
               {(["minute", "day", "month"] as const).map((p) => (
                 <button
@@ -660,20 +681,24 @@ function ServerCostCard({ serverId }: { serverId: string }) {
                   style={{ flex: 1, height: 40, justifyContent: "center", cursor: "pointer", fontSize: 13.5 }}
                   onClick={() => setPeriod(p)}
                 >
-                  {p === "minute" ? "Минута" : p === "day" ? "Сутки" : "Месяц"}
+                  {p === "minute"
+                    ? t("srvDetail.minuteFull")
+                    : p === "day"
+                      ? t("srvDetail.dayFull")
+                      : t("srvDetail.monthFull")}
                 </button>
               ))}
             </div>
           </Field>
           {period === "month" && (
-            <Field label="День обновления (1–31, необязательно)">
+            <Field label={t("srvDetail.updateDayFieldLabel")}>
               <input
                 className="input"
                 type="number"
                 min={1}
                 max={31}
                 value={anchor}
-                placeholder="напр. 15"
+                placeholder={t("srvDetail.egFifteen")}
                 onChange={(e) => setAnchor(e.target.value)}
               />
             </Field>
@@ -687,6 +712,7 @@ function ServerCostCard({ serverId }: { serverId: string }) {
 // Секция «Цепочка (мультихоп)»: трафик клиентов этого (entry) сервера выходит в интернет через
 // другой (exit) сервер. Реализация — Xray outbound chaining: entry становится vless-клиентом exit.
 function ChainSection({ server }: { server: Server }) {
+  const t = useT();
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
   const [exitId, setExitId] = useState("");
@@ -705,17 +731,17 @@ function ChainSection({ server }: { server: Server }) {
     onSuccess: () => {
       setExitId("");
       invalidate();
-      toast("Цепочка Xray создана — трафик Xray пойдёт через выходной сервер");
+      toast(t("srvDetail.chainCreated"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось создать цепочку"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.chainCreateFailed")),
   });
   const deleteMut = useMutation({
     mutationFn: (chainId: string) => q.deleteChain(server.id, chainId),
     onSuccess: () => {
       invalidate();
-      toast("Цепочка удалена");
+      toast(t("srvDetail.chainDeleted"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить цепочку"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.chainDeleteFailed")),
   });
 
   // мультихоп работает только для tcp-Reality Xray — прячем секцию, если на entry его нет
@@ -733,12 +759,10 @@ function ChainSection({ server }: { server: Server }) {
         className="muted-3"
         style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
       >
-        Мультихоп Xray → Xray
+        {t("srvDetail.multihopTitle")}
       </div>
       <p className="muted" style={{ fontSize: 13 }}>
-        Только для протокола <strong>Xray</strong> (VLESS + Reality): клиенты Xray этого сервера входят здесь, а в
-        интернет выходят через Xray другого вашего сервера. Полезно, когда нужен вход с локальным IP, а выход — в другой
-        стране. Клиенты остальных протоколов этого сервера (AmneziaWG, OpenVPN, Outline, Hysteria2) не затрагиваются.
+        {t("srvDetail.multihopExplainBefore")} <strong>Xray</strong> {t("srvDetail.multihopExplainAfter")}
       </p>
 
       {chains.length > 0 ? (
@@ -759,7 +783,7 @@ function ChainSection({ server }: { server: Server }) {
               <span className="rowflex" style={{ gap: 8, minWidth: 0 }}>
                 <Icon name="refresh" size={15} />
                 <span style={{ fontSize: 13.5 }}>
-                  Xray → выход через <strong>{ch.exitServerName || ch.exitServerId}</strong> (Xray)
+                  {t("srvDetail.chainExitVia")} <strong>{ch.exitServerName || ch.exitServerId}</strong> (Xray)
                 </span>
                 <span className={`badge ${ch.state === "linked" ? "ok" : "warn"}`}>{ch.state}</span>
               </span>
@@ -767,7 +791,7 @@ function ChainSection({ server }: { server: Server }) {
                 variant="ghost"
                 sm
                 disabled={deleteMut.isPending}
-                title="Удалить цепочку"
+                title={t("srvDetail.deleteChain")}
                 onClick={() => deleteMut.mutate(ch.id)}
               >
                 <Icon name="trash" size={14} />
@@ -778,7 +802,7 @@ function ChainSection({ server }: { server: Server }) {
       ) : candidates.length > 0 ? (
         <div className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
           <select className="input" value={exitId} onChange={(e) => setExitId(e.target.value)} style={{ flex: 1 }}>
-            <option value="">Выберите выходной сервер (Xray)…</option>
+            <option value="">{t("srvDetail.selectExitServer")}</option>
             {candidates.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} · {s.location || s.ip}
@@ -786,12 +810,12 @@ function ChainSection({ server }: { server: Server }) {
             ))}
           </select>
           <Btn variant="primary" disabled={!exitId || createMut.isPending} onClick={() => createMut.mutate()}>
-            {createMut.isPending ? <Spinner /> : "Создать"}
+            {createMut.isPending ? <Spinner /> : t("common.create")}
           </Btn>
         </div>
       ) : (
         <p className="muted-3" style={{ fontSize: 12.5 }}>
-          Нет подходящих выходных серверов: нужен другой ваш сервер онлайн с установленным и запущенным Xray.
+          {t("srvDetail.noExitServers")}
         </p>
       )}
     </div>
@@ -799,6 +823,7 @@ function ChainSection({ server }: { server: Server }) {
 }
 
 export function ServerDetailScreen() {
+  const t = useT();
   const serverId = useNav((s) => s.params.serverId) || "";
   const go = useNav((s) => s.go);
   const toast = useStore((s) => s.toast);
@@ -857,18 +882,22 @@ export function ServerDetailScreen() {
     mutationFn: () => q.checkServer(serverId),
     onSuccess: (s) => {
       invalidate();
-      toast(s.status === "online" ? `Сервер онлайн · ${s.latency ?? "—"}` : "Сервер недоступен");
+      toast(
+        s.status === "online"
+          ? t("srvDetail.serverOnlineLatency", { latency: s.latency ?? "—" })
+          : t("srvDetail.serverUnreachable"),
+      );
     },
-    onError: () => toast("Не удалось проверить сервер"),
+    onError: () => toast(t("srvDetail.checkFailed")),
   });
 
   const syncMut = useMutation({
     mutationFn: () => q.syncServer(serverId),
     onSuccess: () => {
       invalidate();
-      toast("Состояние сервера синхронизировано");
+      toast(t("srvDetail.syncSuccess"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось синхронизировать"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.syncFailed")),
   });
 
   const opMut = useMutation({
@@ -881,24 +910,24 @@ export function ServerDetailScreen() {
         vars.op === "install"
           ? // установка идёт в фоне (mark_installing + schedule_install),
             // ответ приходит мгновенно — сообщаем о старте, а не о завершении
-            `${label}: установка запущена — займёт пару минут`
+            t("srvDetail.installStarted", { label })
           : vars.op === "remove"
-            ? `${label} удалён`
+            ? t("srvDetail.vpnRemoved", { label })
             : vars.op === "start"
-              ? `${label} запущен`
-              : `${label} остановлен`;
+              ? t("srvDetail.vpnStarted", { label })
+              : t("srvDetail.vpnStopped", { label });
       toast(msg);
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Ошибка операции"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.operationError")),
   });
 
   const removeProtoMut = useMutation({
     mutationFn: ({ proto }: { proto: string; label: string }) => q.removeProtocol(serverId, proto),
     onSuccess: (_s, vars) => {
       qc.invalidateQueries({ queryKey: ["server", serverId] });
-      toast(`${vars.label} удалён — связанные конфиги отозваны`);
+      toast(t("srvDetail.protoRemoved", { label: vars.label }));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить протокол"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.protoRemoveFailed")),
   });
 
   // свитчер отдельного протокола: временно остановить / снова запустить его контейнер
@@ -906,9 +935,13 @@ export function ServerDetailScreen() {
     mutationFn: ({ proto, op }: { proto: string; label: string; op: string }) => q.protocolOp(serverId, proto, op),
     onSuccess: (_s, vars) => {
       qc.invalidateQueries({ queryKey: ["server", serverId] });
-      toast(`${vars.label} ${vars.op === "start" ? "запущен" : "остановлен"}`);
+      toast(
+        vars.op === "start"
+          ? t("srvDetail.vpnStarted", { label: vars.label })
+          : t("srvDetail.vpnStopped", { label: vars.label }),
+      );
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Ошибка операции"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.operationError")),
   });
 
   // обновление серверного компонента протокола (xray/hysteria2) до эталонной версии релиза панели
@@ -916,9 +949,9 @@ export function ServerDetailScreen() {
     mutationFn: ({ proto }: { proto: string; label: string }) => q.updateProtocol(serverId, proto),
     onSuccess: (_s, vars) => {
       qc.invalidateQueries({ queryKey: ["server", serverId] });
-      toast(`${vars.label}: обновление запущено — займёт пару минут`);
+      toast(t("srvDetail.updateStarted", { label: vars.label }));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось запустить обновление"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.updateStartFailed")),
   });
 
   const fixMut = useMutation({
@@ -926,9 +959,9 @@ export function ServerDetailScreen() {
     onSuccess: (_s, vars) => {
       qc.invalidateQueries({ queryKey: ["server", serverId] });
       // фикс устраняет причину и запускает переустановку в фоне — сообщаем о старте
-      toast(`${VPN_LABEL[vars.type]}: исправление запущено — займёт пару минут`);
+      toast(t("srvDetail.fixStarted", { label: VPN_LABEL[vars.type] }));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось запустить исправление"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.fixStartFailed")),
   });
 
   // миграция на новый VPS: реквизиты меняются сразу, протоколы переустанавливаются в фоне
@@ -942,21 +975,21 @@ export function ServerDetailScreen() {
       const protoCount = Object.values(r.reinstall).reduce((n, ids) => n + ids.length, 0);
       toast(
         protoCount
-          ? `Миграция запущена: переустановка ${protoCount} протокол(ов), конфигов к перевыдаче: ${r.configsRevoked}`
-          : "Реквизиты обновлены — установленных протоколов для переноса нет",
+          ? t("srvDetail.migrationStarted", { n: protoCount, revoked: r.configsRevoked })
+          : t("srvDetail.migrationNoProtocols"),
       );
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось запустить миграцию"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.migrationStartFailed")),
   });
 
   const deleteMut = useMutation({
     mutationFn: () => q.deleteServer(serverId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["servers"] });
-      toast("Сервер удалён");
+      toast(t("srvDetail.serverDeleted"));
       go("servers");
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось удалить сервер"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.serverDeleteFailed")),
   });
 
   if (serverQ.isLoading) {
@@ -969,8 +1002,8 @@ export function ServerDetailScreen() {
   if (serverQ.isError || !serverQ.data) {
     return (
       <div className="stack">
-        <ScreenHeader title="Сервер" onBack={() => go("servers")} />
-        <div className="card muted">Сервер не найден.</div>
+        <ScreenHeader title={t("srvDetail.server")} onBack={() => go("servers")} />
+        <div className="card muted">{t("srvDetail.serverNotFound")}</div>
       </div>
     );
   }
@@ -978,18 +1011,18 @@ export function ServerDetailScreen() {
   const server: Server = serverQ.data;
   const checking = checkMut.isPending;
   const online = server.status === "online";
-  const authLabel = server.auth === "key" ? "SSH-ключ" : "Пароль";
+  const authLabel = server.auth === "key" ? t("srvDetail.sshKey") : t("srvDetail.password");
   const secretShown = reveal ? server.secret : "•".repeat(Math.max(6, server.secret.length || 6));
 
-  const vpnByType = (t: VpnType): Vpn =>
-    server.vpns.find((v) => v.type === t) ?? { type: t, installed: false, running: false, port: "" };
-  const protosByVendor = (t: VpnType): Protocol[] => (server.protocols ?? []).filter((p) => p.vendor === t);
+  const vpnByType = (vt: VpnType): Vpn =>
+    server.vpns.find((v) => v.type === vt) ?? { type: vt, installed: false, running: false, port: "" };
+  const protosByVendor = (vt: VpnType): Protocol[] => (server.protocols ?? []).filter((p) => p.vendor === vt);
   const syncing = syncMut.isPending;
   const tabs: { id: ServerDetailTab; label: string; icon: string }[] = [
-    { id: "connection", label: "Основное", icon: "link" },
-    { id: "protocols", label: "Протоколы", icon: "servers" },
-    { id: "monitoring", label: "Мониторинг", icon: "monitoring" },
-    { id: "access", label: "Клиенты и конфиги", icon: "users" },
+    { id: "connection", label: t("srvDetail.tabConnection"), icon: "link" },
+    { id: "protocols", label: t("srvDetail.tabProtocols"), icon: "servers" },
+    { id: "monitoring", label: t("nav.monitoring"), icon: "monitoring" },
+    { id: "access", label: t("srvDetail.tabAccess"), icon: "users" },
   ];
 
   return (
@@ -1002,7 +1035,7 @@ export function ServerDetailScreen() {
           <div className="rowflex" style={{ flexWrap: "nowrap" }}>
             <Btn sm onClick={() => go("serverForm", { serverId })}>
               <Icon name="edit" size={16} />
-              Изменить
+              {t("common.edit")}
             </Btn>
             <Btn variant="danger" sm onClick={() => setConfirmDelete(true)}>
               <Icon name="trash" size={16} />
@@ -1022,23 +1055,23 @@ export function ServerDetailScreen() {
               </span>
             )}
             <span className="muted-3" style={{ fontSize: 13 }}>
-              проверен: {server.lastCheck || "ещё не проверялся"}
+              {t("srvDetail.checkedAt", { time: server.lastCheck || t("srvDetail.neverChecked") })}
             </span>
           </div>
           <div className="rowflex" style={{ flexWrap: "nowrap" }}>
             <Btn sm onClick={() => syncMut.mutate()} disabled={syncing}>
               {syncing ? <Spinner /> : <Icon name="refresh" size={16} />}
-              {syncing ? "Синк…" : "Синхронизировать"}
+              {syncing ? t("srvDetail.syncing") : t("srvDetail.synchronize")}
             </Btn>
             <Btn sm onClick={() => checkMut.mutate()} disabled={checking}>
               {checking ? <Spinner /> : <Icon name="refresh" size={16} />}
-              {checking ? "Проверка…" : "Проверить"}
+              {checking ? t("srvDetail.checking") : t("srvDetail.check")}
             </Btn>
           </div>
         </div>
       </div>
 
-      <div className="detail-tabs" role="tablist" aria-label="Разделы сервера">
+      <div className="detail-tabs" role="tablist" aria-label={t("srvDetail.serverSectionsAriaLabel")}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -1056,7 +1089,7 @@ export function ServerDetailScreen() {
         ))}
       </div>
       <label className="detail-tab-select">
-        <span>Раздел</span>
+        <span>{t("srvDetail.section")}</span>
         <select className="input" value={activeTab} onChange={(e) => setActiveTab(e.target.value as ServerDetailTab)}>
           {tabs.map((tab) => (
             <option key={tab.id} value={tab.id}>
@@ -1075,7 +1108,7 @@ export function ServerDetailScreen() {
                 className="muted-3"
                 style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
               >
-                Подключение SSH
+                {t("srvDetail.sshConnection")}
               </div>
               <Btn
                 sm
@@ -1090,19 +1123,19 @@ export function ServerDetailScreen() {
                 }
               >
                 <Icon name="refresh" size={15} />
-                Мигрировать на новый VPS
+                {t("srvDetail.migrateToNewVps")}
               </Btn>
             </div>
             <div className="grid">
               <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
                 <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
-                  IP-адрес
+                  {t("srvDetail.ipAddress")}
                 </div>
                 <div className="rowflex" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
                   <span className="mono" style={{ fontSize: 13.5 }}>
                     {server.ip}
                   </span>
-                  <Btn variant="ghost" sm onClick={() => copyText(server.ip, toast, "IP скопирован")}>
+                  <Btn variant="ghost" sm onClick={() => copyText(server.ip, toast, t("srvDetail.ipCopied"))}>
                     <Icon name="copy" size={15} />
                   </Btn>
                 </div>
@@ -1110,7 +1143,7 @@ export function ServerDetailScreen() {
 
               <div style={{ background: "var(--surface-2)", borderRadius: 11, padding: "11px 13px" }}>
                 <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 4 }}>
-                  Пользователь · порт
+                  {t("srvDetail.userPort")}
                 </div>
                 <span className="mono" style={{ fontSize: 13.5 }}>
                   {server.sshUser} : {server.sshPort}
@@ -1127,7 +1160,7 @@ export function ServerDetailScreen() {
                   </span>
                   <Btn variant="ghost" sm onClick={() => setReveal((r) => !r)}>
                     <Icon name="eye" size={15} />
-                    {reveal ? "Скрыть" : "Показать"}
+                    {reveal ? t("srvDetail.hide") : t("srvDetail.show")}
                   </Btn>
                 </div>
               </div>
@@ -1146,7 +1179,7 @@ export function ServerDetailScreen() {
               className="muted-3"
               style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
             >
-              VPN ПО на сервере
+              {t("srvDetail.vpnSoftwareOnServer")}
             </div>
             <div className="stack" style={{ gap: 10 }}>
               {VPN_TYPES.map((type) => {
@@ -1161,12 +1194,12 @@ export function ServerDetailScreen() {
                   (opMut.isPending && opMut.variables?.type === type) ||
                   (fixMut.isPending && fixMut.variables?.type === type);
                 const runLabel = installing
-                  ? "устанавливается…"
+                  ? t("srvDetail.installingEllipsis")
                   : !v.installed
-                    ? "не установлен"
+                    ? t("srvDetail.notInstalled")
                     : v.running
-                      ? "работает"
-                      : "остановлен";
+                      ? t("srvDetail.runningState")
+                      : t("srvDetail.stoppedState");
                 const runClass = installing ? "neutral" : v.installed && v.running ? "ok" : "neutral";
                 return (
                   <div
@@ -1214,13 +1247,17 @@ export function ServerDetailScreen() {
                           <span style={{ fontWeight: 700, fontSize: 15 }}>{VPN_LABEL[type]}</span>
                           <span className={`badge ${runClass}`}>{runLabel}</span>
                           {v.installed && (
-                            <span className="muted-3" style={{ display: "inline-flex" }} title="Расширенные настройки">
+                            <span
+                              className="muted-3"
+                              style={{ display: "inline-flex" }}
+                              title={t("srvDetail.advancedSettings")}
+                            >
                               <Icon name="chevron" size={14} />
                             </span>
                           )}
                         </div>
                         <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
-                          {VPN_DESC[type]}
+                          {vpnDesc(type)}
                         </div>
                       </div>
                     </div>
@@ -1236,7 +1273,7 @@ export function ServerDetailScreen() {
                           className="muted-3"
                           style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}
                         >
-                          Протоколы
+                          {t("srvDetail.protocols")}
                         </div>
                         {catalog.map((pr) => {
                           const p = protos.find((x) => x.proto === pr.id);
@@ -1247,8 +1284,8 @@ export function ServerDetailScreen() {
                           // у установленного показываем работает/остановлен, иначе — состояние установки
                           const stateText = inst
                             ? running
-                              ? "работает"
-                              : "остановлен"
+                              ? t("srvDetail.runningState")
+                              : t("srvDetail.stoppedState")
                             : (PROTO_STATE_LABEL[st] ?? st);
                           const dotColor =
                             st === "installing"
@@ -1296,15 +1333,18 @@ export function ServerDetailScreen() {
                                   style={{ fontSize: 11.5, whiteSpace: "nowrap", flex: "none" }}
                                 >
                                   {stateText}
-                                  {ext > 0 ? ` · +${ext} внешн.` : ""}
+                                  {ext > 0 ? ` · ${t("srvDetail.externalCountSuffix", { n: ext })}` : ""}
                                 </span>
                                 {p?.updateAvailable && (
                                   <span
                                     className="badge warn"
-                                    title={`Доступно обновление: ${p.imageVersion ?? "?"} → ${p.latestVersion ?? "?"}`}
+                                    title={t("srvDetail.updateAvailableTooltip", {
+                                      current: p.imageVersion ?? "?",
+                                      latest: p.latestVersion ?? "?",
+                                    })}
                                     style={{ flex: "none" }}
                                   >
-                                    обновление
+                                    {t("srvDetail.updateBadge")}
                                   </span>
                                 )}
                               </span>
@@ -1315,10 +1355,10 @@ export function ServerDetailScreen() {
                                       variant="primary"
                                       sm
                                       disabled={!online || updateProtoMut.isPending}
-                                      title={`Обновить до ${p.latestVersion ?? ""}`}
+                                      title={t("srvDetail.updateToVersion", { version: p.latestVersion ?? "" })}
                                       onClick={() => updateProtoMut.mutate({ proto: pr.id, label: pr.label })}
                                     >
-                                      Обновить
+                                      {t("srvDetail.updateAction")}
                                     </Btn>
                                   )}
                                   <Btn
@@ -1332,12 +1372,12 @@ export function ServerDetailScreen() {
                                       })
                                     }
                                   >
-                                    {running ? "Стоп" : "Запустить"}
+                                    {running ? t("srvDetail.stopAction") : t("srvDetail.startAction")}
                                   </Btn>
                                   <Btn
                                     variant="ghost"
                                     sm
-                                    title={`Удалить протокол ${pr.label}`}
+                                    title={t("srvDetail.deleteProtocolTooltip", { label: pr.label })}
                                     disabled={removeProtoMut.isPending}
                                     onClick={() =>
                                       setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })
@@ -1378,7 +1418,7 @@ export function ServerDetailScreen() {
                         ) : (
                           errored.error && (
                             <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
-                              Ошибка: {errored.error}
+                              {t("srvDetail.errorPrefix", { error: errored.error })}
                             </div>
                           )
                         )}
@@ -1395,7 +1435,7 @@ export function ServerDetailScreen() {
                         <span className="rowflex" style={{ gap: 8 }}>
                           <Spinner />
                           <span className="muted-3" style={{ fontSize: 12.5 }}>
-                            Устанавливается…
+                            {t("srvDetail.installingEllipsisLong")}
                           </span>
                         </span>
                       ) : busy ? (
@@ -1405,7 +1445,7 @@ export function ServerDetailScreen() {
                           {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
                           {rem?.canAutoFix && (
                             <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
-                              {rem.fixLabel ?? "Исправить"}
+                              {rem.fixLabel ?? t("srvDetail.fixAction")}
                             </Btn>
                           )}
                           {notInstalled.length > 0 && (
@@ -1417,7 +1457,7 @@ export function ServerDetailScreen() {
                                 setAddProtoVendor(type);
                               }}
                             >
-                              {v.installed ? "+ Протоколы" : "Установить"}
+                              {v.installed ? t("srvDetail.addProtocolsAction") : t("srvDetail.installAction")}
                             </Btn>
                           )}
                           {v.installed && (
@@ -1426,14 +1466,14 @@ export function ServerDetailScreen() {
                               disabled={!online}
                               onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
                             >
-                              {v.running ? "Остановить всё" : "Запустить всё"}
+                              {v.running ? t("srvDetail.stopAllAction") : t("srvDetail.startAllAction")}
                             </Btn>
                           )}
                           {v.installed && (
                             <Btn
                               variant="ghost"
                               sm
-                              title={`Удалить ${VPN_LABEL[type]} целиком`}
+                              title={t("srvDetail.deleteVendorTooltip", { label: VPN_LABEL[type] })}
                               style={{ marginLeft: "auto" }}
                               onClick={() => setConfirmRemoveVpn(type)}
                             >
@@ -1469,32 +1509,32 @@ export function ServerDetailScreen() {
 
       {confirmDelete && (
         <Modal
-          title="Удалить сервер?"
+          title={t("srvDetail.deleteServerTitle")}
           onClose={() => setConfirmDelete(false)}
           footer={
             <>
               <Btn variant="ghost" onClick={() => setConfirmDelete(false)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn variant="danger" disabled={deleteMut.isPending} onClick={() => deleteMut.mutate()}>
-                Удалить
+                {t("common.delete")}
               </Btn>
             </>
           }
         >
-          <p className="muted">Сервер пропадёт из пулов и групповых доступов. Действие необратимо.</p>
+          <p className="muted">{t("srvDetail.deleteServerBody")}</p>
         </Modal>
       )}
 
       {/* Миграция на новый VPS: новые SSH-реквизиты + переустановка протоколов в фоне */}
       {migrateForm && (
         <Modal
-          title="Мигрировать на новый VPS"
+          title={t("srvDetail.migrateModalTitle")}
           onClose={() => setMigrateForm(null)}
           footer={
             <>
               <Btn variant="ghost" onClick={() => setMigrateForm(null)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn
                 variant="primary"
@@ -1509,19 +1549,16 @@ export function ServerDetailScreen() {
                   })
                 }
               >
-                {migrateMut.isPending ? <Spinner /> : "Мигрировать"}
+                {migrateMut.isPending ? <Spinner /> : t("srvDetail.migrateAction")}
               </Btn>
             </>
           }
         >
           <div className="stack" style={{ gap: 10 }}>
             <p className="muted" style={{ fontSize: 13 }}>
-              Старый сервер считается недоступным: панель переключится на новые реквизиты и переустановит все
-              установленные протоколы на новом хосте (в фоне). Серверные ключи будут сгенерированы заново, поэтому все
-              выданные конфиги будут помечены отозванными — участникам нужно перевыпустить их (в конфигах в любом случае
-              зашит старый IP).
+              {t("srvDetail.migrateHelp")}
             </p>
-            <Field label="IP нового сервера">
+            <Field label={t("srvDetail.newServerIpLabel")}>
               <input
                 className="input mono"
                 value={migrateForm.ip}
@@ -1530,7 +1567,7 @@ export function ServerDetailScreen() {
               />
             </Field>
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
-              <Field label="Пользователь">
+              <Field label={t("srvDetail.userLabel")}>
                 <input
                   className="input mono"
                   value={migrateForm.sshUser}
@@ -1538,7 +1575,7 @@ export function ServerDetailScreen() {
                   placeholder="root"
                 />
               </Field>
-              <Field label="Порт">
+              <Field label={t("srvDetail.portLabel")}>
                 <input
                   className="input mono"
                   value={migrateForm.sshPort}
@@ -1547,7 +1584,7 @@ export function ServerDetailScreen() {
                 />
               </Field>
             </div>
-            <Field label="Способ авторизации">
+            <Field label={t("srvDetail.authMethodLabel")}>
               <div style={{ display: "flex", gap: 8 }}>
                 {(["key", "password"] as const).map((a) => (
                   <button
@@ -1557,18 +1594,18 @@ export function ServerDetailScreen() {
                     style={{ flex: 1, height: 40, justifyContent: "center", cursor: "pointer", fontSize: 13.5 }}
                     onClick={() => setMigrateForm({ ...migrateForm, auth: a })}
                   >
-                    {a === "key" ? "SSH-ключ" : "Пароль"}
+                    {a === "key" ? t("srvDetail.sshKey") : t("srvDetail.password")}
                   </button>
                 ))}
               </div>
             </Field>
-            <Field label={migrateForm.auth === "password" ? "Пароль" : "Приватный SSH-ключ"}>
+            <Field label={migrateForm.auth === "password" ? t("srvDetail.password") : t("srvDetail.privateSshKey")}>
               <input
                 className="input mono"
                 type={migrateForm.auth === "password" ? "password" : "text"}
                 value={migrateForm.secret}
                 onChange={(e) => setMigrateForm({ ...migrateForm, secret: e.target.value })}
-                placeholder="пусто — использовать текущий секрет"
+                placeholder={t("srvDetail.migrateSecretPlaceholder")}
               />
             </Field>
           </div>
@@ -1578,12 +1615,12 @@ export function ServerDetailScreen() {
       {/* Выбор протоколов для установки/докачки (галочки) */}
       {addProtoVendor && (
         <Modal
-          title={`${VPN_LABEL[addProtoVendor]}: установить протоколы`}
+          title={t("srvDetail.installProtocolsModalTitle", { label: VPN_LABEL[addProtoVendor] })}
           onClose={() => setAddProtoVendor(null)}
           footer={
             <>
               <Btn variant="ghost" onClick={() => setAddProtoVendor(null)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn
                 variant="primary"
@@ -1595,15 +1632,16 @@ export function ServerDetailScreen() {
                   opMut.mutate({ type, op: "install", protos });
                 }}
               >
-                Установить{checkedProtos.size ? ` (${checkedProtos.size})` : ""}
+                {checkedProtos.size
+                  ? t("srvDetail.installActionCount", { n: checkedProtos.size })
+                  : t("srvDetail.installAction")}
               </Btn>
             </>
           }
         >
           <div className="stack" style={{ gap: 8 }}>
             <p className="muted" style={{ fontSize: 13 }}>
-              Отметьте протоколы для установки — каждый развернётся в своём контейнере. Уже установленные протоколы
-              здесь не показаны.
+              {t("srvDetail.installProtocolsHelp")}
             </p>
             {VENDOR_PROTOCOLS[addProtoVendor]
               .filter((pr) => !protosByVendor(addProtoVendor).find((x) => x.proto === pr.id)?.installed)
@@ -1645,12 +1683,12 @@ export function ServerDetailScreen() {
       {/* Удаление одного протокола (сносит контейнер + отзывает его конфиги) */}
       {confirmRemoveProto && (
         <Modal
-          title={`Удалить ${confirmRemoveProto.label}?`}
+          title={t("srvDetail.deleteProtocolTitle", { label: confirmRemoveProto.label })}
           onClose={() => setConfirmRemoveProto(null)}
           footer={
             <>
               <Btn variant="ghost" onClick={() => setConfirmRemoveProto(null)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn
                 variant="danger"
@@ -1661,27 +1699,24 @@ export function ServerDetailScreen() {
                   removeProtoMut.mutate({ proto, label });
                 }}
               >
-                Удалить
+                {t("common.delete")}
               </Btn>
             </>
           }
         >
-          <p className="muted">
-            Контейнер протокола будет снесён, а выданные по нему конфиги — отозваны. Другие протоколы этого VPN не
-            затрагиваются.
-          </p>
+          <p className="muted">{t("srvDetail.deleteProtocolBody")}</p>
         </Modal>
       )}
 
       {/* Снос всего вендора: все его протоколы + групповые доступы разом */}
       {confirmRemoveVpn && (
         <Modal
-          title={`Удалить ${VPN_LABEL[confirmRemoveVpn]} целиком?`}
+          title={t("srvDetail.deleteVendorTitle", { label: VPN_LABEL[confirmRemoveVpn] })}
           onClose={() => setConfirmRemoveVpn(null)}
           footer={
             <>
               <Btn variant="ghost" onClick={() => setConfirmRemoveVpn(null)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn
                 variant="danger"
@@ -1692,14 +1727,12 @@ export function ServerDetailScreen() {
                   opMut.mutate({ type, op: "remove" });
                 }}
               >
-                Удалить всё
+                {t("srvDetail.deleteAllAction")}
               </Btn>
             </>
           }
         >
-          <p className="muted">
-            Будут снесены все протоколы этого VPN, а связанные конфиги и групповые доступы к нему — отозваны.
-          </p>
+          <p className="muted">{t("srvDetail.deleteVendorBody")}</p>
         </Modal>
       )}
     </div>

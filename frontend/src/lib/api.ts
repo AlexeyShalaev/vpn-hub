@@ -1,5 +1,7 @@
 // Типизированный клиент REST (same-origin, cookie-сессия).
 
+import { tg } from "./i18n";
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -15,7 +17,7 @@ const BASE = "/api/v1";
 // Язык интерфейса → бэкенду, чтобы он локализовал ответы (ошибки, заметки релизов).
 // Читаем ту же ячейку, что и i18n.detectLang, на каждый запрос — язык может меняться в рантайме.
 function langHeader(): Record<string, string> {
-  const saved = localStorage.getItem("vpnhub.lang");
+  const saved = typeof localStorage !== "undefined" ? localStorage.getItem("vpnhub.lang") : null;
   return { "Accept-Language": saved === "en" ? "en" : "ru" };
 }
 
@@ -33,7 +35,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const code = data?.code || "ERROR";
-    const message = data?.message || res.statusText || "Ошибка запроса";
+    const message = data?.message || res.statusText || tg("common.requestError");
     throw new ApiError(code, message, res.status);
   }
   return data as T;
@@ -51,7 +53,7 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const code = data?.code || "ERROR";
-    const message = data?.message || res.statusText || "Ошибка запроса";
+    const message = data?.message || res.statusText || tg("common.requestError");
     throw new ApiError(code, message, res.status);
   }
   return data as T;

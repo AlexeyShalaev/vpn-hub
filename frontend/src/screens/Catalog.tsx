@@ -2,6 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { type CSSProperties, useMemo, useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { useT } from "../lib/i18n";
 import { canonicalLocation } from "../lib/locations";
 import {
   currencySymbol,
@@ -68,6 +69,7 @@ function PlansModal({
   onPick: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const pq = useQuery({
     queryKey: ["providerPlans", planPid],
     queryFn: () => q.providerPlans(planPid),
@@ -75,16 +77,16 @@ function PlansModal({
   });
   const plans = pq.data ?? [];
   return (
-    <Modal title={`Тарифы · ${title}`} onClose={onClose} wide>
+    <Modal title={t("catalog.plansModalTitle", { title })} onClose={onClose} wide>
       <div className="stack" style={{ gap: 10 }}>
         {pq.isLoading ? (
           <div style={{ padding: 24, textAlign: "center" }}>
             <Spinner />
           </div>
         ) : pq.isError ? (
-          <Empty title="Не удалось загрузить тарифы" sub="Провайдер мог изменить страницу. Попробуйте на сайте." />
+          <Empty title={t("catalog.plansLoadFailedTitle")} sub={t("catalog.plansLoadFailedSub")} />
         ) : plans.length === 0 ? (
-          <Empty title="Тарифы не найдены" sub="Актуальный список — на сайте провайдера." />
+          <Empty title={t("catalog.plansEmptyTitle")} sub={t("catalog.plansEmptySub")} />
         ) : (
           <div className="stack" style={{ gap: 8 }}>
             {plans.map((p) => (
@@ -106,7 +108,7 @@ function PlansModal({
                     {p.available === false && (
                       <span className="muted-3" style={{ fontSize: 12 }}>
                         {" "}
-                        · нет в наличии
+                        · {t("catalog.outOfStock")}
                       </span>
                     )}
                   </div>
@@ -122,11 +124,11 @@ function PlansModal({
         <div className="rowflex" style={{ gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <a href={buyUrl} target="_blank" rel="noopener">
             <Btn variant="ghost" sm>
-              На сайт провайдера <Icon name="external" size={14} />
+              {t("catalog.toProviderSite")} <Icon name="external" size={14} />
             </Btn>
           </a>
           <Btn variant="primary" sm onClick={onPick}>
-            Выбрать провайдера
+            {t("catalog.selectProvider")}
           </Btn>
         </div>
       </div>
@@ -146,10 +148,10 @@ function numOr(text: string, fallback: number): number {
 }
 
 // честная подпись про актуальность курса, которым сводим цены к одной валюте
-const FX_SOURCE_NOTE: Record<string, string> = {
-  cbr: "Цены сведены к выбранной валюте по курсу ЦБ РФ.",
-  "cbr-stale": "Цены сведены по последнему сохранённому курсу ЦБ РФ.",
-  fallback: "Курс ЦБ РФ недоступен — пересчёт приблизительный.",
+const FX_SOURCE_NOTE_KEY: Record<string, "catalog.fxNoteCbr" | "catalog.fxNoteCbrStale" | "catalog.fxNoteFallback"> = {
+  cbr: "catalog.fxNoteCbr",
+  "cbr-stale": "catalog.fxNoteCbrStale",
+  fallback: "catalog.fxNoteFallback",
 };
 
 // Подбор тарифа по всем провайдерам: агрегирует их тарифы и фильтрует по локациям, провайдерам, RAM и
@@ -162,6 +164,7 @@ function PlanFinderModal({
   onPick: (providerName: string, plan: FinderPlan) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const providerIds = Object.keys(DYNAMIC_PLAN_PROVIDER_LABELS);
   const results = useQueries({
     queries: providerIds.map((pid) => ({
@@ -240,7 +243,8 @@ function PlanFinderModal({
 
   // спиннер — только пока данных совсем нет; дальше показываем результаты по мере подгрузки провайдеров
   const loading = all.length === 0 && results.some((r) => r.isLoading);
-  const fxNote = FX_SOURCE_NOTE[fx.data?.source ?? ""] ?? "";
+  const fxNoteKey = FX_SOURCE_NOTE_KEY[fx.data?.source ?? ""];
+  const fxNote = fxNoteKey ? t(fxNoteKey) : "";
   const rangeInput: CSSProperties = { width: "100%", minWidth: 0 };
   const groupLabel: CSSProperties = { fontSize: 12, marginBottom: 5 };
   const filterGrid: CSSProperties = {
@@ -249,18 +253,23 @@ function PlanFinderModal({
     gap: 10,
   };
   return (
-    <Modal title="Подбор тарифа по всем провайдерам" onClose={onClose} wide>
+    <Modal title={t("catalog.finderTitle")} onClose={onClose} wide>
       <div className="stack" style={{ gap: 12 }}>
         {/* мультивыборы локаций/провайдеров (с поиском) + переключатель наличия */}
         <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <MultiSelect label="Локации" options={locationOpts} selected={regions} onChange={setRegions} />
-          <MultiSelect label="Провайдеры" options={providerOpts} selected={providerSel} onChange={setProviderSel} />
+          <MultiSelect label={t("catalog.locations")} options={locationOpts} selected={regions} onChange={setRegions} />
+          <MultiSelect
+            label={t("catalog.providers")}
+            options={providerOpts}
+            selected={providerSel}
+            onChange={setProviderSel}
+          />
           <label
             className="rowflex"
             style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center", marginLeft: "auto" }}
           >
             <input type="checkbox" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
-            только в наличии
+            {t("catalog.onlyAvailable")}
           </label>
         </div>
 
@@ -268,14 +277,14 @@ function PlanFinderModal({
         <div style={filterGrid}>
           <div>
             <div className="muted-3" style={groupLabel}>
-              RAM, ГБ
+              {t("catalog.ramGb")}
             </div>
             <div className="rowflex" style={{ gap: 6 }}>
               <input
                 className="input"
                 type="number"
                 min={0}
-                placeholder="от"
+                placeholder={t("catalog.rangeFrom")}
                 value={ramMin}
                 onChange={(e) => setRamMin(e.target.value)}
                 style={rangeInput}
@@ -284,7 +293,7 @@ function PlanFinderModal({
                 className="input"
                 type="number"
                 min={0}
-                placeholder="до"
+                placeholder={t("catalog.rangeTo")}
                 value={ramMax}
                 onChange={(e) => setRamMax(e.target.value)}
                 style={rangeInput}
@@ -293,14 +302,14 @@ function PlanFinderModal({
           </div>
           <div style={{ gridColumn: "span 2" }}>
             <div className="muted-3" style={groupLabel}>
-              Бюджет за месяц
+              {t("catalog.monthlyBudget")}
             </div>
             <div className="rowflex" style={{ gap: 6 }}>
               <input
                 className="input"
                 type="number"
                 min={0}
-                placeholder="от"
+                placeholder={t("catalog.rangeFrom")}
                 value={priceMin}
                 onChange={(e) => setPriceMin(e.target.value)}
                 style={rangeInput}
@@ -309,7 +318,7 @@ function PlanFinderModal({
                 className="input"
                 type="number"
                 min={0}
-                placeholder="до"
+                placeholder={t("catalog.rangeTo")}
                 value={priceMax}
                 onChange={(e) => setPriceMax(e.target.value)}
                 style={rangeInput}
@@ -335,7 +344,7 @@ function PlanFinderModal({
             {fxNote}
           </span>
           <span className="muted-3" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-            Найдено: {rows.length}
+            {t("catalog.foundCount", { n: rows.length })}
           </span>
         </div>
 
@@ -344,7 +353,7 @@ function PlanFinderModal({
             <Spinner />
           </div>
         ) : rows.length === 0 ? (
-          <Empty title="Под фильтры ничего не нашлось" sub="Смягчите условия — например, бюджет, RAM или локации." />
+          <Empty title={t("catalog.finderEmptyTitle")} sub={t("catalog.finderEmptySub")} />
         ) : (
           <div className="stack" style={{ gap: 8, maxHeight: "56vh", overflowY: "auto" }}>
             {rows.map((p) => (
@@ -376,19 +385,19 @@ function PlanFinderModal({
                     <div style={{ fontWeight: 700, fontSize: 13.5 }}>{fmtPrice(p)}</div>
                     {p.monthly != null && p.currency !== priceCur && (
                       <div className="muted-3" style={{ fontSize: 11.5 }}>
-                        ≈ {fmtMoney(p.monthly, priceCur)}/мес
+                        {t("catalog.approxMonthly", { amount: fmtMoney(p.monthly, priceCur) })}
                       </div>
                     )}
                   </div>
                   {p.sourceUrl && (
                     <a href={p.sourceUrl} target="_blank" rel="noopener">
                       <Btn variant="ghost" sm>
-                        Купить <Icon name="external" size={13} />
+                        {t("catalog.buy")} <Icon name="external" size={13} />
                       </Btn>
                     </a>
                   )}
                   <Btn variant="primary" sm onClick={() => onPick(p.providerLabel, p)}>
-                    Выбрать
+                    {t("catalog.select")}
                   </Btn>
                 </div>
               </div>
@@ -411,6 +420,7 @@ interface FormState {
 const EMPTY: FormState = { name: "", url: "", blurb: "", tags: "" };
 
 export function CatalogScreen() {
+  const t = useT();
   const go = useNav((s) => s.go);
   const isAdmin = useStore((s) => s.me?.isAdmin ?? false);
   const toast = useStore((s) => s.toast);
@@ -445,9 +455,9 @@ export function CatalogScreen() {
     onSuccess: () => {
       invalidate();
       setForm(null);
-      toast("Сохранено");
+      toast(t("catalog.saved"));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
   });
 
   const del = useMutation({
@@ -455,9 +465,9 @@ export function CatalogScreen() {
     onSuccess: () => {
       invalidate();
       setConfirmId(null);
-      toast("Провайдер удалён");
+      toast(t("catalog.providerDeleted"));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
   });
 
   const openCreate = () => setForm({ ...EMPTY });
@@ -467,19 +477,19 @@ export function CatalogScreen() {
   return (
     <div className="stack">
       <ScreenHeader
-        title="Каталог провайдеров"
-        sub="Где арендовать VPS под VPN"
+        title={t("catalog.title")}
+        sub={t("catalog.sub")}
         onBack={() => go("servers")}
         action={
           <div className="rowflex" style={{ gap: 8 }}>
             <Btn variant="ghost" onClick={() => setShowFinder(true)}>
               <Icon name="search" size={16} />
-              Подобрать тариф
+              {t("catalog.findTariff")}
             </Btn>
             {isAdmin && (
               <Btn variant="primary" onClick={openCreate}>
                 <Icon name="plus" size={16} />
-                Добавить
+                {t("common.add")}
               </Btn>
             )}
           </div>
@@ -492,12 +502,12 @@ export function CatalogScreen() {
         </div>
       ) : !providers || providers.length === 0 ? (
         <Empty
-          title="Каталог пуст"
-          sub="Провайдеры пока не добавлены"
+          title={t("catalog.emptyTitle")}
+          sub={t("catalog.emptySub")}
           action={
             isAdmin ? (
               <Btn variant="primary" onClick={openCreate}>
-                Добавить провайдера
+                {t("catalog.addProvider")}
               </Btn>
             ) : undefined
           }
@@ -544,9 +554,9 @@ export function CatalogScreen() {
               </p>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 24 }}>
-                {p.tags.map((t) => (
+                {p.tags.map((tag) => (
                   <span
-                    key={t}
+                    key={tag}
                     style={{
                       fontSize: 11,
                       fontWeight: 600,
@@ -556,7 +566,7 @@ export function CatalogScreen() {
                       color: "var(--text-2)",
                     }}
                   >
-                    {t}
+                    {tag}
                   </span>
                 ))}
               </div>
@@ -564,7 +574,7 @@ export function CatalogScreen() {
               {/* действия: основная — «Перейти и купить» на всю ширину; ниже — второй ряд */}
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: "auto" }}>
                 <a href={p.url} target="_blank" rel="noopener" style={primaryAction}>
-                  Перейти и купить
+                  {t("catalog.goAndBuy")}
                   <Icon name="external" size={15} />
                 </a>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -572,14 +582,14 @@ export function CatalogScreen() {
                     <button
                       type="button"
                       onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
-                      title="Актуальные тарифы провайдера"
+                      title={t("catalog.currentTariffsTitle")}
                       style={secondaryAction}
                     >
-                      Тарифы
+                      {t("catalog.tariffs")}
                     </button>
                   )}
                   <button type="button" onClick={() => go("serverForm", { provider: p.name })} style={secondaryAction}>
-                    У меня уже есть
+                    {t("catalog.alreadyHave")}
                   </button>
                 </div>
               </div>
@@ -621,21 +631,21 @@ export function CatalogScreen() {
 
       {form && (
         <Modal
-          title={form.id ? "Редактировать провайдера" : "Новый провайдер"}
+          title={form.id ? t("catalog.editProviderTitle") : t("catalog.newProviderTitle")}
           onClose={() => setForm(null)}
           footer={
             <>
-              <Btn onClick={() => setForm(null)}>Отмена</Btn>
+              <Btn onClick={() => setForm(null)}>{t("common.cancel")}</Btn>
               <Btn variant="primary" disabled={save.isPending} onClick={() => save.mutate(form)}>
-                Сохранить
+                {t("common.save")}
               </Btn>
             </>
           }
         >
-          <Field label="Название">
+          <Field label={t("catalog.nameLabel")}>
             <input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-          <Field label="Ссылка для покупки">
+          <Field label={t("catalog.buyUrlLabel")}>
             <input
               className="input"
               placeholder="https://…"
@@ -643,7 +653,7 @@ export function CatalogScreen() {
               onChange={(e) => set("url", e.target.value)}
             />
           </Field>
-          <Field label="Описание">
+          <Field label={t("catalog.descriptionLabel")}>
             <textarea
               className="input"
               rows={3}
@@ -652,10 +662,10 @@ export function CatalogScreen() {
               onChange={(e) => set("blurb", e.target.value)}
             />
           </Field>
-          <Field label="Теги (через запятую)">
+          <Field label={t("catalog.tagsLabel")}>
             <input
               className="input"
-              placeholder="Дёшево, Европа"
+              placeholder={t("catalog.tagsPlaceholder")}
               value={form.tags}
               onChange={(e) => set("tags", e.target.value)}
             />
@@ -665,18 +675,18 @@ export function CatalogScreen() {
 
       {confirmId && (
         <Modal
-          title="Удалить провайдера?"
+          title={t("catalog.deleteProviderTitle")}
           onClose={() => setConfirmId(null)}
           footer={
             <>
-              <Btn onClick={() => setConfirmId(null)}>Отмена</Btn>
+              <Btn onClick={() => setConfirmId(null)}>{t("common.cancel")}</Btn>
               <Btn variant="danger" disabled={del.isPending} onClick={() => del.mutate(confirmId)}>
-                Удалить
+                {t("common.delete")}
               </Btn>
             </>
           }
         >
-          <p className="muted">Провайдер исчезнет из каталога. На уже созданные серверы это не влияет.</p>
+          <p className="muted">{t("catalog.deleteProviderWarning")}</p>
         </Modal>
       )}
     </div>

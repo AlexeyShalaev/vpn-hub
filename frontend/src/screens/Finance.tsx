@@ -2,36 +2,37 @@ import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Btn, Empty, Icon, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
+import { type TFunc, useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { CostByCurrency, FinanceServerRow, FinanceUnitCost } from "../lib/types";
 import { useNav } from "../nav";
 
 const PERIODS = [
-  { id: "7d", label: "7 дней", days: 7 },
-  { id: "30d", label: "30 дней", days: 30 },
-  { id: "90d", label: "90 дней", days: 90 },
-  { id: "month", label: "Этот месяц", days: null },
+  { id: "7d", key: "period.7d", days: 7 },
+  { id: "30d", key: "period.30d", days: 30 },
+  { id: "90d", key: "period.90d", days: 90 },
+  { id: "month", key: "finance.periodMonth", days: null },
 ] as const;
 
 type PeriodId = (typeof PERIODS)[number]["id"];
 
-function periodRange(period: PeriodId): { start: number; end: number; label: string } {
+function periodRange(t: TFunc, period: PeriodId): { start: number; end: number; label: string } {
   const end = Math.floor(Date.now() / 1000);
   if (period === "month") {
     const d = new Date();
     return {
       start: Math.floor(new Date(d.getFullYear(), d.getMonth(), 1).getTime() / 1000),
       end,
-      label: "с начала месяца",
+      label: t("finance.sinceMonthStart"),
     };
   }
   const p = PERIODS.find((x) => x.id === period) ?? PERIODS[1];
-  return { start: end - (p.days ?? 30) * 86400, end, label: p.label };
+  return { start: end - (p.days ?? 30) * 86400, end, label: t(p.key) };
 }
 
-function fmtBytes(n: number | null | undefined): string {
-  if (n == null) return "без квоты";
-  const u = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+function fmtBytes(t: TFunc, n: number | null | undefined): string {
+  if (n == null) return t("finance.noQuota");
+  const u = [t("finance.unitByte"), t("finance.unitKb"), t("finance.unitMb"), t("finance.unitGb"), t("finance.unitTb")];
   let v = n;
   let i = 0;
   while (v >= 1024 && i < u.length - 1) {
@@ -50,9 +51,14 @@ function fmtMoneyList(items: CostByCurrency[]): string {
   return items.map((x) => fmtMoney(x.amount, x.currency)).join(" · ");
 }
 
-function fmtPrice(price: FinanceServerRow["price"]): string {
-  if (!price) return "не задана";
-  const period = price.period === "month" ? "мес" : price.period === "day" ? "день" : "мин";
+function fmtPrice(t: TFunc, price: FinanceServerRow["price"]): string {
+  if (!price) return t("finance.priceNotSet");
+  const period =
+    price.period === "month"
+      ? t("finance.periodMonthShort")
+      : price.period === "day"
+        ? t("finance.periodDayShort")
+        : t("finance.periodMinShort");
   return `${fmtMoney(price.amount, price.currency)} / ${period}`;
 }
 
@@ -101,13 +107,14 @@ function UtilizationBar({ pct }: { pct: number | null }) {
 }
 
 function UnitCostList({ items }: { items: FinanceUnitCost[] }) {
+  const t = useT();
   if (items.length === 0) return <span className="muted-3">—</span>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       {items.map((u) => (
         <div key={u.currency} style={{ fontSize: 12.5, lineHeight: 1.35 }}>
-          <b>{u.currency}</b>: {fmtUnit(u.costPerQuotaGb ?? u.costPerUsedGb, u.currency)} / ГБ
-          <span className="muted-3"> · {u.costPerQuotaGb != null ? "по квоте" : "по факту"}</span>
+          <b>{u.currency}</b>: {fmtUnit(u.costPerQuotaGb ?? u.costPerUsedGb, u.currency)} / {t("finance.unitGb")}
+          <span className="muted-3"> · {u.costPerQuotaGb != null ? t("finance.byQuota") : t("finance.byFact")}</span>
         </div>
       ))}
     </div>
@@ -115,6 +122,7 @@ function UnitCostList({ items }: { items: FinanceUnitCost[] }) {
 }
 
 function SaleGuide({ unitCosts }: { unitCosts: FinanceUnitCost[] }) {
+  const t = useT();
   const guides = unitCosts.flatMap((u) =>
     u.saleGuide
       .filter((g) => g.pricePerGb != null && g.pricePerTb != null)
@@ -123,10 +131,7 @@ function SaleGuide({ unitCosts }: { unitCosts: FinanceUnitCost[] }) {
   if (guides.length === 0) {
     return (
       <div className="card">
-        <Empty
-          title="Недостаточно данных для цены продажи"
-          sub="Нужны цена сервера и квота или накопленный трафик за период."
-        />
+        <Empty title={t("finance.saleGuideEmptyTitle")} sub={t("finance.saleGuideEmptySub")} />
       </div>
     );
   }
@@ -135,9 +140,9 @@ function SaleGuide({ unitCosts }: { unitCosts: FinanceUnitCost[] }) {
       <div className="rowflex" style={{ gap: 10 }}>
         <Icon name="finance" />
         <div>
-          <div className="title">Ориентир продажи трафика</div>
+          <div className="title">{t("finance.saleGuideTitle")}</div>
           <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
-            База считается отдельно по каждой валюте, без конвертации.
+            {t("finance.saleGuideHint")}
           </div>
         </div>
       </div>
@@ -156,11 +161,14 @@ function SaleGuide({ unitCosts }: { unitCosts: FinanceUnitCost[] }) {
             }}
           >
             <div className="muted-3" style={{ fontSize: 12, fontWeight: 700 }}>
-              Маржа +{g.marginPct}% · {g.currency}
+              {t("finance.saleGuideMargin", { pct: g.marginPct, currency: g.currency })}
             </div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>{fmtUnit(g.pricePerGb, g.currency)} / ГБ</div>
+            <div style={{ fontSize: 20, fontWeight: 800 }}>
+              {fmtUnit(g.pricePerGb, g.currency)} / {t("finance.unitGb")}
+            </div>
             <div className="muted" style={{ fontSize: 12.5 }}>
-              {fmtUnit(g.pricePerTb, g.currency)} / ТБ · {g.basis === "quota" ? "по квоте" : "по факту"}
+              {fmtUnit(g.pricePerTb, g.currency)} / {t("finance.unitTb")} ·{" "}
+              {g.basis === "quota" ? t("finance.byQuota") : t("finance.byFact")}
             </div>
           </div>
         ))}
@@ -170,18 +178,19 @@ function SaleGuide({ unitCosts }: { unitCosts: FinanceUnitCost[] }) {
 }
 
 function DataQuality({ rows }: { rows: FinanceServerRow[] }) {
+  const t = useT();
   const noPrice = rows.filter((s) => !s.price).length;
   const noQuota = rows.filter((s) => !s.trafficQuotaBytes).length;
   const hot = rows.filter((s) => (s.trafficUtilizationPct ?? 0) >= 80).length;
   return (
     <div className="card">
       <div className="title" style={{ marginBottom: 12 }}>
-        Контроль данных
+        {t("finance.dataQualityTitle")}
       </div>
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
-        <Insight value={String(noPrice)} label="без цены" tone={noPrice ? "warn" : "ok"} />
-        <Insight value={String(noQuota)} label="без квоты трафика" tone={noQuota ? "warn" : "ok"} />
-        <Insight value={String(hot)} label="квота загружена от 80%" tone={hot ? "danger" : "ok"} />
+        <Insight value={String(noPrice)} label={t("finance.noPriceCount")} tone={noPrice ? "warn" : "ok"} />
+        <Insight value={String(noQuota)} label={t("finance.noQuotaCount")} tone={noQuota ? "warn" : "ok"} />
+        <Insight value={String(hot)} label={t("finance.hotQuotaCount")} tone={hot ? "danger" : "ok"} />
       </div>
     </div>
   );
@@ -228,11 +237,12 @@ const rowGrid: CSSProperties = {
 };
 
 function ServerFinanceTable({ rows }: { rows: FinanceServerRow[] }) {
+  const t = useT();
   const go = useNav((s) => s.go);
   if (rows.length === 0) {
     return (
       <div className="card">
-        <Empty title="Серверов пока нет" sub="Добавьте сервер и задайте цену, чтобы появились финансовые показатели." />
+        <Empty title={t("finance.noServersTitle")} sub={t("finance.noServersSub")} />
       </div>
     );
   }
@@ -240,16 +250,16 @@ function ServerFinanceTable({ rows }: { rows: FinanceServerRow[] }) {
     <div className="card stack" style={{ gap: 12 }}>
       <div className="rowflex" style={{ gap: 10 }}>
         <Icon name="servers" />
-        <div className="title">Серверы</div>
+        <div className="title">{t("finance.serversTitle")}</div>
       </div>
       <div style={{ overflowX: "auto" }}>
         <div style={{ minWidth: 920, display: "flex", flexDirection: "column", gap: 0 }}>
           <div style={{ ...rowGrid, padding: "0 0 9px", borderBottom: "1px solid var(--border)" }}>
-            <div style={headerCell}>Сервер</div>
-            <div style={headerCell}>Цена</div>
-            <div style={headerCell}>Расход</div>
-            <div style={headerCell}>Трафик</div>
-            <div style={headerCell}>Unit economics</div>
+            <div style={headerCell}>{t("finance.colServer")}</div>
+            <div style={headerCell}>{t("finance.colPrice")}</div>
+            <div style={headerCell}>{t("finance.colExpense")}</div>
+            <div style={headerCell}>{t("finance.colTraffic")}</div>
+            <div style={headerCell}>{t("finance.colUnitEconomics")}</div>
           </div>
           {rows.map((s) => (
             <div
@@ -287,11 +297,11 @@ function ServerFinanceTable({ rows }: { rows: FinanceServerRow[] }) {
                   <StatusBadge status={s.status} />
                 </div>
               </div>
-              <div style={{ fontSize: 13 }}>{fmtPrice(s.price)}</div>
+              <div style={{ fontSize: 13 }}>{fmtPrice(t, s.price)}</div>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{fmtMoneyList(s.costByCurrency)}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>
-                  {fmtBytes(s.trafficUsedBytes)} / {fmtBytes(s.trafficQuotaBytes)}
+                  {fmtBytes(t, s.trafficUsedBytes)} / {fmtBytes(t, s.trafficQuotaBytes)}
                 </div>
                 <UtilizationBar pct={s.trafficUtilizationPct} />
                 <div className="muted-3" style={{ fontSize: 12 }}>
@@ -308,8 +318,9 @@ function ServerFinanceTable({ rows }: { rows: FinanceServerRow[] }) {
 }
 
 export function FinanceScreen() {
+  const t = useT();
   const [period, setPeriod] = useState<PeriodId>("30d");
-  const range = useMemo(() => periodRange(period), [period]);
+  const range = useMemo(() => periodRange(t, period), [t, period]);
   const reportQ = useQuery({
     queryKey: ["financeOverview", period],
     queryFn: () => q.financeOverview(range.start, range.end),
@@ -321,12 +332,12 @@ export function FinanceScreen() {
   const unit = totals?.unitCosts[0];
   const usedShareLabel =
     totals?.trafficQuotaBytes && totals.trafficUtilizationPct != null
-      ? `${fmtPct(totals.trafficUtilizationPct)} квоты`
-      : "квота не задана";
+      ? t("finance.quotaShare", { pct: fmtPct(totals.trafficUtilizationPct) })
+      : t("finance.quotaNotSet");
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <ScreenHeader title="Финансы" sub="Затраты на инфраструктуру, утилизация трафика и ориентиры продажи." />
+      <ScreenHeader title={t("nav.finance")} sub={t("finance.headerSub")} />
 
       {/* Отдельная строка выбора периода: таблетки на десктопе, компактный select на телефоне —
           иначе длинное описание и период не помещаются в одну строку. */}
@@ -340,7 +351,7 @@ export function FinanceScreen() {
               onClick={() => setPeriod(p.id)}
               style={{ height: 34, padding: "0 12px", fontSize: 12.5 }}
             >
-              {p.label}
+              {t(p.key)}
             </button>
           ))}
         </div>
@@ -348,11 +359,11 @@ export function FinanceScreen() {
           className="period-select"
           value={period}
           onChange={(e) => setPeriod(e.target.value as PeriodId)}
-          aria-label="Период"
+          aria-label={t("finance.periodAriaLabel")}
         >
           {PERIODS.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.label}
+              {t(p.key)}
             </option>
           ))}
         </select>
@@ -364,45 +375,47 @@ export function FinanceScreen() {
         </div>
       ) : reportQ.isError || !report || !totals ? (
         <div className="card">
-          <Empty title="Не удалось загрузить финансы" sub="Проверьте backend и повторите позже." />
+          <Empty title={t("finance.loadFailedTitle")} sub={t("finance.loadFailedSub")} />
         </div>
       ) : (
         <>
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
             <KpiCard
               icon="finance"
-              label={`Расход · ${range.label}`}
+              label={t("finance.kpiExpense", { period: range.label })}
               value={fmtMoneyList(totals.costByCurrency)}
-              sub={`${totals.pricedServers} из ${totals.servers} серверов с заданной ценой`}
+              sub={t("finance.kpiExpenseSub", { priced: totals.pricedServers, total: totals.servers })}
             />
             <KpiCard
               icon="monitoring"
-              label="Использование трафика"
-              value={fmtBytes(totals.trafficUsedBytes)}
+              label={t("finance.kpiTrafficUsage")}
+              value={fmtBytes(t, totals.trafficUsedBytes)}
               sub={
                 <>
                   {usedShareLabel}
-                  {totals.trafficQuotaBytes ? ` · всего ${fmtBytes(totals.trafficQuotaBytes)}` : ""}
+                  {totals.trafficQuotaBytes
+                    ? ` · ${t("finance.kpiTrafficTotal", { total: fmtBytes(t, totals.trafficQuotaBytes) })}`
+                    : ""}
                 </>
               }
             />
             <KpiCard
               icon="servers"
-              label="Себестоимость ГБ"
+              label={t("finance.kpiCostPerGb")}
               value={unit ? fmtUnit(unit.costPerQuotaGb ?? unit.costPerUsedGb, unit.currency) : "—"}
               sub={
                 unit
                   ? unit.costPerQuotaGb != null
-                    ? "по купленной квоте"
-                    : "по фактически использованному"
-                  : "нет данных"
+                    ? t("finance.byQuotaBought")
+                    : t("finance.byFactUsed")
+                  : t("finance.noData")
               }
             />
             <KpiCard
               icon="access"
-              label="Покрытие квот"
+              label={t("finance.kpiQuotaCoverage")}
               value={`${totals.quotaServers} / ${totals.servers}`}
-              sub="серверов с сетевым лимитом тарифа"
+              sub={t("finance.kpiQuotaCoverageSub")}
             />
           </div>
 
@@ -413,7 +426,7 @@ export function FinanceScreen() {
           <div className="rowflex" style={{ justifyContent: "flex-end" }}>
             <Btn variant="ghost" sm onClick={() => reportQ.refetch()}>
               <Icon name="refresh" size={15} />
-              Обновить
+              {t("finance.refresh")}
             </Btn>
           </div>
         </>

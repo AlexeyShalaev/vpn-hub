@@ -10,6 +10,8 @@
 // сигнатуру для автоопределения и извлечение локации из названия тарифа
 // (KVM-SSD-1-PAR → Париж, Naos[RS] → Сербия).
 
+import { type TKey, tg } from "./i18n";
+
 export interface ParsedServerInfo {
   providerId?: string;
   ip?: string;
@@ -84,101 +86,103 @@ const VALIDATORS: Record<Field, (v: string) => boolean> = {
 
 // ---------- локация из названия тарифа ----------
 // Коды дата-центров в суффиксе тарифа (FirstByte: KVM-SSD-1-PAR, EU-KVM-SSD-2-FIN).
-const DC_CODES: Record<string, string> = {
-  MSK: "Москва",
-  SPB: "Санкт-Петербург",
-  KZN: "Казань",
-  EKB: "Екатеринбург",
-  NSK: "Новосибирск",
-  PAR: "Париж",
-  PARS: "Париж",
-  AMS: "Амстердам",
-  FRA: "Франкфурт",
-  FIN: "Хельсинки",
-  HEL: "Хельсинки",
-  SOF: "София",
-  MAD: "Мадрид",
-  WAW: "Варшава",
-  LON: "Лондон",
-  VIE: "Вена",
-  PRG: "Прага",
-  STO: "Стокгольм",
-  MIL: "Милан",
-  IST: "Стамбул",
-  TLV: "Тель-Авив",
-  ALM: "Алматы",
-  NYC: "Нью-Йорк",
-  LAX: "Лос-Анджелес",
-  TOR: "Торонто",
-  HKG: "Гонконг",
-  SG: "Сингапур",
-  SGP: "Сингапур",
-  TK: "Токио",
-  TOK: "Токио",
-  DB: "Дубай",
-  DXB: "Дубай",
+// Значения — ключи i18n (city.*), переводятся в locationFromTariff() при обращении.
+const DC_CODES: Record<string, TKey> = {
+  MSK: "city.moscow",
+  SPB: "city.saintPetersburg",
+  KZN: "city.kazan",
+  EKB: "city.yekaterinburg",
+  NSK: "city.novosibirsk",
+  PAR: "city.paris",
+  PARS: "city.paris",
+  AMS: "city.amsterdam",
+  FRA: "city.frankfurt",
+  FIN: "city.helsinki",
+  HEL: "city.helsinki",
+  SOF: "city.sofia",
+  MAD: "city.madrid",
+  WAW: "city.warsaw",
+  LON: "city.london",
+  VIE: "city.vienna",
+  PRG: "city.prague",
+  STO: "city.stockholm",
+  MIL: "city.milan",
+  IST: "city.istanbul",
+  TLV: "city.telAviv",
+  ALM: "city.almaty",
+  NYC: "city.newYork",
+  LAX: "city.losAngeles",
+  TOR: "city.toronto",
+  HKG: "city.hongKong",
+  SG: "city.singapore",
+  SGP: "city.singapore",
+  TK: "city.tokyo",
+  TOK: "city.tokyo",
+  DB: "city.dubai",
+  DXB: "city.dubai",
 };
 
 // Коды стран в квадратных скобках (UFO Hosting и родственные: Naos[RS], Haedus[NL]).
-const COUNTRY_CODES: Record<string, string> = {
-  RU: "Россия",
-  BY: "Беларусь",
-  KZ: "Казахстан",
-  NL: "Нидерланды",
-  DE: "Германия",
-  FR: "Франция",
-  FI: "Финляндия",
-  RS: "Сербия",
-  US: "США",
-  GB: "Великобритания",
-  UK: "Великобритания",
-  TR: "Турция",
-  PL: "Польша",
-  MD: "Молдова",
-  LV: "Латвия",
-  LT: "Литва",
-  EE: "Эстония",
-  UA: "Украина",
-  AT: "Австрия",
-  CH: "Швейцария",
-  SE: "Швеция",
-  NO: "Норвегия",
-  ES: "Испания",
-  IT: "Италия",
-  CZ: "Чехия",
-  SK: "Словакия",
-  BG: "Болгария",
-  RO: "Румыния",
-  GR: "Греция",
-  PT: "Португалия",
-  HU: "Венгрия",
-  IL: "Израиль",
-  AE: "ОАЭ",
-  HK: "Гонконг",
-  SG: "Сингапур",
-  JP: "Япония",
-  IN: "Индия",
-  BR: "Бразилия",
-  CA: "Канада",
-  MX: "Мексика",
-  AM: "Армения",
-  GE: "Грузия",
-  AZ: "Азербайджан",
-  UZ: "Узбекистан",
-  KG: "Киргизия",
+// Значения — ключи i18n (city.*), переводятся в locationFromTariff() при обращении.
+const COUNTRY_CODES: Record<string, TKey> = {
+  RU: "city.russia",
+  BY: "city.belarus",
+  KZ: "city.kazakhstan",
+  NL: "city.netherlands",
+  DE: "city.germany",
+  FR: "city.france",
+  FI: "city.finland",
+  RS: "city.serbia",
+  US: "city.usa",
+  GB: "city.unitedKingdom",
+  UK: "city.unitedKingdom",
+  TR: "city.turkey",
+  PL: "city.poland",
+  MD: "city.moldova",
+  LV: "city.latvia",
+  LT: "city.lithuania",
+  EE: "city.estonia",
+  UA: "city.ukraine",
+  AT: "city.austria",
+  CH: "city.switzerland",
+  SE: "city.sweden",
+  NO: "city.norway",
+  ES: "city.spain",
+  IT: "city.italy",
+  CZ: "city.czechia",
+  SK: "city.slovakia",
+  BG: "city.bulgaria",
+  RO: "city.romania",
+  GR: "city.greece",
+  PT: "city.portugal",
+  HU: "city.hungary",
+  IL: "city.israel",
+  AE: "city.uae",
+  HK: "city.hongKong",
+  SG: "city.singapore",
+  JP: "city.japan",
+  IN: "city.india",
+  BR: "city.brazil",
+  CA: "city.canada",
+  MX: "city.mexico",
+  AM: "city.armenia",
+  GE: "city.georgia",
+  AZ: "city.azerbaijan",
+  UZ: "city.uzbekistan",
+  KG: "city.kyrgyzstan",
 };
 
 function locationFromTariff(tariff: string): string | undefined {
   const t = tariff.trim().toUpperCase();
   // Naos[RS] → Сербия
   const bracket = /\[([A-Z]{2})\]/.exec(t);
-  if (bracket && COUNTRY_CODES[bracket[1]]) return COUNTRY_CODES[bracket[1]];
+  if (bracket && COUNTRY_CODES[bracket[1]]) return tg(COUNTRY_CODES[bracket[1]]);
   // KVM-SSD-1-PAR, PARs-2 → Париж
   const suffix = /-([A-Z]{2,4})S?\d*$/.exec(t);
-  if (suffix && DC_CODES[suffix[1]]) return DC_CODES[suffix[1]];
+  if (suffix && DC_CODES[suffix[1]]) return tg(DC_CODES[suffix[1]]);
   const prefix = /^([A-Z]{2,4})-/.exec(t);
-  if (prefix && DC_CODES[prefix[1]]) return DC_CODES[prefix[1]];
-  if (prefix && COUNTRY_CODES[prefix[1]]) return COUNTRY_CODES[prefix[1]];
+  if (prefix && DC_CODES[prefix[1]]) return tg(DC_CODES[prefix[1]]);
+  if (prefix && COUNTRY_CODES[prefix[1]]) return tg(COUNTRY_CODES[prefix[1]]);
   return undefined;
 }
 

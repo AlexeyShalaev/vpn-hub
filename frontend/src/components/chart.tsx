@@ -1,5 +1,6 @@
 // Лёгкий SVG-график линий без внешних зависимостей (recharts/chart.js не подключаем).
 // Корректно деградирует при 0/1 точке (без деления на ноль в масштабировании).
+import { useT } from "../lib/i18n";
 import type { MetricPoint } from "../lib/types";
 
 export interface ChartLine {
@@ -21,6 +22,7 @@ function niceMax(max: number): number {
 }
 
 export function LineChart({ lines, height = H }: { lines: ChartLine[]; height?: number }) {
+  const t = useT();
   const all = lines.flatMap((l) => l.points);
   const hasData = all.length > 0;
   const minAt = hasData ? Math.min(...all.map((p) => p.at)) : 0;
@@ -83,7 +85,7 @@ export function LineChart({ lines, height = H }: { lines: ChartLine[]; height?: 
         )}
         {!hasData && (
           <text x={W / 2} y={height / 2} textAnchor="middle" fontSize={12} fill="var(--text-3)">
-            Пока нет данных
+            {t("chart.noData")}
           </text>
         )}
       </svg>

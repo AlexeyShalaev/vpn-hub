@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { Device, DeviceConfig } from "../lib/types";
 import { PLATFORM_LABEL, VPN_LABEL } from "../lib/types";
@@ -13,6 +14,7 @@ const PLATFORMS: Platform[] = ["ios", "android", "mac", "windows", "linux", "rou
 
 // «Мой трафик за период по серверам»: израсходовано / лимит + пометка приостановки.
 function TrafficUsageCard({ rows }: { rows: import("../lib/types").MyUsage[] }) {
+  const t = useT();
   if (rows.length === 0) return null;
   return (
     <div
@@ -37,7 +39,7 @@ function TrafficUsageCard({ rows }: { rows: import("../lib/types").MyUsage[] }) 
           color: "var(--text-3)",
         }}
       >
-        Мой трафик за период
+        {t("devices.trafficUsageTitle")}
       </div>
       {rows.map((r) => {
         const pct = r.limit && r.limit > 0 ? Math.min(100, Math.round((r.used / r.limit) * 100)) : null;
@@ -53,18 +55,14 @@ function TrafficUsageCard({ rows }: { rows: import("../lib/types").MyUsage[] }) 
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {r.serverName}
                 {r.suspended && (
-                  <span
-                    className="badge warn"
-                    style={{ marginLeft: 8 }}
-                    title="Доступ приостановлен из-за лимита — вернётся после сброса периода"
-                  >
-                    приостановлен
+                  <span className="badge warn" style={{ marginLeft: 8 }} title={t("devices.suspendedHint")}>
+                    {t("devices.suspended")}
                   </span>
                 )}
               </span>
               <span style={{ color: col, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flex: "none" }}>
                 {fmtBytes(r.used)}
-                {r.limit != null ? ` / ${fmtBytes(r.limit)}` : " · без лимита"}
+                {r.limit != null ? ` / ${fmtBytes(r.limit)}` : ` · ${t("devices.noLimit")}`}
               </span>
             </div>
             {pct != null && (
@@ -94,6 +92,7 @@ function DeviceCard({
   onRemove: () => void;
   onRevokeConfig: (c: DeviceConfig) => void;
 }) {
+  const t = useT();
   const configs = d.configs ?? [];
   // группируем выданные конфиги по серверу (порядок серверов — по первому появлению),
   // чтобы внутри устройства показать «сервер → его протоколы», а не плоский список.
@@ -151,14 +150,14 @@ function DeviceCard({
           </div>
           <div style={{ fontSize: 12, color: "var(--text-3)" }}>{PLATFORM_LABEL[d.platform]}</div>
         </div>
-        <Btn variant="ghost" sm onClick={onRemove} aria-label="Удалить">
+        <Btn variant="ghost" sm onClick={onRemove} aria-label={t("common.delete")}>
           <Icon name="trash" size={16} />
         </Btn>
       </div>
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 10 }}>Выданные конфиги</div>
+        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 10 }}>{t("devices.issuedConfigs")}</div>
         {configs.length === 0 ? (
-          <span style={{ fontSize: 13, color: "var(--text-3)" }}>пока нет — добавьте на вкладке «Доступно»</span>
+          <span style={{ fontSize: 13, color: "var(--text-3)" }}>{t("devices.noConfigsYet")}</span>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
             {groups.map((g) => (
@@ -203,11 +202,11 @@ function DeviceCard({
                         >
                           {c.proto || VPN_LABEL[c.type]}
                           {suspended ? (
-                            <span title="Доступ приостановлен из-за лимита трафика — вернётся после сброса периода">
-                              {" · приостановлен (лимит трафика)"}
+                            <span title={t("devices.suspendedTrafficHint")}>
+                              {` · ${t("devices.suspendedTraffic")}`}
                             </span>
                           ) : revoked ? (
-                            " · отозван"
+                            ` · ${t("devices.revoked")}`
                           ) : (
                             ""
                           )}
@@ -216,7 +215,7 @@ function DeviceCard({
                       <Btn
                         variant="ghost"
                         sm
-                        aria-label="Отозвать конфиг"
+                        aria-label={t("devices.revokeConfig")}
                         style={{ flex: "none" }}
                         onClick={() => onRevokeConfig(c)}
                       >
@@ -235,6 +234,7 @@ function DeviceCard({
 }
 
 export function DevicesScreen() {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useStore((s) => s.toast);
 
@@ -277,9 +277,9 @@ export function DevicesScreen() {
       qc.invalidateQueries({ queryKey: ["devices"] });
       qc.invalidateQueries({ queryKey: ["deviceLimit"] });
       setAdding(false);
-      toast("Устройство добавлено");
+      toast(t("devices.deviceAdded"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось добавить устройство"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("devices.addDeviceFailed")),
   });
 
   const removeMut = useMutation({
@@ -288,7 +288,7 @@ export function DevicesScreen() {
       qc.invalidateQueries({ queryKey: ["devices"] });
       qc.invalidateQueries({ queryKey: ["deviceLimit"] });
       setRemoving(null);
-      toast("Устройство удалено");
+      toast(t("devices.deviceRemoved"));
     },
   });
 
@@ -298,9 +298,9 @@ export function DevicesScreen() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["devices"] });
       setRevokingCfg(null);
-      toast("Конфиг отозван");
+      toast(t("devices.configRevoked"));
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "Не удалось отозвать конфиг"),
+    onError: (e) => toast(e instanceof Error ? e.message : t("devices.revokeConfigFailed")),
   });
 
   function openAdd() {
@@ -311,7 +311,7 @@ export function DevicesScreen() {
 
   function save() {
     if (!name.trim()) {
-      toast("Введите имя");
+      toast(t("devices.enterName"));
       return;
     }
     addMut.mutate();
@@ -321,27 +321,27 @@ export function DevicesScreen() {
   const cap = limit?.limit ?? null;
   const used = list.length;
   const atLimit = cap != null && used >= cap;
-  const limitHint = atLimit ? `Достигнут лимит устройств (${used}/${cap}). Обратитесь к владельцу.` : undefined;
+  const limitHint = atLimit ? t("devices.deviceLimitReached", { used, cap }) : undefined;
 
   return (
     <div className="screen">
       <ScreenHeader
-        title="Мои устройства"
+        title={t("devices.title")}
         sub={
           cap != null ? (
             <>
-              Куда вы ставите конфиги ·{" "}
+              {t("devices.subtitle")} ·{" "}
               <span style={{ color: atLimit ? "var(--danger)" : "var(--text-2)", fontWeight: 600 }}>
-                устройств {used} / {cap}
+                {t("devices.deviceCount", { used, cap })}
               </span>
             </>
           ) : (
-            "Куда вы ставите конфиги"
+            t("devices.subtitle")
           )
         }
         action={
           <Btn variant="primary" onClick={openAdd} disabled={atLimit} title={limitHint}>
-            Добавить устройство
+            {t("devices.addDevice")}
           </Btn>
         }
       />
@@ -354,11 +354,11 @@ export function DevicesScreen() {
         </div>
       ) : list.length === 0 ? (
         <Empty
-          title="Нет устройств"
-          sub="Добавьте устройства, на которые будете ставить VPN-конфиги."
+          title={t("devices.emptyTitle")}
+          sub={t("devices.emptySub")}
           action={
             <Btn variant="primary" onClick={openAdd}>
-              Добавить устройство
+              {t("devices.addDevice")}
             </Btn>
           }
         />
@@ -380,29 +380,29 @@ export function DevicesScreen() {
 
       {adding && (
         <Modal
-          title="Новое устройство"
+          title={t("devices.newDevice")}
           onClose={() => setAdding(false)}
           footer={
             <>
               <Btn block onClick={() => setAdding(false)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn variant="primary" block onClick={save} disabled={addMut.isPending}>
-                Добавить
+                {t("common.add")}
               </Btn>
             </>
           }
         >
-          <Field label="Название">
+          <Field label={t("devices.nameLabel")}>
             <input
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="например, Рабочий ноут"
+              placeholder={t("devices.namePlaceholder")}
               autoFocus
             />
           </Field>
-          <Field label="Платформа">
+          <Field label={t("devices.platformLabel")}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {PLATFORMS.map((p) => (
                 <button
@@ -423,33 +423,33 @@ export function DevicesScreen() {
 
       {removing && (
         <Modal
-          title="Удалить устройство?"
+          title={t("devices.removeDeviceTitle")}
           onClose={() => setRemoving(null)}
           footer={
             <>
               <Btn block onClick={() => setRemoving(null)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn variant="danger" block onClick={() => removeMut.mutate(removing.id)} disabled={removeMut.isPending}>
-                Удалить
+                {t("common.delete")}
               </Btn>
             </>
           }
         >
           <p className="muted" style={{ fontSize: 14 }}>
-            «{removing.name}» будет удалено. Установленные на нём конфиги перестанут отслеживаться.
+            {t("devices.removeDeviceBody", { name: removing.name })}
           </p>
         </Modal>
       )}
 
       {revokingCfg && (
         <Modal
-          title="Отозвать конфиг?"
+          title={t("devices.revokeConfigTitle")}
           onClose={() => setRevokingCfg(null)}
           footer={
             <>
               <Btn block onClick={() => setRevokingCfg(null)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn
                 variant="danger"
@@ -457,14 +457,13 @@ export function DevicesScreen() {
                 onClick={() => revokeCfgMut.mutate(revokingCfg)}
                 disabled={revokeCfgMut.isPending}
               >
-                {revokeCfgMut.isPending ? "Отзыв…" : "Отозвать"}
+                {revokeCfgMut.isPending ? t("devices.revoking") : t("devices.revoke")}
               </Btn>
             </>
           }
         >
           <p className="muted" style={{ fontSize: 14 }}>
-            «{configLabel(revokingCfg.config, revokingCfg.serverName)}» будет отозван: клиент снимется на сервере, и
-            подключение по этому конфигу перестанет работать. Позже его можно выдать заново на вкладке «Доступно».
+            {t("devices.revokeConfigBody", { label: configLabel(revokingCfg.config, revokingCfg.serverName) })}
           </p>
         </Modal>
       )}

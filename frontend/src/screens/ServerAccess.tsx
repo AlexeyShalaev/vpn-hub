@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Btn, Field, Icon, Modal, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { ServerClientConfig } from "../lib/types";
 import { useNav } from "../nav";
@@ -48,12 +49,6 @@ function groupByDevice(configs: ServerClientConfig[]): [string, ServerClientConf
   return [...m];
 }
 
-// подпись групповой кнопки — явная по области (устройство / пользователь), чтобы было понятно, что затронет
-const GROUP_LABEL = {
-  device: { pause: "Пауза всех конфигов на устройстве", resume: "Продолжить все конфиги на устройстве" },
-  user: { pause: "Пауза всех конфигов пользователя", resume: "Продолжить все конфиги пользователя" },
-} as const;
-
 // Кнопка групповой паузы/продолжения (для устройства или всего пользователя). Скрыта, если нечего делать.
 function GroupPauseBtn({
   configs,
@@ -66,9 +61,18 @@ function GroupPauseBtn({
   disabled: boolean;
   onRun: (a: GroupPause) => void;
 }) {
+  const t = useT();
   const action = groupPauseAction(configs);
   if (!action) return null;
-  const label = GROUP_LABEL[scope][action.pause ? "pause" : "resume"];
+  // подпись групповой кнопки — явная по области (устройство / пользователь), чтобы было понятно, что затронет
+  const label =
+    scope === "device"
+      ? action.pause
+        ? t("srvAccess.pauseAllDevice")
+        : t("srvAccess.resumeAllDevice")
+      : action.pause
+        ? t("srvAccess.pauseAllUser")
+        : t("srvAccess.resumeAllUser");
   return (
     <Btn variant="ghost" sm disabled={disabled} title={label} onClick={() => onRun(action)}>
       <Icon name={action.pause ? "stop" : "play"} size={14} />
@@ -78,6 +82,7 @@ function GroupPauseBtn({
 }
 
 export function ServerAccessSections({ serverId }: { serverId: string }) {
+  const t = useT();
   const toast = useStore((s) => s.toast);
   const go = useNav((s) => s.go);
   const qc = useQueryClient();
@@ -100,18 +105,18 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
     onSuccess: () => {
       invalidate();
       setRename(null);
-      toast("Переименовано");
+      toast(t("srvAccess.renamed"));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
   });
   const revokeMut = useMutation({
     mutationFn: (cid: string) => q.revokeServerClient(serverId, cid),
     onSuccess: () => {
       invalidate();
       setRevoke(null);
-      toast("Доступ отозван");
+      toast(t("srvAccess.accessRevoked"));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
   });
   // ручная пауза/старт доступа по конфигу (тот же suspend/resume-механизм, статус → paused/active)
   const pauseMut = useMutation({
@@ -119,9 +124,9 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
       v.pause ? q.pauseServerClient(serverId, v.cid) : q.resumeServerClient(serverId, v.cid),
     onSuccess: (_r, v) => {
       invalidate();
-      toast(v.pause ? "Конфиг приостановлен" : "Конфиг возобновлён");
+      toast(v.pause ? t("srvAccess.configPaused") : t("srvAccess.configResumed"));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
   });
   // групповая пауза/продолжение (устройство или весь пользователь) — те же suspend/resume, но пачкой.
   // Последовательно: конфиг-файловые протоколы (xray/hysteria2) правят один server.json — параллель бы гонялась.
@@ -133,9 +138,9 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
     },
     onSuccess: (_r, v) => {
       invalidate();
-      toast(v.pause ? `Приостановлено: ${v.ids.length}` : `Возобновлено: ${v.ids.length}`);
+      toast(v.pause ? t("srvAccess.bulkPaused", { n: v.ids.length }) : t("srvAccess.bulkResumed", { n: v.ids.length }));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Ошибка"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("common.error")),
   });
 
   if (isLoading || !data) {
@@ -153,18 +158,18 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
       {/* Где используется */}
       <div className="card stack">
         <div className="muted-3" style={sectionTitle}>
-          Где используется
+          {t("srvAccess.usedWhereTitle")}
         </div>
         {pools.length === 0 && groups.length === 0 ? (
           <div className="muted" style={{ fontSize: 13.5 }}>
-            Сервер пока не входит в пулы и не выдан ни одной группе.
+            {t("srvAccess.usedWhereEmpty")}
           </div>
         ) : (
           <div className="stack" style={{ gap: 12 }}>
             {pools.length > 0 && (
               <div>
                 <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 6 }}>
-                  Пулы
+                  {t("srvAccess.poolsTitle")}
                 </div>
                 <div className="rowflex" style={{ gap: 6, flexWrap: "wrap" }}>
                   {pools.map((p) => (
@@ -178,7 +183,7 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
             {groups.length > 0 && (
               <div>
                 <div className="muted-3" style={{ fontSize: 11.5, marginBottom: 6 }}>
-                  Группы
+                  {t("nav.groups")}
                 </div>
                 <div className="stack" style={{ gap: 6 }}>
                   {groups.map((g) => (
@@ -219,11 +224,11 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
       {/* Пользователи с доступом */}
       <div className="card stack">
         <div className="muted-3" style={sectionTitle}>
-          Пользователи с доступом
+          {t("srvAccess.usersWithAccessTitle")}
         </div>
         {users.length === 0 ? (
           <div className="muted" style={{ fontSize: 13.5 }}>
-            Пока никто не пользуется этим сервером.
+            {t("srvAccess.usersEmpty")}
           </div>
         ) : (
           <div className="stack" style={{ gap: 10 }}>
@@ -247,7 +252,7 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                           {gn}
                         </span>
                       ))}
-                      {!u.hasAccess && <span style={{ ...chip, color: "var(--warn)" }}>нет доступа</span>}
+                      {!u.hasAccess && <span style={{ ...chip, color: "var(--warn)" }}>{t("srvAccess.noAccess")}</span>}
                     </div>
                     {/* пауза/продолжение всех конфигов всего пользователя */}
                     <GroupPauseBtn
@@ -261,7 +266,7 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
 
                 {u.configs.length === 0 ? (
                   <div className="muted-3" style={{ fontSize: 12.5 }}>
-                    конфигов ещё нет
+                    {t("srvAccess.noConfigsYet")}
                   </div>
                 ) : (
                   <div className="stack" style={{ gap: 12 }}>
@@ -317,11 +322,11 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                               <div className="muted-3" style={{ fontSize: 12 }}>
                                 {c.proto}
                                 {c.status === "paused"
-                                  ? " · на паузе"
+                                  ? ` · ${t("srvAccess.statusPaused")}`
                                   : c.status === "suspended"
-                                    ? " · лимит трафика"
+                                    ? ` · ${t("srvAccess.statusTrafficLimit")}`
                                     : c.status === "revoked"
-                                      ? " · отозван"
+                                      ? ` · ${t("srvAccess.statusRevoked")}`
                                       : ""}
                               </div>
                             </div>
@@ -331,7 +336,11 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
                                   variant="ghost"
                                   sm
                                   disabled={pauseMut.isPending}
-                                  title={c.status === "active" ? "Приостановить конфиг" : "Возобновить конфиг"}
+                                  title={
+                                    c.status === "active"
+                                      ? t("srvAccess.pauseConfigTitle")
+                                      : t("srvAccess.resumeConfigTitle")
+                                  }
                                   onClick={() => pauseMut.mutate({ cid: c.id, pause: c.status === "active" })}
                                 >
                                   <Icon name={c.status === "active" ? "stop" : "play"} size={15} />
@@ -366,18 +375,18 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
 
       {rename && (
         <Modal
-          title="Переименовать конфиг"
+          title={t("srvAccess.renameConfigTitle")}
           onClose={() => setRename(null)}
           footer={
             <>
-              <Btn onClick={() => setRename(null)}>Отмена</Btn>
+              <Btn onClick={() => setRename(null)}>{t("common.cancel")}</Btn>
               <Btn variant="primary" block disabled={renameMut.isPending} onClick={() => renameMut.mutate(rename)}>
-                Сохранить
+                {t("common.save")}
               </Btn>
             </>
           }
         >
-          <Field label="Имя конфига">
+          <Field label={t("srvAccess.configNameLabel")}>
             <input
               className="input"
               value={rename.name}
@@ -391,21 +400,18 @@ export function ServerAccessSections({ serverId }: { serverId: string }) {
 
       {revoke && (
         <Modal
-          title="Отозвать конфиг?"
+          title={t("srvAccess.revokeConfigTitle")}
           onClose={() => setRevoke(null)}
           footer={
             <>
-              <Btn onClick={() => setRevoke(null)}>Отмена</Btn>
+              <Btn onClick={() => setRevoke(null)}>{t("common.cancel")}</Btn>
               <Btn variant="danger" block disabled={revokeMut.isPending} onClick={() => revokeMut.mutate(revoke.cid)}>
-                Отозвать
+                {t("srvAccess.revokeConfirm")}
               </Btn>
             </>
           }
         >
-          <p className="muted">
-            Конфиг «{revoke.label}» перестанет работать: пир будет удалён на сервере, у пользователя доступ к этому
-            серверу через него пропадёт.
-          </p>
+          <p className="muted">{t("srvAccess.revokeConfigBody", { label: revoke.label })}</p>
         </Modal>
       )}
     </>

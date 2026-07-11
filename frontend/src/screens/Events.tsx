@@ -1,23 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Empty, Icon, ScreenHeader, Spinner } from "../components/ui";
+import type { TFunc } from "../lib/i18n";
+import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
 import type { AuditEvent } from "../lib/types";
 
 // Подписи типов событий для фильтра. Держим в синхроне с backend services/audit_types.py.
-const TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "Все события" },
-  { value: "auth.login", label: "Вход в систему" },
-  { value: "group.join", label: "Вступление в группу" },
-  { value: "config.download", label: "Выдача конфига" },
-  { value: "access.revoke", label: "Отзыв доступа" },
-];
+function typeOptions(t: TFunc): { value: string; label: string }[] {
+  return [
+    { value: "", label: t("events.allTypes") },
+    { value: "auth.login", label: t("events.typeLogin") },
+    { value: "group.join", label: t("events.typeJoin") },
+    { value: "config.download", label: t("events.typeConfig") },
+    { value: "access.revoke", label: t("events.typeRevoke") },
+  ];
+}
 
-const ACTOR_KIND_LABEL: Record<AuditEvent["actorKind"], string> = {
-  admin: "администратор",
-  user: "пользователь",
-  system: "система",
-};
+function actorKindLabel(t: TFunc, kind: AuditEvent["actorKind"]): string {
+  const map: Record<AuditEvent["actorKind"], string> = {
+    admin: t("events.actorAdmin"),
+    user: t("events.actorUser"),
+    system: t("events.actorSystem"),
+  };
+  return map[kind];
+}
 
 // Локальную дату «дд.мм.гггг» → epoch seconds начала суток (для фильтра since/until).
 function dayToEpoch(day: string, endOfDay = false): number | undefined {
@@ -30,8 +37,9 @@ function dayToEpoch(day: string, endOfDay = false): number | undefined {
 
 /** Компактный список последних событий — переиспользуется на Home. */
 export function EventList({ events }: { events: AuditEvent[] }) {
+  const t = useT();
   if (events.length === 0) {
-    return <Empty title="Событий пока нет" sub="Действия пользователей появятся здесь." />;
+    return <Empty title={t("events.emptyTitle")} sub={t("events.emptySub")} />;
   }
   return (
     <div className="stack" style={{ gap: 8 }}>
@@ -43,6 +51,7 @@ export function EventList({ events }: { events: AuditEvent[] }) {
 }
 
 function EventRow({ event }: { event: AuditEvent }) {
+  const t = useT();
   return (
     <div className="card" style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px" }}>
       <span style={{ color: "var(--text-3)", flex: "none", marginTop: 1 }}>
@@ -51,12 +60,12 @@ function EventRow({ event }: { event: AuditEvent }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 700, fontSize: 14 }}>{event.label}</span>
-          <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>{ACTOR_KIND_LABEL[event.actorKind]}</span>
+          <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>{actorKindLabel(t, event.actorKind)}</span>
         </div>
         <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 2 }}>{event.actorName}</div>
         {event.targetId && (
           <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>
-            {event.targetKind ?? "ресурс"}: {event.targetId}
+            {event.targetKind ?? t("events.resource")}: {event.targetId}
           </div>
         )}
       </div>
@@ -69,6 +78,7 @@ function EventRow({ event }: { event: AuditEvent }) {
 }
 
 export function EventsScreen() {
+  const t = useT();
   const [type, setType] = useState("");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
@@ -91,13 +101,13 @@ export function EventsScreen() {
 
   return (
     <div className="stack">
-      <ScreenHeader title="События" sub="Журнал действий: входы, доступы, конфиги" />
+      <ScreenHeader title={t("events.title")} sub={t("events.sub")} />
 
       <div className="card" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 180, flex: 1 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-2)" }}>Тип</span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-2)" }}>{t("events.filterType")}</span>
           <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-            {TYPE_OPTIONS.map((o) => (
+            {typeOptions(t).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -105,11 +115,11 @@ export function EventsScreen() {
           </select>
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-2)" }}>С</span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-2)" }}>{t("events.filterFrom")}</span>
           <input className="input" type="date" value={since} onChange={(e) => setSince(e.target.value)} />
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-2)" }}>По</span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-2)" }}>{t("events.filterTo")}</span>
           <input className="input" type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
         </label>
       </div>

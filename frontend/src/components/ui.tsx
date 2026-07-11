@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "../lib/i18n";
 import { PLATFORM_GLYPH_D } from "../lib/platformGlyphs";
 import { generateRecoveryKey } from "../lib/recoveryKey";
 import type { VpnType } from "../lib/types";
@@ -261,13 +262,14 @@ export function FilePicker({
   accept,
   file,
   onPick,
-  placeholder = "Файл не выбран",
+  placeholder,
 }: {
   accept?: string;
   file: File | null;
   onPick: (f: File | null) => void;
   placeholder?: string;
 }) {
+  const t = useT();
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div
@@ -294,10 +296,10 @@ export function FilePicker({
           whiteSpace: "nowrap",
         }}
       >
-        {file ? file.name : placeholder}
+        {file ? file.name : (placeholder ?? t("ui.fileNotChosen"))}
       </span>
       <span className="btn sm" style={{ flex: "none", pointerEvents: "none" }}>
-        Выбрать файл
+        {t("ui.chooseFile")}
       </span>
       <input
         ref={ref}
@@ -321,6 +323,7 @@ export function KeyInput({
   placeholder?: string;
   withGenerate?: boolean;
 }) {
+  const t = useT();
   const [show, setShow] = useState(false);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -335,7 +338,7 @@ export function KeyInput({
         />
         <button
           type="button"
-          title={show ? "Скрыть" : "Показать"}
+          title={show ? t("ui.hide") : t("ui.show")}
           onClick={() => setShow((s) => !s)}
           style={{
             position: "absolute",
@@ -366,7 +369,7 @@ export function KeyInput({
           }}
         >
           <Icon name="sparkles" size={15} />
-          Сгенерировать ключ
+          {t("ui.generateKey")}
         </Btn>
       )}
     </div>
@@ -382,10 +385,11 @@ export function Avatar({ name }: { name: string }) {
 }
 
 export function StatusBadge({ status }: { status: "online" | "offline" | "unknown" }) {
+  const t = useT();
   const map = {
-    online: { c: "ok", t: "онлайн" },
-    offline: { c: "danger", t: "офлайн" },
-    unknown: { c: "neutral", t: "не проверен" },
+    online: { c: "ok", t: t("status.online") },
+    offline: { c: "danger", t: t("status.offline") },
+    unknown: { c: "neutral", t: t("status.unchecked") },
   } as const;
   const s = map[status];
   return (
@@ -545,6 +549,7 @@ export function MultiSelect({
   selected: string[];
   onChange: (next: string[]) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -566,7 +571,7 @@ export function MultiSelect({
   const shown = query.trim()
     ? options.filter(([, l]) => l.toLowerCase().includes(query.trim().toLowerCase()))
     : options;
-  const summary = selected.length === 0 ? "все" : `выбрано ${selected.length}`;
+  const summary = selected.length === 0 ? t("ui.allOptions") : t("ui.selectedCount", { n: selected.length });
 
   const trigger: CSSProperties = {
     padding: "6px 10px",
@@ -604,7 +609,7 @@ export function MultiSelect({
           {options.length > 8 && (
             <input
               autoFocus
-              placeholder="Поиск…"
+              placeholder={t("ui.searchEllipsis")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={{
@@ -623,7 +628,7 @@ export function MultiSelect({
           <div style={{ maxHeight: 260, overflowY: "auto" }}>
             {shown.length === 0 ? (
               <div className="muted-3" style={{ padding: 8, fontSize: 12.5 }}>
-                ничего не найдено
+                {t("common.nothingFound")}
               </div>
             ) : (
               shown.map(([v, l]) => (
@@ -665,7 +670,7 @@ export function MultiSelect({
                 cursor: "pointer",
               }}
             >
-              Сбросить «{label.toLowerCase()}»
+              {t("ui.resetFilter", { label: label.toLowerCase() })}
             </button>
           )}
         </div>

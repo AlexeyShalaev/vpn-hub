@@ -3,6 +3,11 @@
 // страны, чтобы в подборе фильтр показывал ОДНУ объединённую локацию (напр. «ОАЭ / UAE»), а не дубли.
 // Города приводятся к стране (Мадрид → Испания, Амстердам → Нидерланды). Сырой `region` тарифа не
 // меняется — каноникализация нужна только для группировки/фильтра в PlanFinder.
+//
+// Метки `ru`/`en` ниже — не UI-строки для перевода интерфейса, а данные: комбинированная билингвальная
+// подпись локации (напр. «ОАЭ / UAE») показывается пользователю целиком независимо от языка интерфейса.
+
+import { tg } from "./i18n";
 
 interface Country {
   ru: string;
@@ -173,5 +178,5 @@ export function canonicalLocation(region: string): CanonLoc {
     const c = COUNTRIES[code];
     return { key: code, label: c.ru === c.en ? c.ru : `${c.ru} / ${c.en}` };
   }
-  return { key: `x:${norm}`, label: region.trim() || "—" };
+  return { key: `x:${norm}`, label: region.trim() || tg("common.none") };
 }

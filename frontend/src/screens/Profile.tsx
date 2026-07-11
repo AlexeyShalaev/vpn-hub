@@ -32,7 +32,7 @@ export function ProfileScreen() {
       qc.removeQueries({ predicate: ({ queryKey }) => queryKey[0] !== "me" && queryKey[0] !== "setup" });
       setMe(null);
     },
-    onError: () => toast("Не удалось выйти"),
+    onError: () => toast(t("profile.logoutFailed")),
   });
 
   const sessionsQ = useQuery({ queryKey: ["sessions"], queryFn: q.listSessions });
@@ -43,16 +43,16 @@ export function ProfileScreen() {
       setPwOpen(false);
       setPw({ current: "", next: "", next2: "" });
       qc.invalidateQueries({ queryKey: ["sessions"] });
-      toast("Пароль изменён, остальные сессии завершены");
+      toast(t("profile.pwChanged"));
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : "Не удалось сменить пароль"),
+    onError: (e) => toast(e instanceof ApiError ? e.message : t("profile.pwFailed")),
   });
 
   const revokeM = useMutation({
     mutationFn: (id: string) => q.revokeSession(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions"] });
-      toast("Сессия завершена");
+      toast(t("profile.sessionRevoked"));
     },
   });
 
@@ -60,7 +60,7 @@ export function ProfileScreen() {
     mutationFn: () => q.revokeOtherSessions(),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["sessions"] });
-      toast(r.revoked ? `Завершено сессий: ${r.revoked}` : "Других сессий нет");
+      toast(r.revoked ? t("profile.sessionsRevoked", { n: r.revoked }) : t("profile.noOtherSessions"));
     },
   });
 
@@ -72,13 +72,13 @@ export function ProfileScreen() {
   }
 
   const ROLE_OPTIONS = [
-    { role: "owner", title: "Владелец", sub: "Серверы, группы, доступы" },
-    { role: "member", title: "Участник", sub: "Доступное мне, устройства" },
+    { role: "owner", title: t("profile.roleOwner"), sub: t("profile.roleOwnerSub") },
+    { role: "member", title: t("profile.roleMember"), sub: t("profile.roleMemberSub") },
   ] as const;
 
   return (
     <div className="stack" style={{ maxWidth: 600, margin: "0 auto", width: "100%" }}>
-      <ScreenHeader title="Профиль" />
+      <ScreenHeader title={t("profile.title")} />
 
       {/* Аккаунт */}
       <div className="card card-row">
@@ -91,7 +91,7 @@ export function ProfileScreen() {
         </div>
         <Btn variant="danger" sm disabled={logoutM.isPending} onClick={() => logoutM.mutate()}>
           <Icon name="logout" size={16} />
-          Выйти
+          {t("profile.logout")}
         </Btn>
       </div>
 
@@ -102,21 +102,22 @@ export function ProfileScreen() {
             className="muted-3"
             style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
           >
-            Безопасность
+            {t("profile.security")}
           </div>
           <Btn sm onClick={() => setPwOpen(true)}>
             <Icon name="edit" size={15} />
-            Сменить пароль
+            {t("profile.changePassword")}
           </Btn>
         </div>
 
         <div className="rowflex" style={{ justifyContent: "space-between" }}>
           <span className="muted" style={{ fontSize: 13 }}>
-            Активные сессии{sessions.length ? ` · ${sessions.length}` : ""}
+            {t("profile.activeSessions")}
+            {sessions.length ? ` · ${sessions.length}` : ""}
           </span>
           {sessions.length > 1 && (
             <Btn variant="ghost" sm disabled={revokeOthersM.isPending} onClick={() => revokeOthersM.mutate()}>
-              Завершить остальные
+              {t("profile.revokeOthers")}
             </Btn>
           )}
         </div>
@@ -141,20 +142,20 @@ export function ProfileScreen() {
             className="muted-3"
             style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
           >
-            Администрирование
+            {t("profile.admin")}
           </div>
           <Btn variant="ghost" block onClick={() => go("users")} style={{ justifyContent: "flex-start" }}>
             <Icon name="users" size={18} />
-            Пользователи
+            {t("nav.users")}
             <span className="muted-3" style={{ fontSize: 12.5, fontWeight: 400, marginLeft: 4 }}>
-              Управление пользователями
+              {t("profile.usersHint")}
             </span>
           </Btn>
           <Btn variant="ghost" block onClick={() => go("system")} style={{ justifyContent: "flex-start" }}>
             <Icon name="system" size={18} />
-            Система
+            {t("nav.system")}
             <span className="muted-3" style={{ fontSize: 12.5, fontWeight: 400, marginLeft: 4 }}>
-              Версия, обновления, БД
+              {t("profile.systemHint")}
             </span>
           </Btn>
         </div>
@@ -166,10 +167,10 @@ export function ProfileScreen() {
           className="muted-3"
           style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
         >
-          Режим работы
+          {t("profile.mode")}
         </div>
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-          Переключитесь, чтобы увидеть приложение глазами участника группы.
+          {t("profile.modeHint")}
         </p>
         <div style={{ display: "flex", gap: 9 }}>
           {ROLE_OPTIONS.map((opt) => {
@@ -245,17 +246,17 @@ export function ProfileScreen() {
       </div>
 
       <p className="muted-3" style={{ textAlign: "center", fontSize: 12 }}>
-        VPN Hub · self-hosted панель VPN
+        {t("profile.tagline")}
       </p>
 
       {pwOpen && (
         <Modal
-          title="Сменить пароль"
+          title={t("profile.changePassword")}
           onClose={() => setPwOpen(false)}
           footer={
             <>
               <Btn block onClick={() => setPwOpen(false)}>
-                Отмена
+                {t("common.cancel")}
               </Btn>
               <Btn
                 variant="primary"
@@ -263,21 +264,21 @@ export function ProfileScreen() {
                 disabled={changePw.isPending}
                 onClick={() => {
                   if (pw.next !== pw.next2) {
-                    toast("Пароли не совпадают");
+                    toast(t("profile.pwMismatch"));
                     return;
                   }
                   changePw.mutate();
                 }}
               >
-                Сохранить
+                {t("common.save")}
               </Btn>
             </>
           }
         >
           <p className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
-            После смены пароля все остальные сессии будут завершены.
+            {t("profile.pwWarn")}
           </p>
-          <Field label="Текущий пароль">
+          <Field label={t("profile.pwCurrent")}>
             <input
               className="input"
               type="password"
@@ -285,7 +286,7 @@ export function ProfileScreen() {
               onChange={(e) => setPw((p) => ({ ...p, current: e.target.value }))}
             />
           </Field>
-          <Field label="Новый пароль (мин. 8 символов)">
+          <Field label={t("profile.pwNew")}>
             <input
               className="input"
               type="password"
@@ -293,7 +294,7 @@ export function ProfileScreen() {
               onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))}
             />
           </Field>
-          <Field label="Повторите новый пароль">
+          <Field label={t("profile.pwRepeat")}>
             <input
               className="input"
               type="password"
@@ -308,6 +309,7 @@ export function ProfileScreen() {
 }
 
 function SessionRow({ s, onRevoke, busy }: { s: Session; onRevoke: () => void; busy: boolean }) {
+  const t = useT();
   return (
     <div
       className="card-row"
@@ -317,14 +319,17 @@ function SessionRow({ s, onRevoke, busy }: { s: Session; onRevoke: () => void; b
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="rowflex" style={{ gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 14 }}>{s.device}</span>
-          {s.current && <span className="badge ok">текущая</span>}
+          {s.current && <span className="badge ok">{t("profile.sessionCurrent")}</span>}
         </div>
         <div className="muted-3" style={{ fontSize: 12 }}>
-          {s.ip} · {s.lastSeen ? `активность ${s.lastSeen}` : `вход ${s.createdAt}`}
+          {s.ip} ·{" "}
+          {s.lastSeen
+            ? t("profile.sessionActivity", { at: s.lastSeen })
+            : t("profile.sessionLogin", { at: s.createdAt })}
         </div>
       </div>
       {!s.current && (
-        <Btn variant="ghost" sm disabled={busy} onClick={onRevoke} title="Завершить сессию">
+        <Btn variant="ghost" sm disabled={busy} onClick={onRevoke} title={t("profile.revokeSession")}>
           <Icon name="x" size={16} />
         </Btn>
       )}

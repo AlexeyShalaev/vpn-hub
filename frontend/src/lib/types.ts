@@ -1,5 +1,7 @@
 // Доменные типы (форма ответов бэкенда, camelCase как в прототипе).
 
+import { type TKey, tg } from "./i18n";
+
 export type VpnType = "amnezia" | "openvpn" | "outline" | "hysteria2";
 
 export interface Me {
@@ -583,18 +585,25 @@ export interface UpgradeStatus {
   version: string; // текущая версия бэкенда: стала равной target → обновление удалось
 }
 
+// Названия вендоров — бренды, одинаковы в любом языке (не переводятся).
 export const VPN_LABEL: Record<VpnType, string> = {
   amnezia: "Amnezia",
   openvpn: "OpenVPN",
   outline: "Outline",
   hysteria2: "Hysteria2",
 };
-export const VPN_DESC: Record<VpnType, string> = {
-  amnezia: "Маскируется под обычный трафик — лучший против блокировок.",
-  openvpn: "Классика, максимальная совместимость с устройствами.",
-  outline: "Один ключ, проще всего для новичков.",
-  hysteria2: "Быстрый QUIC-протокол с обфускацией — хорош на нестабильных и мобильных сетях.",
+// Функция, а не константа: описания зависят от языка (protoDesc.*), поэтому перевод берём
+// на КАЖДОМ обращении — иначе значение «замёрзло» бы на языке момента импорта и не менялось
+// при переключении языка. Компоненты-потребители подписаны на lang через useT и перерисуются.
+const PROTO_DESC_KEY: Record<VpnType, TKey> = {
+  amnezia: "protoDesc.amnezia",
+  openvpn: "protoDesc.openvpn",
+  outline: "protoDesc.outline",
+  hysteria2: "protoDesc.hysteria2",
 };
+export function vpnDesc(type: VpnType): string {
+  return tg(PROTO_DESC_KEY[type]);
+}
 // Иконка ПО-вендора (см. PATHS в components/ui). Красится акцентом var(--<type>).
 export const VPN_ICON: Record<VpnType, string> = {
   amnezia: "vpn_amnezia",
@@ -603,38 +612,38 @@ export const VPN_ICON: Record<VpnType, string> = {
   hysteria2: "vpn_hysteria2",
 };
 export const PROTO_LABEL: Record<string, string> = {
-  awg: "AmneziaWG",
-  awg_legacy: "AmneziaWG Legacy",
-  xray: "Xray",
-  xray_xhttp: "Xray XHTTP",
-  openvpn: "OpenVPN",
-  hysteria2: "Hysteria2",
+  awg: tg("proto.awg"),
+  awg_legacy: tg("proto.awgLegacy"),
+  xray: tg("proto.xray"),
+  xray_xhttp: tg("proto.xrayXhttp"),
+  openvpn: tg("proto.openvpn"),
+  hysteria2: tg("proto.hysteria2"),
 };
 // Полный набор протоколов вендора (id → label) для выбора при установке/докачке.
 // Зеркалит backend VENDOR_PROTOS + catalog.PROTOS — держать в синхроне при добавлении протокола.
 export const VENDOR_PROTOCOLS: Record<VpnType, { id: string; label: string }[]> = {
   amnezia: [
-    { id: "awg", label: "AmneziaWG" },
-    { id: "awg_legacy", label: "AmneziaWG Legacy" },
-    { id: "xray", label: "Xray" },
-    { id: "xray_xhttp", label: "Xray XHTTP" },
+    { id: "awg", label: tg("proto.awg") },
+    { id: "awg_legacy", label: tg("proto.awgLegacy") },
+    { id: "xray", label: tg("proto.xray") },
+    { id: "xray_xhttp", label: tg("proto.xrayXhttp") },
   ],
-  openvpn: [{ id: "openvpn", label: "OpenVPN" }],
-  outline: [{ id: "outline", label: "Shadowsocks" }],
-  hysteria2: [{ id: "hysteria2", label: "Hysteria2" }],
+  openvpn: [{ id: "openvpn", label: tg("proto.openvpn") }],
+  outline: [{ id: "outline", label: tg("protoDesc.shadowsocks") }],
+  hysteria2: [{ id: "hysteria2", label: tg("proto.hysteria2") }],
 };
 export const PROTO_STATE_LABEL: Record<ProtocolState, string> = {
-  absent: "нет",
-  installing: "устанавливается…",
-  installed: "готов",
-  external: "внешний",
-  error: "ошибка",
+  absent: tg("protoDesc.stateAbsent"),
+  installing: tg("protoDesc.stateInstalling"),
+  installed: tg("protoDesc.stateInstalled"),
+  external: tg("protoDesc.stateExternal"),
+  error: tg("common.error"),
 };
 export const PLATFORM_LABEL: Record<Device["platform"], string> = {
-  ios: "iPhone / iPad",
-  android: "Android",
-  mac: "macOS",
-  windows: "Windows",
-  linux: "Linux",
-  router: "Роутер",
+  ios: tg("protoDesc.platformIos"),
+  android: tg("protoDesc.platformAndroid"),
+  mac: tg("protoDesc.platformMac"),
+  windows: tg("protoDesc.platformWindows"),
+  linux: tg("protoDesc.platformLinux"),
+  router: tg("protoDesc.platformRouter"),
 };

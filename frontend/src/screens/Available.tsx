@@ -7,7 +7,7 @@ import { useT } from "../lib/i18n";
 import { amneziaQrChunks, toDataUrl } from "../lib/qr";
 import * as q from "../lib/queries";
 import type { AvailableServer, VpnType } from "../lib/types";
-import { PLATFORM_LABEL, VPN_DESC, VPN_LABEL } from "../lib/types";
+import { PLATFORM_LABEL, VPN_LABEL, vpnDesc } from "../lib/types";
 import { useNav } from "../nav";
 import { copyText, useStore } from "../store";
 
@@ -25,6 +25,7 @@ function fileExt(filename: string): string {
 
 export function AvailableScreen() {
   const go = useNav((s) => s.go);
+  const t = useT();
 
   const { data: servers, isLoading } = useQuery({
     queryKey: ["available"],
@@ -36,17 +37,14 @@ export function AvailableScreen() {
 
   return (
     <div className="stack">
-      <ScreenHeader title="Доступно мне" sub="Серверы из ваших групп" />
+      <ScreenHeader title={t("available.title")} sub={t("available.sub")} />
 
       {isLoading ? (
         <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
           <Spinner />
         </div>
       ) : !servers || servers.length === 0 ? (
-        <Empty
-          title="Пока ничего не открыто"
-          sub="Когда владелец добавит вас в группу и выдаст доступ, серверы появятся здесь."
-        />
+        <Empty title={t("available.emptyTitle")} sub={t("available.emptySub")} />
       ) : (
         <div className="stack">
           {servers.map((s) => (
@@ -70,6 +68,7 @@ export function AvailableScreen() {
 }
 
 function ServerCard({ server, onGet }: { server: AvailableServer; onGet: (vpn: VpnType) => void }) {
+  const t = useT();
   const mono = (server.name || "?").slice(0, 2).toUpperCase();
   return (
     <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -97,7 +96,7 @@ function ServerCard({ server, onGet }: { server: AvailableServer; onGet: (vpn: V
             <StatusBadge status={server.status} />
           </div>
           <div style={{ fontSize: 12.5, color: "var(--text-3)", marginTop: 2 }}>
-            {server.location} · из «{server.fromGroup}»
+            {t("available.fromGroup", { location: server.location, group: server.fromGroup })}
           </div>
         </div>
       </div>
@@ -119,10 +118,10 @@ function ServerCard({ server, onGet }: { server: AvailableServer; onGet: (vpn: V
               <div style={{ marginBottom: 4 }}>
                 <VpnChip type={type} />
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-3)" }}>{VPN_DESC[type]}</div>
+              <div style={{ fontSize: 12, color: "var(--text-3)" }}>{vpnDesc(type)}</div>
             </div>
             <Btn variant="primary" sm onClick={() => onGet(type)}>
-              Получить
+              {t("available.get")}
             </Btn>
           </div>
         ))}
@@ -171,7 +170,7 @@ function GetConfigModal({
         deviceId: deviceId as string,
         proto,
       }),
-    onSuccess: () => toast("Конфиг сохранён для устройства"),
+    onSuccess: () => toast(t("available.configSavedForDevice")),
   });
 
   // Варианты выбора протокола. Bundlable amnezia-протоколы (awg/awg_legacy/xray) физически
@@ -186,14 +185,14 @@ function GetConfigModal({
     if (grouped) {
       opts.push({
         key: "__bundle__",
-        label: "Все протоколы Amnezia",
-        sub: `${bundle.join(" · ")} — в одном конфиге`,
+        label: t("available.allAmneziaProtocols"),
+        sub: t("available.bundleSub", { protocols: bundle.join(" · ") }),
         proto: bundle[0],
       });
     }
     for (const p of singles) opts.push({ key: p, label: p, proto: p });
     return { opts, bundle };
-  }, [cfg?.protos, cfg?.bundle]);
+  }, [cfg?.protos, cfg?.bundle, t]);
 
   // Показываем/требуем выбор, если вариантов >1 ИЛИ есть склейка (чтобы явно подписать «все сразу»).
   const needsProto = protoOptions.opts.length > 1 || protoOptions.bundle.length >= 2;
@@ -215,9 +214,9 @@ function GetConfigModal({
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 800);
-      toast(`Файл ${filename} скачан`);
+      toast(t("available.fileDownloaded", { filename }));
     } catch {
-      toast("Не удалось скачать файл");
+      toast(t("available.fileDownloadFailed"));
     }
   }
 
@@ -245,13 +244,13 @@ function GetConfigModal({
         footer={
           <Btn onClick={() => setStep("pick")}>
             <Icon name="back" size={16} />
-            Назад
+            {t("common.back")}
           </Btn>
         }
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 28 }}>
           <Spinner />
-          <span style={{ fontSize: 13.5, color: "var(--text-2)" }}>Готовим конфиг…</span>
+          <span style={{ fontSize: 13.5, color: "var(--text-2)" }}>{t("available.preparingConfig")}</span>
         </div>
       </Modal>
     );
@@ -273,21 +272,23 @@ function GetConfigModal({
           <>
             <Btn onClick={() => setStep("pick")}>
               <Icon name="back" size={16} />
-              Назад
+              {t("common.back")}
             </Btn>
             {target.vpn === "amnezia" ? (
               <Btn variant="primary" block onClick={onClose}>
-                Готово
+                {t("common.done")}
               </Btn>
             ) : (
               <Btn variant="primary" block disabled={install.isPending} onClick={() => install.mutate()}>
-                {install.isPending ? "Сохранение…" : "Сохранить для устройства"}
+                {install.isPending ? t("common.saving") : t("available.saveForDevice")}
               </Btn>
             )}
           </>
         }
       >
-        <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 12 }}>сервер {target.serverName}</div>
+        <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 12 }}>
+          {t("available.serverLabel", { name: target.serverName })}
+        </div>
 
         {formats.length > 1 && (
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -323,14 +324,16 @@ function GetConfigModal({
         </div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: selected && canShare ? 8 : 14 }}>
-          <Btn block onClick={() => copyText(shownText, toast, "Скопировано")}>
+          <Btn block onClick={() => copyText(shownText, toast, t("common.copied"))}>
             <Icon name="copy" size={16} />
-            Копировать
+            {t("common.copy")}
           </Btn>
           {selected && (
             <Btn block onClick={() => downloadFile(selected.text, selected.filename)}>
               <Icon name="download" size={16} />
-              {fileExt(selected.filename) ? `Скачать ${fileExt(selected.filename)}` : "Скачать"}
+              {fileExt(selected.filename)
+                ? t("available.downloadExt", { ext: fileExt(selected.filename) })
+                : t("available.download")}
             </Btn>
           )}
         </div>
@@ -338,7 +341,7 @@ function GetConfigModal({
           <div style={{ display: "flex", marginBottom: 14 }}>
             <Btn block onClick={() => shareConfig(selected.text, selected.filename)}>
               <Icon name="share" size={16} />
-              Поделиться
+              {t("available.share")}
             </Btn>
           </div>
         )}
@@ -372,7 +375,9 @@ function GetConfigModal({
   // ----- шаг 1: выбор устройства и протокола -----
   return (
     <Modal title={title} onClose={onClose}>
-      <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 16 }}>сервер {target.serverName}</div>
+      <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 16 }}>
+        {t("available.serverLabel", { name: target.serverName })}
+      </div>
 
       {devicesLoading ? (
         <div style={{ display: "flex", justifyContent: "center", padding: 24 }}>
@@ -380,11 +385,11 @@ function GetConfigModal({
         </div>
       ) : noDevices ? (
         <Empty
-          title="Нет устройств"
-          sub="Сначала добавьте устройство, на которое поставите конфиг."
+          title={t("available.noDevices")}
+          sub={t("available.noDevicesSub")}
           action={
             <Btn variant="primary" onClick={onNoDevices}>
-              К устройствам
+              {t("available.toDevices")}
             </Btn>
           }
         />
@@ -399,7 +404,7 @@ function GetConfigModal({
               marginBottom: 9,
             }}
           >
-            На какое устройство
+            {t("available.whichDevice")}
           </label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
             {(devices ?? []).map((d) => (
@@ -430,7 +435,7 @@ function GetConfigModal({
                   marginBottom: 9,
                 }}
               >
-                Протокол
+                {t("available.protocol")}
               </label>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
                 {protoOptions.opts.map((o) => {
@@ -495,7 +500,7 @@ function GetConfigModal({
                 >
                   1
                 </span>
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Установите приложение</span>
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("available.installApp")}</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
                 {cfg.clients.map((c) => (
@@ -555,11 +560,11 @@ function GetConfigModal({
             {cfgFetching ? (
               <Spinner />
             ) : !deviceId ? (
-              "Выберите устройство"
+              t("available.selectDevice")
             ) : needsProto && !proto ? (
-              "Выберите протокол"
+              t("available.selectProtocol")
             ) : (
-              "Показать конфиг"
+              t("available.showConfig")
             )}
           </Btn>
         </>
@@ -571,6 +576,7 @@ function GetConfigModal({
 // Серия QR для AmneziaVPN (формат vpn://): большие конфиги дробятся на несколько QR
 // (протокол amnezia-client), кадры анимируются — приложение собирает их обратно.
 function AmneziaQrSeries({ config }: { config: string }) {
+  const t = useT();
   const chunks = useMemo(() => amneziaQrChunks(config), [config]);
   const multi = chunks.length > 1;
   const [zoom, setZoom] = useState(false);
@@ -607,15 +613,15 @@ function AmneziaQrSeries({ config }: { config: string }) {
             <button
               type="button"
               onClick={() => setZoom(true)}
-              title="Нажмите, чтобы увеличить"
+              title={t("available.clickToZoom")}
               style={{ border: "none", background: "none", padding: 0, cursor: "zoom-in", display: "inline-flex" }}
             >
               <img className="qr" src={src} alt="QR" style={{ imageRendering: "pixelated" }} />
             </button>
             <div className="muted-3" style={{ fontSize: 11.5, marginTop: 6, textAlign: "center", maxWidth: 280 }}>
               {multi
-                ? `QR ${idx + 1} из ${chunks.length} · коды меняются сами — наведите камеру AmneziaVPN и держите`
-                : "нажмите на QR, чтобы увеличить"}
+                ? t("available.qrFrameHint", { current: idx + 1, total: chunks.length })
+                : t("available.qrZoomHint")}
             </div>
           </>
         ) : (
@@ -631,7 +637,7 @@ function AmneziaQrSeries({ config }: { config: string }) {
               color: "var(--text-3)",
             }}
           >
-            {isError ? "Не удалось построить QR — используйте файл или копирование" : <Spinner />}
+            {isError ? t("available.qrBuildFailed") : <Spinner />}
           </div>
         )}
       </div>
@@ -678,8 +684,8 @@ function AmneziaQrSeries({ config }: { config: string }) {
               }}
             >
               {multi
-                ? `QR ${idx + 1} из ${chunks.length} · держите камеру AmneziaVPN — кадры меняются автоматически`
-                : "Нажмите в любом месте, чтобы закрыть"}
+                ? t("available.qrFrameHintZoomed", { current: idx + 1, total: chunks.length })
+                : t("available.clickAnywhereToClose")}
             </div>
           </div>,
           document.body,
@@ -689,6 +695,7 @@ function AmneziaQrSeries({ config }: { config: string }) {
 }
 
 function ConfigQr({ uri }: { uri: string }) {
+  const t = useT();
   const [zoom, setZoom] = useState(false);
   const { data: qrUrl, isError } = useQuery({
     queryKey: ["qr", uri],
@@ -712,13 +719,13 @@ function ConfigQr({ uri }: { uri: string }) {
             <button
               type="button"
               onClick={() => setZoom(true)}
-              title="Нажмите, чтобы увеличить"
+              title={t("available.clickToZoom")}
               style={{ border: "none", background: "none", padding: 0, cursor: "zoom-in", display: "inline-flex" }}
             >
               <img className="qr" src={qrUrl} alt="QR" style={{ imageRendering: "pixelated" }} />
             </button>
             <div className="muted-3" style={{ fontSize: 11.5, marginTop: 6 }}>
-              нажмите на QR, чтобы увеличить
+              {t("available.qrZoomHint")}
             </div>
           </>
         ) : (
@@ -734,7 +741,7 @@ function ConfigQr({ uri }: { uri: string }) {
               color: "var(--text-3)",
             }}
           >
-            {isError ? "Конфиг слишком большой для QR — используйте файл или копирование" : <Spinner />}
+            {isError ? t("available.qrTooLarge") : <Spinner />}
           </div>
         )}
       </div>
@@ -772,7 +779,7 @@ function ConfigQr({ uri }: { uri: string }) {
               }}
             />
             <div style={{ color: "rgba(255,255,255,.85)", marginTop: 16, fontSize: 13 }}>
-              Нажмите в любом месте, чтобы закрыть
+              {t("available.clickAnywhereToClose")}
             </div>
           </div>,
           document.body,

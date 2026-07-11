@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { useStore } from "../store";
 import { hasUsefulInfo, parseServerInfo } from "./credentialParse";
+
+// Локация из письма теперь локализуется по текущему языку (city.* через tg).
+// Пинуем ru, чтобы канонические русские названия в ассертах были детерминированы
+// (в jsdom navigator.language = en-US, иначе detectLang выбрал бы en).
+beforeAll(() => useStore.setState({ lang: "ru" }));
 
 const FIRSTBYTE_EMAIL = `Активация Виртуального сервера
 Здравствуйте, Ivan!

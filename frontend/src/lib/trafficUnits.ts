@@ -1,12 +1,6 @@
-export type TrafficUnit = "B" | "KB" | "MB" | "GB" | "TB";
+import { tg } from "./i18n";
 
-export const TRAFFIC_UNITS: { value: TrafficUnit; label: string }[] = [
-  { value: "B", label: "Б" },
-  { value: "KB", label: "КБ" },
-  { value: "MB", label: "МБ" },
-  { value: "GB", label: "ГБ" },
-  { value: "TB", label: "ТБ" },
-];
+export type TrafficUnit = "B" | "KB" | "MB" | "GB" | "TB";
 
 const TRAFFIC_UNIT_FACTOR: Record<TrafficUnit, number> = {
   B: 1,
@@ -15,6 +9,22 @@ const TRAFFIC_UNIT_FACTOR: Record<TrafficUnit, number> = {
   GB: 1024 ** 3,
   TB: 1024 ** 4,
 };
+
+const TRAFFIC_UNIT_ORDER: TrafficUnit[] = ["B", "KB", "MB", "GB", "TB"];
+
+export function getTrafficUnits(): { value: TrafficUnit; label: string }[] {
+  return [
+    { value: "B", label: tg("unit.byte") },
+    { value: "KB", label: tg("unit.kilobyte") },
+    { value: "MB", label: tg("unit.megabyte") },
+    { value: "GB", label: tg("unit.gigabyte") },
+    { value: "TB", label: tg("unit.terabyte") },
+  ];
+}
+
+// Существующие потребители импортируют массив `TRAFFIC_UNITS` напрямую (не как хук),
+// поэтому сохраняем то же имя экспорта для совместимости.
+export const TRAFFIC_UNITS: { value: TrafficUnit; label: string }[] = getTrafficUnits();
 
 function trimNumber(value: number): string {
   return String(+value.toFixed(2));
@@ -29,7 +39,7 @@ export function trafficValueToBytes(value: string, unit: TrafficUnit): number | 
 
 export function bytesToTrafficInput(bytes: number | null, preferredUnit: TrafficUnit = "GB") {
   if (bytes == null) return { value: "", unit: preferredUnit };
-  const unit = [...TRAFFIC_UNITS].reverse().find((u) => bytes >= TRAFFIC_UNIT_FACTOR[u.value])?.value ?? "B";
+  const unit = [...TRAFFIC_UNIT_ORDER].reverse().find((u) => bytes >= TRAFFIC_UNIT_FACTOR[u]) ?? "B";
   return { value: trimNumber(bytes / TRAFFIC_UNIT_FACTOR[unit]), unit };
 }
 

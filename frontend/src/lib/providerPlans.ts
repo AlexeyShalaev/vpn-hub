@@ -1,22 +1,30 @@
+import { tg } from "./i18n";
 import type { Provider, ProviderPlan } from "./types";
 
 // --- форматирование тарифов (общее для ServerForm-автозаполнения и каталога) ---
-export const PRICE_PERIOD_LABEL: Record<string, string> = { minute: "мин", day: "день", month: "мес" };
+export function pricePeriodLabel(period: string): string {
+  const labels: Record<string, string> = {
+    minute: tg("plan.periodMinute"),
+    day: tg("plan.periodDay"),
+    month: tg("plan.periodMonth"),
+  };
+  return labels[period] ?? period;
+}
 
 export function fmtTraffic(tb: number | null): string {
-  return tb == null ? "безлимит" : `${tb} ТБ`;
+  return tb == null ? tg("plan.trafficUnlimited") : tg("plan.trafficTb", { tb });
 }
 
 export function fmtPrice(p: ProviderPlan): string {
-  return `${p.price.toLocaleString("ru-RU")} ${p.currency}/${PRICE_PERIOD_LABEL[p.period] ?? p.period}`;
+  return `${p.price.toLocaleString("ru-RU")} ${p.currency}/${pricePeriodLabel(p.period)}`;
 }
 
 export function fmtPort(p: ProviderPlan): string {
-  return p.portMbps > 0 ? `${p.portMbps} Мбит` : "порт не указан";
+  return p.portMbps > 0 ? tg("plan.portMbps", { mbps: p.portMbps }) : tg("plan.portUnspecified");
 }
 
 export function planSpecs(p: ProviderPlan): string {
-  return `${p.cpu}vCPU/${p.ramGb}ГБ RAM · ${p.diskGb}ГБ ${p.diskType} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb)}`;
+  return `${tg("plan.specsCpuRam", { cpu: p.cpu, ram: p.ramGb })} · ${tg("plan.specsDisk", { disk: p.diskGb, type: p.diskType })} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb)}`;
 }
 
 // --- приведение цен тарифов к одной валюте за месяц (для подбора по всем провайдерам) ---
