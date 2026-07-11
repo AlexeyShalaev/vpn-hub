@@ -187,6 +187,53 @@ const ru = {
   "ux.reload": "Перезагрузить",
   "ux.shareInvite": "Пригласить",
   "ux.inviteCopied": "Ссылка-приглашение скопирована",
+
+  // общие действия/статусы — переиспользуются многими экранами (namespace common/actions)
+  "common.add": "Добавить",
+  "common.create": "Создать",
+  "common.close": "Закрыть",
+  "common.edit": "Редактировать",
+  "common.rename": "Переименовать",
+  "common.apply": "Применить",
+  "common.confirm": "Подтвердить",
+  "common.continue": "Продолжить",
+  "common.done": "Готово",
+  "common.retry": "Повторить",
+  "common.remove": "Убрать",
+  "common.loading": "Загрузка…",
+  "common.saving": "Сохранение…",
+  "common.search": "Поиск",
+  "common.nothingFound": "Ничего не найдено",
+  "common.error": "Ошибка",
+  "common.yes": "Да",
+  "common.no": "Нет",
+  "common.copy": "Копировать",
+  "common.optional": "необязательно",
+  "common.none": "—",
+
+  // периоды (мониторинг/финансы/система/детали сервера)
+  "period.24h": "24 часа",
+  "period.7d": "7 дней",
+  "period.30d": "30 дней",
+  "period.90d": "90 дней",
+
+  // протоколы (бренды; одинаковы в обоих языках, но через t() ради единообразия)
+  "proto.awg": "AmneziaWG",
+  "proto.awgLegacy": "AWG Legacy",
+  "proto.xray": "Xray",
+  "proto.xrayXhttp": "Xray XHTTP",
+  "proto.hysteria2": "Hysteria2",
+  "proto.openvpn": "OpenVPN",
+  "proto.outline": "Outline",
+
+  // статусы (пользователи/серверы/система)
+  "status.online": "Онлайн",
+  "status.offline": "Офлайн",
+  "status.unchecked": "Не проверено",
+  "status.active": "Активен",
+  "status.pending": "В ожидании",
+  "status.blocked": "Заблокирован",
+  "status.admin": "Админ",
 } satisfies Record<string, string | PluralForms>;
 
 export type Lang = "ru" | "en";
@@ -359,6 +406,49 @@ const en = {
   "ux.reload": "Reload",
   "ux.shareInvite": "Invite",
   "ux.inviteCopied": "Invite link copied",
+
+  "common.add": "Add",
+  "common.create": "Create",
+  "common.close": "Close",
+  "common.edit": "Edit",
+  "common.rename": "Rename",
+  "common.apply": "Apply",
+  "common.confirm": "Confirm",
+  "common.continue": "Continue",
+  "common.done": "Done",
+  "common.retry": "Retry",
+  "common.remove": "Remove",
+  "common.loading": "Loading…",
+  "common.saving": "Saving…",
+  "common.search": "Search",
+  "common.nothingFound": "Nothing found",
+  "common.error": "Error",
+  "common.yes": "Yes",
+  "common.no": "No",
+  "common.copy": "Copy",
+  "common.optional": "optional",
+  "common.none": "—",
+
+  "period.24h": "24 hours",
+  "period.7d": "7 days",
+  "period.30d": "30 days",
+  "period.90d": "90 days",
+
+  "proto.awg": "AmneziaWG",
+  "proto.awgLegacy": "AWG Legacy",
+  "proto.xray": "Xray",
+  "proto.xrayXhttp": "Xray XHTTP",
+  "proto.hysteria2": "Hysteria2",
+  "proto.openvpn": "OpenVPN",
+  "proto.outline": "Outline",
+
+  "status.online": "Online",
+  "status.offline": "Offline",
+  "status.unchecked": "Not checked",
+  "status.active": "Active",
+  "status.pending": "Pending",
+  "status.blocked": "Blocked",
+  "status.admin": "Admin",
 } satisfies Dict;
 
 const DICTS: Record<Lang, Dict> = { ru, en };
@@ -417,3 +507,14 @@ export function useT(): TFunc {
   const lang = useStore((s) => s.lang);
   return tFor(lang);
 }
+
+// ── не-реактивный доступ для кода вне React ──────────────────────────────────────
+// Модули lib/* (форматтеры единиц, генераторы файлов, парсеры) и разовые действия
+// (скачивание ключа/бэкапа) не могут вызвать хук. `tg` берёт текущий язык из стора
+// «на месте». Если результат рендерит компонент — он и так перерисуется при смене
+// языка, т.к. подписан на lang через useT; для скачиваемых файлов берётся язык на
+// момент клика, что и нужно.
+export function currentLang(): Lang {
+  return useStore.getState().lang;
+}
+export const tg: TFunc = (key, vars) => tFor(currentLang())(key, vars);

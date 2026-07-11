@@ -17,6 +17,7 @@ from vpnhub.api.config import get_settings
 from vpnhub.api.routers import api_router
 from vpnhub.api.static import add_static
 from vpnhub.core.errors import DomainError
+from vpnhub.core.i18n import resolve_lang, translate
 from vpnhub.infra import keyring
 from vpnhub.infra import metrics as mx
 from vpnhub.infra.db.migrate import run_migrations
@@ -209,8 +210,9 @@ def create_app() -> FastAPI:
         retry_after = getattr(exc, "retry_after", 0)
         if retry_after:
             headers["Retry-After"] = str(retry_after)
+        lang = resolve_lang(request.headers.get("accept-language"))
         return JSONResponse(
-            {"code": exc.code, "message": exc.message}, status_code=exc.http_status, headers=headers or None
+            {"code": exc.code, "message": exc.localized(lang)}, status_code=exc.http_status, headers=headers or None
         )
 
     # Шрифты самохостятся (@fontsource) — внешние CDN в CSP не нужны, политика строже.
@@ -236,7 +238,10 @@ def create_app() -> FastAPI:
             and request.url.path.startswith("/api/")
             and not request.headers.get("x-requested-with")
         ):
-            return JSONResponse({"code": "CSRF", "message": "Запрос отклонён (CSRF)"}, status_code=403)
+            lang = resolve_lang(request.headers.get("accept-language"))
+            return JSONResponse(
+                {"code": "CSRF", "message": translate("error.csrf", lang)}, status_code=403
+            )
         t0 = time.perf_counter()
         resp: Response = await call_next(request)
         # прикладная метрика HTTP для admin-дашборда (path нормализуется до шаблона без id)

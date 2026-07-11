@@ -12,14 +12,21 @@ export class ApiError extends Error {
 
 const BASE = "/api/v1";
 
+// Язык интерфейса → бэкенду, чтобы он локализовал ответы (ошибки, заметки релизов).
+// Читаем ту же ячейку, что и i18n.detectLang, на каждый запрос — язык может меняться в рантайме.
+function langHeader(): Record<string, string> {
+  const saved = localStorage.getItem("vpnhub.lang");
+  return { "Accept-Language": saved === "en" ? "en" : "ru" };
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE + path, {
     method,
     credentials: "include",
     headers:
       body !== undefined
-        ? { "Content-Type": "application/json", "X-Requested-With": "fetch" }
-        : { "X-Requested-With": "fetch" },
+        ? { "Content-Type": "application/json", "X-Requested-With": "fetch", ...langHeader() }
+        : { "X-Requested-With": "fetch", ...langHeader() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -37,7 +44,7 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(BASE + path, {
     method: "POST",
     credentials: "include",
-    headers: { "X-Requested-With": "fetch" },
+    headers: { "X-Requested-With": "fetch", ...langHeader() },
     body: form,
   });
   const text = await res.text();
