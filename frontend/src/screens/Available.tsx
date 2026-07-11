@@ -149,16 +149,22 @@ function GetConfigModal({
 
   const [step, setStep] = useState<"pick" | "config">("pick");
   const [deviceId, setDeviceId] = useState<string | undefined>(undefined);
-  const [proto, setProto] = useState<string | undefined>(undefined);
+  const [selKey, setSelKey] = useState<string | undefined>(undefined);
   const [fmt, setFmt] = useState<string | undefined>(undefined);
+
+  // Выбор протокола: «все сразу» (__bundle__) → bundle=true, конкретный протокол не важен
+  // (бэкенд склеит awg/awg_legacy/xray). Иначе → выдаём ровно этот протокол по одному (bundle=false).
+  const isBundle = selKey === "__bundle__";
+  const proto = isBundle ? undefined : selKey;
+  const bundle = isBundle;
 
   // НЕ автовыбираем устройство/протокол: на шаге выбора запрашиваем только СПИСОК (peek) —
   // без провижининга. Реальная выдача (создание клиента на сервере) — только на шаге config,
   // т.е. после явного «Показать конфиг».
   const peek = step !== "config";
   const { data: cfg, isFetching: cfgFetching } = useQuery({
-    queryKey: ["config", target.serverId, target.vpn, deviceId, proto, peek],
-    queryFn: () => q.genConfig({ serverId: target.serverId, vpn: target.vpn, deviceId, proto, peek }),
+    queryKey: ["config", target.serverId, target.vpn, deviceId, selKey, peek],
+    queryFn: () => q.genConfig({ serverId: target.serverId, vpn: target.vpn, deviceId, proto, bundle, peek }),
     enabled: !!deviceId,
   });
 
@@ -169,34 +175,32 @@ function GetConfigModal({
         vpn: target.vpn,
         deviceId: deviceId as string,
         proto,
+        bundle,
       }),
     onSuccess: () => toast(t("available.configSavedForDevice")),
   });
 
-  // Варианты выбора протокола. Bundlable amnezia-протоколы (awg/awg_legacy/xray) физически
-  // выдаются одним vpn:// — поэтому 2+ таких показываем ОДНОЙ кнопкой «все сразу». Остальные
-  // (xray_xhttp и др. вендоры) — отдельными. Неустановленных здесь нет — бэкенд их не отдаёт.
+  // Варианты выбора протокола: «все протоколы» (склейка awg/awg_legacy/xray в один vpn://) +
+  // КАЖДЫЙ протокол по отдельности (в т.ч. склеиваемые — их теперь можно получить и по одному).
   const protoOptions = useMemo(() => {
     const protos = cfg?.protos ?? [];
-    const bundle = cfg?.bundle ?? [];
-    const grouped = bundle.length >= 2;
-    const singles = grouped ? protos.filter((p) => !bundle.includes(p)) : protos;
-    const opts: { key: string; label: string; sub?: string; proto: string }[] = [];
+    const bundleList = cfg?.bundle ?? [];
+    const grouped = bundleList.length >= 2;
+    const opts: { key: string; label: string; sub?: string }[] = [];
     if (grouped) {
       opts.push({
         key: "__bundle__",
         label: t("available.allAmneziaProtocols"),
-        sub: t("available.bundleSub", { protocols: bundle.join(" · ") }),
-        proto: bundle[0],
+        sub: t("available.bundleSub", { protocols: bundleList.join(" · ") }),
       });
     }
-    for (const p of singles) opts.push({ key: p, label: p, proto: p });
-    return { opts, bundle };
+    for (const p of protos) opts.push({ key: p, label: p });
+    return { opts };
   }, [cfg?.protos, cfg?.bundle, t]);
 
-  // Показываем/требуем выбор, если вариантов >1 ИЛИ есть склейка (чтобы явно подписать «все сразу»).
-  const needsProto = protoOptions.opts.length > 1 || protoOptions.bundle.length >= 2;
-  const selectedKey = proto ? (protoOptions.bundle.includes(proto) ? "__bundle__" : proto) : undefined;
+  // Требуем явный выбор, если вариантов больше одного (bundle + протоколы по одному).
+  const needsProto = protoOptions.opts.length > 1;
+  const selectedKey = selKey;
 
   const title = VPN_LABEL[target.vpn];
   const noDevices = !devicesLoading && (!devices || devices.length === 0);
@@ -414,7 +418,7 @@ function GetConfigModal({
                 className={`chip ${d.id === deviceId ? "selected" : ""}`}
                 onClick={() => {
                   setDeviceId(d.id);
-                  setProto(undefined);
+                  setSelKey(undefined);
                 }}
                 style={{ cursor: "pointer", padding: "8px 14px", gap: 7 }}
               >
@@ -444,7 +448,7 @@ function GetConfigModal({
                     <button
                       key={o.key}
                       type="button"
-                      onClick={() => setProto(o.proto)}
+                      onClick={() => setSelKey(o.key)}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -554,14 +558,14 @@ function GetConfigModal({
           <Btn
             variant="primary"
             block
-            disabled={!deviceId || cfgFetching || !cfg || (needsProto && !proto)}
+            disabled={!deviceId || cfgFetching || !cfg || (needsProto && !selKey)}
             onClick={() => setStep("config")}
           >
             {cfgFetching ? (
               <Spinner />
             ) : !deviceId ? (
               t("available.selectDevice")
-            ) : needsProto && !proto ? (
+            ) : needsProto && !selKey ? (
               t("available.selectProtocol")
             ) : (
               t("available.showConfig")

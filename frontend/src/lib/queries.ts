@@ -215,10 +215,21 @@ export const myUsage = () => http.get<MyUsage[]>("/me/usage");
 export const addDevice = (b: { name: string; platform: string }) => http.post<Device>("/me/devices", b);
 export const removeDevice = (id: string) => http.del(`/me/devices/${id}`);
 // peek=true: только список протоколов/приложений для выбора, БЕЗ провижининга конфига на сервере
-export const genConfig = (b: { serverId: string; vpn: string; deviceId?: string; proto?: string; peek?: boolean }) =>
-  http.post<ConfigResult>("/configs", b);
-export const installConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string }) =>
-  http.post<{ ok: boolean }>("/configs/install", b);
+export const genConfig = (b: {
+  serverId: string;
+  vpn: string;
+  deviceId?: string;
+  proto?: string;
+  bundle?: boolean; // amnezia: true — склеить awg/awg_legacy/xray в один vpn://; false — только proto
+  peek?: boolean;
+}) => http.post<ConfigResult>("/configs", b);
+export const installConfig = (b: {
+  serverId: string;
+  vpn: string;
+  deviceId: string;
+  proto?: string;
+  bundle?: boolean;
+}) => http.post<{ ok: boolean }>("/configs/install", b);
 // отозвать свой конфиг: снимает клиента на сервере (SSH) и удаляет запись (симметрично generate)
 export const removeConfig = (b: { serverId: string; vpn: string; deviceId: string; proto?: string | null }) =>
   http.post<{ ok: boolean }>("/configs/remove", b);

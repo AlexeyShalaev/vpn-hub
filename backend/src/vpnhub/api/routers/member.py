@@ -87,6 +87,7 @@ async def gen_config(
         body.get("deviceId"),
         body.get("proto"),
         bool(body.get("peek", False)),
+        bool(body.get("bundle", True)),
     )
 
 
@@ -97,7 +98,12 @@ async def install_config(
     svc: ConfigService = Depends(service(ConfigService)),
 ) -> dict:
     return await svc.install(
-        ident.id, body.get("serverId", ""), body.get("vpn", ""), body.get("deviceId", ""), body.get("proto")
+        ident.id,
+        body.get("serverId", ""),
+        body.get("vpn", ""),
+        body.get("deviceId", ""),
+        body.get("proto"),
+        bool(body.get("bundle", True)),
     )
 
 

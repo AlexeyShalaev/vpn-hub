@@ -154,9 +154,14 @@ class ConfigService:
         device_id: str | None,
         proto: str | None,
         peek: bool = False,
+        bundle: bool = True,
     ) -> dict:
         """peek=True: вернуть только список протоколов/клиентов для выбора в модалке БЕЗ провижининга
-        (не создаёт клиента на сервере и не собирает бандл). Реальная выдача — с peek=False."""
+        (не создаёт клиента на сервере и не собирает бандл). Реальная выдача — с peek=False.
+
+        bundle=True (по умолчанию): для amnezia склеиваемые протоколы (awg/awg_legacy/xray) выдаются
+        одним vpn://. bundle=False: выдаётся ТОЛЬКО запрошенный протокол (по одному), даже если он
+        склеиваемый — так пользователь может получить конфиг конкретного протокола."""
         async with self.uow.query() as tx:
             access, _ = await effective_access(tx, user_id)
             if vpn_type not in access.get(server_id, set()):
@@ -172,7 +177,7 @@ class ConfigService:
 
         if vpn_type not in PROVISIONED_VENDORS:
             raise BadRequest(key="config.unknown_vpn_type")
-        return await self._generate_provisioned(vpn_type, user_id, server_id, device_id, proto, platform, peek)
+        return await self._generate_provisioned(vpn_type, user_id, server_id, device_id, proto, platform, peek, bundle)
 
     async def _generate_provisioned(
         self,
@@ -183,6 +188,7 @@ class ConfigService:
         proto: str | None,
         platform: str,
         peek: bool = False,
+        bundle: bool = True,
     ) -> dict:
         if not device_id:
             raise BadRequest(key="config.select_device")
@@ -212,6 +218,15 @@ class ConfigService:
             )
             if spec is None:
                 raise BadRequest(key="config.proto_not_installed")
+            # «Все протоколы» (bundle) без явно запрошенного протокола: подставляем первый склеиваемый,
+            # чтобы объединённый vpn:// точно собрался. Явный выбор (в т.ч. xray_xhttp) НЕ трогаем —
+            # тогда bundle=False по факту (несклеиваемый) и отдаётся конфиг именно этого протокола.
+            if bundle and vpn_type == pc.VENDOR_AMNEZIA and requested is None and spec.id not in _BUNDLABLE_AMNEZIA:
+                bundlable = [
+                    lbl for lbl in installed_labels if (x := pc.spec_by_label(lbl)) and x.id in _BUNDLABLE_AMNEZIA
+                ]
+                if bundlable and (nb := pc.spec_by_label(bundlable[0])):
+                    spec = nb
             sp = next(p for p in s.protocols if p.proto == spec.id)
             server_ip, server_name, port = s.ip, s.name, sp.port
             server_owner_id = s.owner_user_id
@@ -291,13 +306,13 @@ class ConfigService:
         uri = artifact.vpn_url or artifact.vless_url
         formats = _provisioned_formats(vpn_type, artifact, server_name, spec.id)
         # Amnezia: формат «AmneziaVPN» (.vpn) = ОДИН vpn:// со всеми склеиваемыми протоколами сервера
-        # (awg2/awg_legacy/xray). Подмешиваем его ТОЛЬКО когда выбран сам склеиваемый протокол:
-        # при явном выборе xray_xhttp (в бандл не входит) отдаём его собственный конфиг, а не бандл.
-        if vpn_type == pc.VENDOR_AMNEZIA and spec.id in _BUNDLABLE_AMNEZIA:
-            bundle = await self._build_amnezia_bundle(user_id, server_id, device_id)
-            formats = self._with_bundle_format(formats, bundle, server_name)
-            if bundle:
-                uri = bundle
+        # (awg2/awg_legacy/xray). Подмешиваем его, только когда запрошен бандл (bundle=True) и выбран
+        # склеиваемый протокол. При bundle=False (выдача по одному) или xray_xhttp — свой конфиг протокола.
+        if bundle and vpn_type == pc.VENDOR_AMNEZIA and spec.id in _BUNDLABLE_AMNEZIA:
+            bundle_uri = await self._build_amnezia_bundle(user_id, server_id, device_id)
+            formats = self._with_bundle_format(formats, bundle_uri, server_name)
+            if bundle_uri:
+                uri = bundle_uri
         await self._audit_download(user_id, server_id, server_owner_id, vpn_type, spec, device_id)
         return {
             "type": vpn_type,
@@ -400,12 +415,16 @@ class ConfigService:
 
     # -------------------------------------------------------------- install ---
 
-    async def install(self, user_id: str, server_id: str, vpn_type: str, device_id: str, proto: str | None) -> dict:
+    async def install(
+        self, user_id: str, server_id: str, vpn_type: str, device_id: str, proto: str | None, bundle: bool = True
+    ) -> dict:
         if not device_id:
             raise BadRequest(key="config.select_device")
         if vpn_type in PROVISIONED_VENDORS:
             # реальный provisioning: создаст клиента на сервере и сохранит DeviceConfig
-            await self._generate_provisioned(vpn_type, user_id, server_id, device_id, proto, platform="ios")
+            await self._generate_provisioned(
+                vpn_type, user_id, server_id, device_id, proto, platform="ios", bundle=bundle
+            )
             return {"ok": True}
         # outline — только пометка на устройстве
         async with self.uow.transaction() as tx:
