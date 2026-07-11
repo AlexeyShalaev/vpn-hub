@@ -99,6 +99,11 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/vpnhub
         run: uv run alembic upgrade head
+      - name: Migration gauntlet (schema-vs-models drift, up/down round-trip, naming)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/vpnhub
+        run: uv run pytest tests/integration/test_migrations_gauntlet.py -v
 
   # Sentinel — единственный required-статус в branch protection.
   all-checks-passed:

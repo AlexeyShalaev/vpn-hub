@@ -38,15 +38,15 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.Float(), nullable=False, server_default="0"),
         sa.UniqueConstraint("server_id", "user_id", "period_start", name="traffic_usage_uq"),
     )
-    op.create_index("ix_traffic_usage_server_id", "traffic_usage", ["server_id"])
-    op.create_index("ix_traffic_usage_user_id", "traffic_usage", ["user_id"])
+    op.create_index("traffic_usage_server_id_idx", "traffic_usage", ["server_id"])
+    op.create_index("traffic_usage_user_id_idx", "traffic_usage", ["user_id"])
     op.create_index("traffic_usage_scope_idx", "traffic_usage", ["server_id", "user_id", "period_start"])
 
 
 def downgrade() -> None:
     op.drop_index("traffic_usage_scope_idx", table_name="traffic_usage")
-    op.drop_index("ix_traffic_usage_user_id", table_name="traffic_usage")
-    op.drop_index("ix_traffic_usage_server_id", table_name="traffic_usage")
+    op.drop_index("traffic_usage_user_id_idx", table_name="traffic_usage")
+    op.drop_index("traffic_usage_server_id_idx", table_name="traffic_usage")
     op.drop_table("traffic_usage")
     op.drop_column("group_members", "max_bytes")
     op.drop_column("groups", "max_bytes")

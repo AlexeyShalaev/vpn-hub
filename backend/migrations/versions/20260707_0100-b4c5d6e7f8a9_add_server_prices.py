@@ -33,11 +33,11 @@ def upgrade() -> None:
         sa.Column("effective_from", sa.Float(), nullable=False),
         sa.Column("effective_to", sa.Float(), nullable=True),
     )
-    op.create_index("ix_server_prices_server_id", "server_prices", ["server_id"])
+    op.create_index("server_prices_server_id_idx", "server_prices", ["server_id"])
     op.create_index("server_prices_scope_idx", "server_prices", ["server_id", "effective_from"])
 
 
 def downgrade() -> None:
     op.drop_index("server_prices_scope_idx", table_name="server_prices")
-    op.drop_index("ix_server_prices_server_id", table_name="server_prices")
+    op.drop_index("server_prices_server_id_idx", table_name="server_prices")
     op.drop_table("server_prices")

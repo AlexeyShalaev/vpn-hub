@@ -46,13 +46,13 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("entry_server_id", "proto", name="chain_links_uq"),
     )
-    op.create_index("ix_chain_links_owner_user_id", "chain_links", ["owner_user_id"])
-    op.create_index("ix_chain_links_entry_server_id", "chain_links", ["entry_server_id"])
-    op.create_index("ix_chain_links_exit_server_id", "chain_links", ["exit_server_id"])
+    op.create_index("chain_links_owner_user_id_idx", "chain_links", ["owner_user_id"])
+    op.create_index("chain_links_entry_server_id_idx", "chain_links", ["entry_server_id"])
+    op.create_index("chain_links_exit_server_id_idx", "chain_links", ["exit_server_id"])
 
 
 def downgrade() -> None:
-    op.drop_index("ix_chain_links_exit_server_id", table_name="chain_links")
-    op.drop_index("ix_chain_links_entry_server_id", table_name="chain_links")
-    op.drop_index("ix_chain_links_owner_user_id", table_name="chain_links")
+    op.drop_index("chain_links_exit_server_id_idx", table_name="chain_links")
+    op.drop_index("chain_links_entry_server_id_idx", table_name="chain_links")
+    op.drop_index("chain_links_owner_user_id_idx", table_name="chain_links")
     op.drop_table("chain_links")

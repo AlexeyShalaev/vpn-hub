@@ -30,8 +30,17 @@ def _url() -> str:
     )
 
 
-def _run(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+def _run(connection, target_schema: str | None = None) -> None:
+    # target_schema задаётся, когда миграции гоняет alembic-gauntlet в изолированной схеме:
+    # unqualified DDL и таблица версий уходят в неё, а не в public.
+    if target_schema:
+        connection.execute(text(f'SET search_path TO "{target_schema}"'))
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        version_table_schema=target_schema,
+    )
     with context.begin_transaction():
         if connection.dialect.name == "postgresql":
             connection.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _MIGRATION_LOCK_KEY})
@@ -64,7 +73,18 @@ def run_offline() -> None:
         context.run_migrations()
 
 
+def run_online() -> None:
+    # Драйвится извне (alembic-gauntlet / тесты миграций) через инъекцию sync-соединения в
+    # `config.attributes` — используем его напрямую (мы уже внутри event loop, свой создавать нельзя).
+    # Обычный `alembic upgrade` соединения не даёт → идём асинхронным путём приложения.
+    injected = config.attributes.get("connection")
+    if injected is not None:
+        _run(injected, config.attributes.get("target_schema"))
+    else:
+        asyncio.run(_run_async())
+
+
 if context.is_offline_mode():
     run_offline()
 else:
-    asyncio.run(_run_async())
+    run_online()
