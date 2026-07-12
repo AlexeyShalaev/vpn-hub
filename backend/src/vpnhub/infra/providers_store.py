@@ -2,10 +2,17 @@
 
 Дефолт в образе (`data/providers.default.yaml`) копируется в `VPNHUB_PROVIDERS_FILE` при первом
 старте; дальше файл — источник правды, редактируется руками или из админки (один процесс).
+
+Чтобы новые дефолтные провайдеры доезжали до существующих пользователей после обновления версии,
+на старте вызывается `sync_default_providers()`: он ДОЛИВАЕТ новые дефолты по id (в конец), не трогая
+правки/добавления/удаления пользователя. Уже «сиженные» дефолтные id хранит sibling-маркер
+`<providers>.seeded.json`; для установок, поставленных ДО этой фичи (маркера нет), стартовый набор
+берётся из `_PRE_MERGE_DEFAULT_IDS`, чтобы удалённые пользователем дефолты не воскресали.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -16,6 +23,11 @@ from vpnhub.core.errors import BadRequest, NotFound
 
 _DEFAULT = Path(__file__).resolve().parent.parent / "data" / "providers.default.yaml"
 
+# Дефолтные провайдеры, поставлявшиеся ДО фичи мерджа-на-обновлении (до v0.10.0). Для существующих
+# установок без маркера считаем их уже сиженными: тогда доливаются только более новые дефолты, а
+# удалённые пользователем старые провайдеры не воскресают.
+_PRE_MERGE_DEFAULT_IDS = frozenset({"firstbyte", "ufo", "ishosting", "ahost", "serverspace"})
+
 
 def _slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
@@ -25,6 +37,7 @@ def _slug(name: str) -> str:
 class ProviderStore:
     def __init__(self, settings: Settings) -> None:
         self.path = Path(settings.providers_file)
+        self._seeded_path = self.path.with_name(f"{self.path.stem}.seeded.json")
         self._ensure()
 
     def _ensure(self) -> None:
@@ -32,6 +45,46 @@ class ProviderStore:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             default = _DEFAULT.read_text(encoding="utf-8") if _DEFAULT.exists() else "[]\n"
             self.path.write_text(default, encoding="utf-8")
+
+    def _default_items(self) -> list[dict]:
+        try:
+            data = yaml.safe_load(_DEFAULT.read_text(encoding="utf-8")) or []
+        except Exception:
+            data = []
+        return [self._norm(p) for p in data if isinstance(p, dict)]
+
+    def _read_seeded(self) -> set[str]:
+        try:
+            return {str(x) for x in json.loads(self._seeded_path.read_text(encoding="utf-8"))}
+        except Exception:
+            return set()
+
+    def _write_seeded(self, ids: set[str]) -> None:
+        try:
+            self._seeded_path.write_text(json.dumps(sorted(ids)), encoding="utf-8")
+        except OSError:
+            pass
+
+    def sync_default_providers(self) -> int:
+        """Домердж новых дефолтных провайдеров (по id) в пользовательский файл. Возвращает число
+        добавленных. Вызывать один раз на старте. Существующие/кастомные/удалённые записи не трогаем.
+        """
+        defaults = self._default_items()
+        if not defaults:
+            return 0
+        all_ids = {d["id"] for d in defaults}
+        # маркер есть → сиженные из него; маркера нет (установка до фичи) → берём базовый набор
+        seeded = self._read_seeded() if self._seeded_path.exists() else set(_PRE_MERGE_DEFAULT_IDS)
+        new_ids = all_ids - seeded
+        appended: list[dict] = []
+        if new_ids:
+            items = self._read()
+            have = {p["id"] for p in items}
+            appended = [d for d in defaults if d["id"] in new_ids and d["id"] not in have]
+            if appended:
+                self._write(items + appended)
+        self._write_seeded(all_ids | seeded)  # фиксируем маркер (в т.ч. первый раз)
+        return len(appended)
 
     @staticmethod
     def _norm(p: dict) -> dict:
