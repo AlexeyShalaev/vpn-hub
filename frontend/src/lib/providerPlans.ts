@@ -1,5 +1,5 @@
 import { tg } from "./i18n";
-import type { Provider, ProviderPlan } from "./types";
+import type { CostByCurrency, Provider, ProviderPlan } from "./types";
 
 // --- форматирование тарифов (общее для ServerForm-автозаполнения и каталога) ---
 export function pricePeriodLabel(period: string): string {
@@ -70,12 +70,32 @@ export function fmtMoney(amount: number, currency: string): string {
   return `${num} ${currencySymbol(currency)}`;
 }
 
+// свести список «валюта→сумма» (напр. расход по серверам в разных валютах) к одной валюте по курсам ЦБ.
+// partial=true, если для какой-то валюты нет курса — её вклад пропущен (в UI показываем это пометкой),
+// чтобы недоступный курс не ронял весь дашборд (fx.get_rates всегда что-то отдаёт: fresh→stale→fallback).
+export function sumCostIn(
+  items: CostByCurrency[],
+  to: string,
+  rates: Record<string, number>,
+): { amount: number; partial: boolean } {
+  let amount = 0;
+  let partial = false;
+  for (const it of items) {
+    const converted = convertAmount(it.amount, it.currency, to, rates);
+    if (converted == null) partial = true;
+    else amount += converted;
+  }
+  return { amount, partial };
+}
+
 export const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
+  "62yun": "62YUN",
   ahost: "AHost",
   firstbyte: "FirstByte",
   ishosting: "ISHOSTING",
   serverspace: "Serverspace",
   ufo: "UFO Hosting",
+  ultahost: "UltaHost",
 };
 
 export function normalizeProviderKey(value: string): string {
@@ -96,6 +116,8 @@ export function dynamicPlanProviderIdByName(name: string): string {
   if (key === "ishosting" || key === "ishostingcom") return "ishosting";
   if (key === "serverspace" || key === "serverspaceru" || key === "serverspaceio") return "serverspace";
   if (key === "ufo" || key === "ufohosting") return "ufo";
+  if (key === "ultahost" || key === "ulta" || key === "ultahostcom") return "ultahost";
+  if (key === "62yun" || key === "yun62" || key === "62yunru") return "62yun";
   return "";
 }
 

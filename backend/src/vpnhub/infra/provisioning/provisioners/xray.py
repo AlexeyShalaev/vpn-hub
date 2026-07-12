@@ -228,11 +228,15 @@ class XrayProvisioner:
         exit_short_id: str,
         exit_sni: str,
         exit_uuid: str,
+        exit_network: str = "tcp",
+        exit_path: str = "",
     ) -> None:
         """Мультихоп: заменить outbound entry-контейнера на vless-коннект к exit-серверу + рестарт.
 
         Трафик клиентов этого entry-сервера станет выходить в интернет через exit (entry = обычный
-        vless-клиент exit). Reality hot-reload у Xray нет — рестарт роняет активные сессии.
+        vless-клиент exit). Транспорт outbound подстраивается под EXIT (`exit_network`/`exit_path`),
+        а не под собственный протокол entry: xhttp-выход → network=xhttp + path и flow="", tcp-выход
+        → tcp + flow=vision. Reality hot-reload у Xray нет — рестарт роняет активные сессии.
         """
         doc = await self._read_server_json(ssh)
         doc["outbounds"] = [
@@ -243,7 +247,9 @@ class XrayProvisioner:
                 public_key=exit_public_key,
                 short_id=exit_short_id,
                 sni=exit_sni,
-                flow="" if self.spec.xray_network == "xhttp" else c.XRAY_DEFAULT_FLOW,
+                flow="" if exit_network == "xhttp" else c.XRAY_DEFAULT_FLOW,
+                network=exit_network,
+                path=exit_path,
             )
         ]
         await self._write_and_restart(ssh, doc)
@@ -304,10 +310,10 @@ class XrayProvisioner:
 
     def build_artifact(self, *, server_ip: str, port: str, server_name: str, client: ClientMaterial) -> ConfigArtifact:
         is_xhttp = self.spec.xray_network == "xhttp"
-        # xhttp выдаётся отдельной ссылкой (не в бандле), поэтому помечаем имя «XHTTP» —
-        # чтобы в клиенте он явно отличался от обычного Xray/бандла того же сервера.
-        base_alias = server_name or "AmneziaVPN"
-        alias = f"{base_alias} XHTTP" if is_xhttp else base_alias
+        # alias (имя в клиенте) задаёт вызывающий: configs.py помечает одиночные протоколы меткой
+        # протокола (в т.ч. «Xray XHTTP»), чтобы конфиги одного сервера различались. Здесь — только
+        # транспорт-специфика xhttp (flow/path/mode/подсказка).
+        alias = server_name or "AmneziaVPN"
         vless = vpn_uri.build_vless_url(
             uuid=client.client_id,
             host=server_ip,

@@ -64,6 +64,15 @@ def test__resolve__manual_code__no_autofix() -> None:
     assert r.manual_steps  # непустые шаги для пользователя
 
 
+def test__resolve__docker_install_failed__manual_with_docker_ce_hint() -> None:
+    # новый код: пакет docker не установился (конфликт docker.io/containerd.io) — ручная подсказка
+    r = rem.resolve("docker_install_failed", "docker_install_failed: пакет не установился")
+    assert r is not None
+    assert r.kind == "manual"
+    assert r.fix_id is None
+    assert any("docker-ce" in s for s in r.manual_steps)
+
+
 def test__resolve__unknown_code__returns_none() -> None:
     assert rem.resolve("totally_unknown_code", "totally_unknown_code: boom") is None
 

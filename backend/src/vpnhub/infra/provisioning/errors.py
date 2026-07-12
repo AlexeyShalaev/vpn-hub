@@ -25,6 +25,7 @@ MESSAGES: dict[str, str] = {
     "docker_pull_rate_limit": "Docker Hub: превышен лимит загрузок образа",
     "docker_runtime_not_supported": "Среда контейнеров не поддерживается (например, podman)",
     "docker_service_not_running": "Служба Docker не запущена",
+    "docker_install_failed": "Не удалось установить Docker (пакет не установился)",
     "docker_failed": "Ошибка Docker при сборке/запуске контейнера",
     "kernel_too_old": "Слишком старое ядро Linux для AmneziaWG",
     "port_in_use": "Порт уже занят на сервере",

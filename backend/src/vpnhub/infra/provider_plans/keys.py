@@ -18,4 +18,8 @@ def _provider_key(provider_id: str) -> str:
         return "ahost"
     if compact in {"serverspace", "serverspaceru", "serverspaceio"}:
         return "serverspace"
+    if compact in {"ultahost", "ulta", "ultahostcom"}:
+        return "ultahost"
+    if compact in {"62yun", "yun62", "62yunru"}:
+        return "62yun"
     return raw

@@ -23,6 +23,7 @@ from vpnhub.infra import metrics as mx
 from vpnhub.infra.db.migrate import run_migrations
 from vpnhub.infra.di import build_container
 from vpnhub.infra.keyring import resolve_keys
+from vpnhub.infra.providers_store import ProviderStore
 from vpnhub.infra.security import gen_master_key
 from vpnhub.infra.uow import Uow
 from vpnhub.services.audit import AuditService
@@ -81,6 +82,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     await normalize_user_phones(uow)
+
+    # Домердж новых дефолтных провайдеров в каталог: после обновления версии они доезжают до
+    # существующих пользователей (их правки/удаления/кастомные провайдеры сохраняются). Каталог
+    # некритичен для старта — если файл недоступен на запись, не роняем панель, только предупреждаем.
+    try:
+        added_providers = (await container.get(ProviderStore)).sync_default_providers()
+        if added_providers:
+            log.info("providers_synced", added=added_providers)
+    except Exception:
+        log.warning("providers_sync_failed", exc_info=True)
 
     scheduler = AsyncIOScheduler()
     backups = await container.get(BackupService)

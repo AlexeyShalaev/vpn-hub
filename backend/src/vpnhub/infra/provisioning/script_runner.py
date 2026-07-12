@@ -113,6 +113,10 @@ async def _install_docker(ssh: SshClient) -> None:
         raise errors.make("docker_pull_rate_limit")
     if "Container runtime is not supported" in out:
         raise errors.make("docker_runtime_not_supported")
+    # Пакет Docker не установился (напр. docker.io конфликтует с containerd.io) — проверяем ДО
+    # docker_service_not_running: при отсутствии пакета служба тоже «не активна», но причина иная.
+    if "Docker package not installed" in out:
+        raise errors.make("docker_install_failed")
     if "Container runtime service not running" in out:
         raise errors.make("docker_service_not_running")
 

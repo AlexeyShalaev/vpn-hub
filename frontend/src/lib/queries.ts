@@ -10,6 +10,7 @@ import type {
   Device,
   DeviceLimit,
   FinanceOverview,
+  FinanceUsage,
   FxRates,
   Group,
   InvitePeek,
@@ -132,11 +133,16 @@ export const financeOverview = (start: number, end: number) => {
   const qs = new URLSearchParams({ start: String(start), end: String(end) });
   return http.get<FinanceOverview>(`/finance/overview?${qs.toString()}`);
 };
+// «кто и как использует серверы» за период + приписанная себестоимость (для дашборда/калькулятора)
+export const financeUsage = (start: number, end: number) => {
+  const qs = new URLSearchParams({ start: String(start), end: String(end) });
+  return http.get<FinanceUsage>(`/finance/usage?${qs.toString()}`);
+};
 
 // мультихоп: цепочки, где этот сервер — вход (entry); трафик выходит через exit-сервер (Xray outbound)
 export const listChains = (sid: string) => http.get<ChainLink[]>(`/servers/${sid}/chains`);
-export const createChain = (sid: string, exitServerId: string) =>
-  http.post<ChainLink>(`/servers/${sid}/chains`, { exitServerId });
+export const createChain = (sid: string, exitServerId: string, opts?: { entryProto?: string; exitProto?: string }) =>
+  http.post<ChainLink>(`/servers/${sid}/chains`, { exitServerId, ...opts });
 export const deleteChain = (sid: string, chainId: string) =>
   http.del<{ ok: boolean }>(`/servers/${sid}/chains/${chainId}`);
 export const listProviders = () => http.get<Provider[]>("/providers");

@@ -390,6 +390,18 @@ async def finance_overview(
     return await svc.overview(ident.id, start if start is not None else now - _MONTH_SECONDS, end or now)
 
 
+@router.get("/finance/usage")
+async def finance_usage(
+    start: float | None = Query(default=None),
+    end: float | None = Query(default=None),
+    ident: Identity = Depends(require_user),
+    svc: FinanceService = Depends(service(FinanceService)),
+) -> dict:
+    # «кто и как использует серверы» за период + приписанная себестоимость (для дашборда/калькулятора)
+    now = time.time()
+    return await svc.usage_report(ident.id, start if start is not None else now - _MONTH_SECONDS, end or now)
+
+
 # ---------- multihop / chains (entry -> exit) ----------
 
 
@@ -410,8 +422,15 @@ async def create_chain(
     ident: Identity = Depends(require_user),
     svc: ChainService = Depends(service(ChainService)),
 ) -> dict:
-    # body: { "exitServerId": str } — направить выход этого (entry) сервера через exit-сервер
-    return await svc.create(ident.id, sid, body.get("exitServerId", ""))
+    # body: { exitServerId, entryProto?, exitProto? } — направить выход этого (entry) сервера через exit.
+    # entryProto/exitProto ∈ {xray, xray_xhttp}; по умолчанию xray (обратная совместимость).
+    return await svc.create(
+        ident.id,
+        sid,
+        body.get("exitServerId", ""),
+        entry_proto=body.get("entryProto") or "xray",
+        exit_proto=body.get("exitProto") or "xray",
+    )
 
 
 @router.delete("/servers/{sid}/chains/{chain_id}")

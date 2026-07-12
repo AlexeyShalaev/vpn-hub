@@ -241,6 +241,9 @@ def build_chain_outbound(
     sni: str,
     flow: str = c.XRAY_DEFAULT_FLOW,
     fingerprint: str = c.XRAY_DEFAULT_FINGERPRINT,
+    network: str = "tcp",
+    path: str = "",
+    mode: str = "auto",
 ) -> dict:
     """Outbound entry-сервера для мультихопа: vless+Reality-коннект на exit-сервер.
 
@@ -248,7 +251,23 @@ def build_chain_outbound(
     клиентов entry выходит в интернет через exit (entry = обычный vless-клиент exit). Структура —
     как клиентский xray-outbound (build_xray_container), но живёт на сервере, а не у клиента.
     tag="chain-exit" — стабильная метка, по ней снимаем цепочку (clear → freedom).
+
+    Транспорт ДОЛЖЕН совпадать с inbound exit-контейнера: `xray` → tcp+flow=vision, `xray_xhttp` →
+    network=xhttp + xhttpSettings(path) и flow="" (Vision на XHTTP не применяется).
     """
+    stream: dict = {
+        "network": network,
+        "security": c.XRAY_DEFAULT_SECURITY,
+        "realitySettings": {
+            "publicKey": public_key,
+            "shortId": short_id,
+            "serverName": sni,
+            "fingerprint": fingerprint,
+            "spiderX": "",
+        },
+    }
+    if network == "xhttp":
+        stream["xhttpSettings"] = {"path": path, "mode": mode or "auto"}
     return {
         "tag": CHAIN_OUTBOUND_TAG,
         "protocol": "vless",
@@ -261,17 +280,7 @@ def build_chain_outbound(
                 }
             ]
         },
-        "streamSettings": {
-            "network": "tcp",
-            "security": c.XRAY_DEFAULT_SECURITY,
-            "realitySettings": {
-                "publicKey": public_key,
-                "shortId": short_id,
-                "serverName": sni,
-                "fingerprint": fingerprint,
-                "spiderX": "",
-            },
-        },
+        "streamSettings": stream,
     }
 
 

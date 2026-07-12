@@ -18,14 +18,24 @@ from sqlalchemy import select
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
+from vpnhub.infra.provisioning import constants as pc
 from vpnhub.infra.provisioning.provisioners.base import ServerMaterial
 from vpnhub.infra.uow import Uow, UowTransaction
 from vpnhub.services.provisioning import ProvisioningService
 
 log = structlog.get_logger(__name__)
 
-# Мультихоп поддержан только для tcp-Reality Xray: entry предъявляет обычный vless-клиент exit.
-CHAIN_PROTO = "xray"
+# Мультихоп поддержан для СЕМЕЙСТВА Xray (VLESS+Reality): xray (tcp) и xray_xhttp (XHTTP). entry
+# предъявляет обычный vless-клиент exit; транспорт outbound на entry подстраивается под exit-протокол.
+_DEFAULT_CHAIN_PROTO = "xray"
+
+
+def _is_chain_proto(proto: str) -> bool:
+    """Пригоден ли протокол для мультихопа — семейство Xray (VLESS+Reality: xray / xray_xhttp)."""
+    try:
+        return pc.spec_by_id(proto).kind == "xray"
+    except KeyError:
+        return False
 
 
 def chain_to_dict(link: m.ChainLink, *, exit_name: str = "") -> dict:
@@ -52,9 +62,11 @@ class ChainService:
         return s
 
     @staticmethod
-    def _xray_sp(server: m.Server) -> m.ServerProtocol:
-        """Установленный и запущенный tcp-Reality Xray-протокол сервера (иначе BadRequest)."""
-        sp = next((p for p in server.protocols if p.proto == CHAIN_PROTO), None)
+    def _chain_sp(server: m.Server, proto: str) -> m.ServerProtocol:
+        """Установленный и запущенный Xray-семейства протокол `proto` сервера (иначе BadRequest)."""
+        if not _is_chain_proto(proto):
+            raise BadRequest(key="multihop.proto_not_chainable", params={"proto": proto})
+        sp = next((p for p in server.protocols if p.proto == proto), None)
         if not sp or not sp.installed or not sp.running:
             raise BadRequest(key="multihop.xray_not_running", params={"server": server.name})
         if not sp.material_encrypted:
@@ -82,12 +94,20 @@ class ChainService:
                 out.append(chain_to_dict(link, exit_name=exit_srv.name if exit_srv else ""))
             return out
 
-    async def create(self, owner_id: str, entry_sid: str, exit_sid: str) -> dict:
-        """Связать entry → exit: завести клиента на exit и направить outbound entry на него.
+    async def create(
+        self,
+        owner_id: str,
+        entry_sid: str,
+        exit_sid: str,
+        *,
+        entry_proto: str = _DEFAULT_CHAIN_PROTO,
+        exit_proto: str = _DEFAULT_CHAIN_PROTO,
+    ) -> dict:
+        """Связать entry(entry_proto) → exit(exit_proto): завести клиента на exit и направить на него
+        outbound entry-контейнера. Транспорт outbound строится под exit-протокол (tcp | xhttp+path).
 
-        Валидация как у set_reality (owned/online/installed), затем два SSH-шага: add_client на exit
-        и set_chain на entry. При сбое второго шага снимаем заведённого на exit клиента (best-effort),
-        чтобы не копить висячие uuid.
+        Валидация (owned/online/installed на нужном протоколе), затем два SSH-шага: add_client на exit
+        и set_chain на entry. При сбое второго шага снимаем заведённого на exit клиента (best-effort).
         """
         if entry_sid == exit_sid:
             raise BadRequest(key="multihop.entry_exit_must_differ")
@@ -98,12 +118,12 @@ class ChainService:
             exit_srv = await self._owned(tx, owner_id, exit_sid)
             if entry.status != "online" or exit_srv.status != "online":
                 raise BadRequest(key="multihop.both_servers_must_be_online")
-            entry_sp = self._xray_sp(entry)
-            exit_sp = self._xray_sp(exit_srv)
+            entry_sp = self._chain_sp(entry, entry_proto)
+            exit_sp = self._chain_sp(exit_srv, exit_proto)
             existing = (
                 await tx.session.execute(
                     select(m.ChainLink).where(
-                        m.ChainLink.entry_server_id == entry_sid, m.ChainLink.proto == CHAIN_PROTO
+                        m.ChainLink.entry_server_id == entry_sid, m.ChainLink.proto == entry_proto
                     )
                 )
             ).scalar_one_or_none()
@@ -111,6 +131,9 @@ class ChainService:
                 raise BadRequest(key="multihop.chain_already_exists")
             exit_material = ServerMaterial.from_dict(prov._dec(exit_sp.material_encrypted))
             exit_ip, exit_port = exit_srv.ip, exit_sp.port
+            # транспорт outbound на entry обязан совпасть с inbound exit-контейнера
+            exit_network = "xhttp" if pc.spec_by_id(exit_proto).xray_network == "xhttp" else "tcp"
+            exit_path = exit_material.xhttp_path or ""
 
         # шаг 1: клиент на exit (entry предъявит его uuid как обычный vless-клиент)
         try:
@@ -118,7 +141,7 @@ class ChainService:
         except Exception as e:
             raise BadRequest(key="multihop.exit_client_create_failed", params={"error": str(e)}) from e
 
-        # шаг 2: outbound entry → exit; при сбое откатываем клиента exit
+        # шаг 2: outbound entry → exit (под транспорт exit); при сбое откатываем клиента exit
         try:
             await prov.set_chain(
                 entry,
@@ -127,6 +150,8 @@ class ChainService:
                 exit_port=exit_port,
                 exit_material=exit_material,
                 exit_uuid=client.client_id,
+                exit_network=exit_network,
+                exit_path=exit_path,
             )
         except Exception as e:
             try:
@@ -140,7 +165,7 @@ class ChainService:
                 owner_user_id=owner_id,
                 entry_server_id=entry_sid,
                 exit_server_id=exit_sid,
-                proto=CHAIN_PROTO,
+                proto=entry_proto,
                 exit_client_id=client.client_id,
                 state="linked",
             )
@@ -158,7 +183,13 @@ class ChainService:
                 raise NotFound(key="multihop.chain_not_found")
             exit_srv = await tx.servers.get(link.exit_server_id)
             entry_sp = next((p for p in entry.protocols if p.proto == link.proto), None)
-            exit_sp = next((p for p in exit_srv.protocols if p.proto == link.proto), None) if exit_srv else None
+            # exit-протокол цепочки не хранится, поэтому клиента снимаем на том Xray-контейнере exit,
+            # где он реально есть (иначе лишний рестарт другого контейнера уронил бы его сессии).
+            exit_sps = (
+                [p for p in exit_srv.protocols if _is_chain_proto(p.proto) and p.installed and p.material_encrypted]
+                if exit_srv is not None
+                else []
+            )
             exit_client_id = link.exit_client_id
 
         if entry_sp is not None and entry_sp.installed and entry_sp.material_encrypted:
@@ -166,11 +197,14 @@ class ChainService:
                 await prov.clear_chain(entry, entry_sp)
             except Exception as e:
                 log.warning("chain clear failed", entry=entry_sid, error=str(e))
-        if exit_srv is not None and exit_sp is not None and exit_client_id and exit_sp.material_encrypted:
-            try:
-                await prov.revoke_client(exit_srv, exit_sp, exit_client_id)
-            except Exception as e:
-                log.warning("chain exit revoke failed", exit=link.exit_server_id, error=str(e))
+        if exit_srv is not None and exit_client_id:
+            for exit_sp in exit_sps:
+                try:
+                    if exit_client_id in await prov.client_ids(exit_srv, exit_sp):
+                        await prov.revoke_client(exit_srv, exit_sp, exit_client_id)
+                        break
+                except Exception as e:
+                    log.warning("chain exit revoke failed", exit=link.exit_server_id, proto=exit_sp.proto, error=str(e))
 
         async with self.uow.transaction() as tx:
             obj = await tx.session.get(m.ChainLink, chain_id)

@@ -151,6 +151,16 @@ export interface FinanceServerRow {
   unitCosts: FinanceUnitCost[];
 }
 
+export interface CostPoint {
+  at: number; // epoch начала суток (UTC-сетка) — совпадает с сеткой trafficSeries
+  byCurrency: CostByCurrency[]; // расход за эти сутки, раздельно по валютам
+}
+
+export interface TrafficPoint {
+  at: number; // epoch начала суток
+  bytes: number; // суммарный трафик (rx+tx) за сутки по всем серверам
+}
+
 export interface FinanceOverview {
   start: number;
   end: number;
@@ -162,9 +172,31 @@ export interface FinanceOverview {
     trafficUsedBytes: number;
     trafficUtilizationPct: number | null;
     costByCurrency: CostByCurrency[];
+    prevCostByCurrency: CostByCurrency[]; // расход за предыдущее равное окно — для дельты
     unitCosts: FinanceUnitCost[];
   };
+  costSeries: CostPoint[]; // посуточный ряд расходов за окно
+  trafficSeries: TrafficPoint[]; // посуточный ряд трафика за окно
   servers: FinanceServerRow[];
+}
+
+export interface FinanceUsageUser {
+  userId: string;
+  name: string;
+  usedBytes: number;
+  sharePct: number | null; // доля в суммарном трафике за окно
+  deviceCount: number; // активных устройств в окне
+  costByCurrency: CostByCurrency[]; // приписанная себестоимость, раздельно по валютам
+}
+
+export interface FinanceUsage {
+  start: number;
+  end: number;
+  totalUsedBytes: number;
+  userCount: number;
+  deviceCount: number;
+  users: FinanceUsageUser[]; // сорт по трафику desc
+  external: { usedBytes: number; sharePct: number | null; costByCurrency: CostByCurrency[] }; // «неучтённые»
 }
 
 export interface ServerUsage {

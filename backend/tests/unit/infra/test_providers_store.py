@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -14,9 +15,17 @@ from pytest_lazy_fixtures import lf
 
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import BadRequest, NotFound
-from vpnhub.infra.providers_store import ProviderStore
+from vpnhub.infra.providers_store import _DEFAULT, _PRE_MERGE_DEFAULT_IDS, ProviderStore
 
 pytestmark = pytest.mark.unit
+
+
+def _default_ids() -> list[str]:
+    return [p["id"] for p in yaml.safe_load(_DEFAULT.read_text(encoding="utf-8")) if isinstance(p, dict)]
+
+
+def _seeded_file(providers_path: Path) -> Path:
+    return providers_path.with_name(f"{providers_path.stem}.seeded.json")
 
 
 @pytest.fixture
@@ -302,3 +311,92 @@ def test__norm__missing_optional_fields__defaults_to_empty_strings(empty_store: 
     # Assert
     assert item["url"] == ""
     assert item["blurb"] == ""
+
+
+# --- sync_default_providers (домердж новых дефолтов при обновлении версии) --------------------
+
+
+def _write_catalog(providers_path: Path, ids: list[str]) -> None:
+    providers_path.write_text(
+        yaml.safe_dump([{"id": pid, "name": pid} for pid in ids], allow_unicode=True), encoding="utf-8"
+    )
+
+
+def test__sync__existing_install_no_marker__appends_new_defaults(
+    local_settings: Settings, providers_path: Path
+) -> None:
+    """Существующая установка (файл со старыми дефолтами, маркера нет): новые дефолты доливаются."""
+    _write_catalog(providers_path, sorted(_PRE_MERGE_DEFAULT_IDS))
+    store = ProviderStore(local_settings)
+
+    added = store.sync_default_providers()
+
+    ids = [p["id"] for p in store.list()]
+    new_ids = set(_default_ids()) - _PRE_MERGE_DEFAULT_IDS
+    assert new_ids  # в дефолтном каталоге реально есть провайдеры новее базового набора
+    assert added == len(new_ids)
+    assert new_ids.issubset(ids)  # новые провайдеры появились
+    assert _PRE_MERGE_DEFAULT_IDS.issubset(set(ids))  # старые сохранены
+
+
+def test__sync__deleted_baseline_default__not_resurrected(local_settings: Settings, providers_path: Path) -> None:
+    """Удалённый пользователем старый дефолт не воскресает, но новые дефолты всё равно доливаются."""
+    _write_catalog(providers_path, sorted(_PRE_MERGE_DEFAULT_IDS - {"ufo"}))
+    store = ProviderStore(local_settings)
+
+    store.sync_default_providers()
+
+    ids = [p["id"] for p in store.list()]
+    assert "ufo" not in ids
+    assert (set(_default_ids()) - _PRE_MERGE_DEFAULT_IDS).issubset(set(ids))
+
+
+def test__sync__fresh_install__no_merge_no_duplicates(local_settings: Settings) -> None:
+    """Чистая установка: _ensure насидил полный дефолт → sync ничего не добавляет и не дублирует."""
+    store = ProviderStore(local_settings)  # файла нет → сид полного дефолта
+    before = [p["id"] for p in store.list()]
+
+    added = store.sync_default_providers()
+
+    after = [p["id"] for p in store.list()]
+    assert added == 0
+    assert after == before
+    assert len(after) == len(set(after))
+
+
+def test__sync__marker_all_seeded__is_noop(local_settings: Settings, providers_path: Path) -> None:
+    """Если все дефолтные id уже в маркере — sync ничего не доливает (даже в пустой пользовательский файл)."""
+    providers_path.write_text(yaml.safe_dump([{"id": "mine", "name": "Mine"}], allow_unicode=True), encoding="utf-8")
+    _seeded_file(providers_path).write_text(json.dumps(_default_ids()), encoding="utf-8")
+    store = ProviderStore(local_settings)
+
+    added = store.sync_default_providers()
+
+    assert added == 0
+    assert [p["id"] for p in store.list()] == ["mine"]
+
+
+def test__sync__preserves_user_edits(local_settings: Settings, providers_path: Path) -> None:
+    """Правки пользователя в дефолтном провайдере сохраняются (доливаем только НОВЫЕ по id)."""
+    providers_path.write_text(
+        yaml.safe_dump([{"id": "firstbyte", "name": "My FB", "url": "https://custom"}], allow_unicode=True),
+        encoding="utf-8",
+    )
+    store = ProviderStore(local_settings)
+
+    store.sync_default_providers()
+
+    fb = next(p for p in store.list() if p["id"] == "firstbyte")
+    assert fb["name"] == "My FB" and fb["url"] == "https://custom"
+
+
+def test__sync__idempotent(local_settings: Settings, providers_path: Path) -> None:
+    """Повторный вызов sync ничего не добавляет (маркер уже проставлен)."""
+    _write_catalog(providers_path, sorted(_PRE_MERGE_DEFAULT_IDS))
+    store = ProviderStore(local_settings)
+
+    first = store.sync_default_providers()
+    second = store.sync_default_providers()
+
+    assert first > 0
+    assert second == 0

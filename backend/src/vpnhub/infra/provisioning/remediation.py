@@ -196,6 +196,23 @@ REMEDIATIONS: tuple[Remediation, ...] = (
         ),
     ),
     Remediation(
+        code="docker_install_failed",
+        kind="manual",
+        title="Не удалось установить Docker",
+        explanation=(
+            "Пакет Docker не установился. Частая причина на Ubuntu/Debian — конфликт пакета docker.io "
+            "с уже стоящим containerd.io (из официального репозитория Docker): вместе они не уживаются. "
+            "Панель предпочитает docker-ce, но здесь установка не завершилась (нет доступа к "
+            "download.docker.com, apt занят или репозиторий сломан)."
+        ),
+        manual_steps=(
+            "Посмотрите, что установлено: dpkg -l | grep -E 'docker|containerd'",
+            "Если стоит containerd.io — ставьте docker-ce, не docker.io: sudo apt-get install -y docker-ce",
+            "Проверьте доступ в интернет и apt: sudo apt-get update",
+            "После установки Docker переустановите протокол в панели.",
+        ),
+    ),
+    Remediation(
         code="ssh",
         kind="manual",
         title="Не удалось подключиться к серверу по SSH",

@@ -38,7 +38,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
 COPY --from=pydeps /app/.venv /app/.venv
 COPY backend/ /app/
 COPY --from=frontend /fe/dist /app/src/vpnhub/static
-RUN chmod +x /app/entrypoint.sh && mkdir -p /var/lib/vpnhub/backups && chown -R app:app /var/lib/vpnhub
+# /data (каталог провайдеров) и /backups создаём и отдаём app:app — иначе примонтированный том
+# создаётся root'ом и приложение (USER app) не может писать providers.yaml / бэкапы.
+RUN chmod +x /app/entrypoint.sh \
+    && mkdir -p /var/lib/vpnhub/backups /var/lib/vpnhub/data \
+    && chown -R app:app /var/lib/vpnhub
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --retries=5 \

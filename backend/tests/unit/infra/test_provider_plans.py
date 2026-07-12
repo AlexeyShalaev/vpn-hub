@@ -19,6 +19,8 @@ from vpnhub.infra.provider_plans import (
     parse_ishosting_plans,
     parse_serverspace_plans,
     parse_ufo_plans,
+    parse_ultahost_plans,
+    parse_yun62_plans,
     plan_bandwidth_bytes,
 )
 
@@ -261,6 +263,90 @@ SERVERSPACE_PRICE_PAGE = """
 
 SERVERSPACE_CHALLENGE_PAGE = "<html><script>var __js_p_ = 1; var __jhash_ = 2;</script>ajaxload.info</html>"
 
+# Витрина WHMCS UltaHost (тема Twenty-One): у первой карточки правая колонка `package-side-right`
+# дублирует цену/цикл — парсер обязан взять первое значение и не задваивать тариф.
+ULTAHOST_STORE = """
+<html><body>
+  <div class="package">
+    <div class="package-side package-side-left">
+      <div class="package-header">
+        <h3 class="package-title">VPS Basic</h3>
+        <div class="package-price"><div class="price">
+          <div class="price-starting-from">Starting from</div>
+          <div class="price-amount"> $5.99 USD </div>
+          <div class="price-cycle "> Monthly </div>
+        </div></div>
+      </div>
+      <div class="package-body"><div class="package-content">
+        <p><b>1 CPU</b> Core<br /><b>1 GB</b> RAM<br /><b>30 GB</b> NVMe SSD<br />
+        <b>Unmetered</b> bandwidth<br /><b>1</b> dedicated IPs<br />Free 1-year SSL certificate</p>
+      </div></div>
+    </div>
+    <div class="package-side package-side-right">
+      <div class="price-amount"> $5.99 USD </div>
+      <div class="price-cycle "> Monthly </div>
+    </div>
+  </div>
+  <div class="package">
+    <div class="package-side package-side-left">
+      <div class="package-header">
+        <h3 class="package-title">VPS Business</h3>
+        <div class="package-price"><div class="price">
+          <div class="price-starting-from">Starting from</div>
+          <div class="price-amount"> $10.50 USD </div>
+          <div class="price-cycle "> Monthly </div>
+        </div></div>
+      </div>
+      <div class="package-body"><div class="package-content">
+        <p><b>2 CPU</b> Core<br /><b>2 GB</b> RAM<br /><b>50 GB</b> NVMe SSD<br /><b>Unmetered</b> bandwidth</p>
+      </div></div>
+    </div>
+  </div>
+</body></html>
+"""
+
+# Страница заказа 62YUN: характеристики+месячная цена зашиты в onClick кнопки тарифа, код локации — во
+# втором css-классе (tarifs frm), а карта «код→страна» — на кнопках выбора локации ($('#loc').val()).
+# У каждой локации СВОЙ набор тарифов: в США есть promo-S но нет ultra-S, в Гонконге только promo-B.
+YUN62_ORDER = """
+<html><body>
+  <div id="ordering-server__geo">
+    <button onClick=" $('.frm').css('display','block'); $('#loc').val('frm'); $('#plan403').click(); ">США</button>
+    <button onClick=" $('.fra').css('display','block'); $('#loc').val('fra'); $('#plan439').click(); ">Германия</button>
+    <button onClick=" $('.hk').css('display','block'); $('#loc').val('hk'); $('#plan421').click(); ">Гонконг</button>
+  </div>
+  <input type="hidden" id="loc" value="frm">
+  <div id="ordering-server__rates">
+    <button class="tarifs frm " style="" id="plan403" onClick="
+      orderingServerInner('1 vCPU', '1 Gb', '10 Gb NVMe', '1 IPv4');
+      localStorage.setItem('diskType','nvme'); orderingServerSetPrice(219);
+      $('#plan').val('403'); checkForm(); ">promo-S</button>
+    <button class="tarifs frm " style="display:none;" id="plan445" onClick="
+      orderingServerInner('2 vCPU', '2 Gb', '500 Gb HDD', '1 IPv4');
+      localStorage.setItem('diskType','hdd'); orderingServerSetPrice(369);
+      $('#plan').val('445'); checkForm(); ">promo-M</button>
+    <button class="tarifs fra " style="display:none;" id="plan439" onClick="
+      orderingServerInner('1 vCPU', '1 Gb', '10 Gb NVMe', '1 IPv4');
+      localStorage.setItem('diskType','nvme'); orderingServerSetPrice(269);
+      $('#plan').val('439'); checkForm(); ">ultra-S</button>
+    <button class="tarifs hk " style="display:none;" id="plan421" onClick="
+      orderingServerInner('4 vCPU', '8 Gb', '150 Gb NVMe', '1 IPv4');
+      localStorage.setItem('diskType','nvme'); orderingServerSetPrice(1199);
+      $('#plan').val('421'); checkForm(); ">promo-B</button>
+  </div>
+</body></html>
+"""
+
+# Годовой тариф (не помесячный) должен отсеиваться — берём только платёжный цикл Monthly.
+ULTAHOST_ANNUAL_ONLY = """
+<html><body><div class="package"><div class="package-side package-side-left">
+  <div class="package-header"><h3 class="package-title">VPS Basic</h3>
+  <div class="price"><div class="price-amount"> $59.00 USD </div><div class="price-cycle "> Annually </div></div></div>
+  <div class="package-content"><p><b>1 CPU</b> Core<br /><b>1 GB</b> RAM<br />
+  <b>30 GB</b> NVMe SSD<br /><b>Unmetered</b> bandwidth</p></div>
+</div></div></body></html>
+"""
+
 
 def test__parse_firstbyte_plans__extracts_current_price_specs_region_and_availability() -> None:
     plans = parse_firstbyte_plans({"https://firstbyte.ru/vps-vds/kvm-ssd/": FIRSTBYTE_TABLE})
@@ -450,6 +536,117 @@ def test__parse_serverspace_plans__skips_js_challenge() -> None:
     assert parse_serverspace_plans({"https://serverspace.ru/conditions/price/": SERVERSPACE_CHALLENGE_PAGE}) == []
 
 
+def test__parse_ultahost_plans__expands_each_tier_across_locations() -> None:
+    source = "https://bill.ultahost.com/store/linux-vps-hosting?currency=1"
+    plans = parse_ultahost_plans({source: ULTAHOST_STORE})
+    by_id = {p["id"]: p for p in plans}
+    locations = provider_plans.ultahost._ULTAHOST_LOCATIONS
+
+    # два тарифа развёрнуты по всем локациям, без задваивания из-за package-side-right
+    assert len(plans) == 2 * len(locations)
+
+    assert by_id["ulta-frankfurt-germany-vps-basic"] == {
+        "id": "ulta-frankfurt-germany-vps-basic",
+        "name": "VPS Basic · Frankfurt, Germany",
+        "region": "Frankfurt, Germany",
+        "cpu": 1,
+        "ramGb": 1,
+        "diskGb": 30,
+        "diskType": "NVMe",
+        "portMbps": 0,
+        "trafficTb": None,  # Unmetered → безлимит
+        "price": 5.99,
+        "currency": "USD",
+        "period": "month",
+        "available": True,
+        "sourceUrl": source,
+    }
+    assert by_id["ulta-tokyo-japan-vps-business"]["price"] == 10.5
+    assert by_id["ulta-tokyo-japan-vps-business"]["cpu"] == 2
+    assert by_id["ulta-tokyo-japan-vps-business"]["diskGb"] == 50
+    # каждая локация встречается ровно один раз на тариф
+    assert {p["region"] for p in plans} == set(locations)
+    assert all(p["currency"] == "USD" and p["period"] == "month" for p in plans)
+
+
+def test__parse_ultahost_plans__skips_non_monthly_cycle() -> None:
+    assert parse_ultahost_plans({"https://bill.ultahost.com/store/linux-vps-hosting": ULTAHOST_ANNUAL_ONLY}) == []
+
+
+def test__ultahost_price__parses_thousands_separator() -> None:
+    price = provider_plans.ultahost._ulta_price
+    assert price("$5.99 USD") == 5.99
+    assert price("$10.50 USD") == 10.5
+    # разделитель тысяч не должен превращаться в десятичную точку
+    assert price("$1,299.00 USD") == 1299.0
+    assert price("$1,234 USD") == 1234.0
+    assert price("no digits here") is None
+
+
+def test__parse_yun62_plans__extracts_per_location_tariffs_from_onclick() -> None:
+    source = "https://62yun.ru/servers/order"
+    plans = parse_yun62_plans({source: YUN62_ORDER})
+    by_id = {p["id"]: p for p in plans}
+
+    # 4 кнопки тарифов → 4 плана; коды локаций разрезолвлены в названия стран (frm=США, fra=Германия, hk=Гонконг)
+    assert len(plans) == 4
+    assert by_id["62yun-frm-promo-s"] == {
+        "id": "62yun-frm-promo-s",
+        "name": "promo-S · США",
+        "region": "США",
+        "cpu": 1,
+        "ramGb": 1,
+        "diskGb": 10,
+        "diskType": "NVMe",
+        "portMbps": 0,
+        "trafficTb": None,
+        "price": 219.0,
+        "currency": "RUB",
+        "period": "month",
+        "available": True,
+        "sourceUrl": source,
+    }
+    # HDD-тариф читается как HDD, цена месячная в рублях
+    assert by_id["62yun-frm-promo-m"]["diskType"] == "HDD"
+    assert by_id["62yun-frm-promo-m"]["diskGb"] == 500
+    assert by_id["62yun-frm-promo-m"]["price"] == 369.0
+    # у каждой локации СВОЙ набор: в США нет ultra-S, в Гонконге только promo-B
+    regions_by_tier = {(p["name"].split(" · ")[0], p["region"]) for p in plans}
+    assert ("promo-S", "США") in regions_by_tier
+    assert ("ultra-S", "США") not in regions_by_tier
+    assert ("ultra-S", "Германия") in regions_by_tier
+    assert {p["region"] for p in plans if p["name"].startswith("promo-B")} == {"Гонконг"}
+    assert all(p["currency"] == "RUB" and p["period"] == "month" for p in plans)
+
+
+async def test__fetch_yun62_plans__loads_order_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        assert timeout > 0
+        assert "62yun.ru/servers/order" in url
+        return YUN62_ORDER
+
+    monkeypatch.setattr(provider_plans.yun62, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_yun62_plans()
+
+    assert {p["region"] for p in plans} == {"США", "Германия", "Гонконг"}
+    assert all(p["currency"] == "RUB" for p in plans)
+
+
+async def test__fetch_ultahost_plans__loads_store_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        assert timeout > 0
+        assert "store/linux-vps-hosting" in url
+        return ULTAHOST_STORE
+
+    monkeypatch.setattr(provider_plans.ultahost, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_ultahost_plans()
+
+    assert {p["name"].split(" · ")[0] for p in plans} == {"VPS Basic", "VPS Business"}
+    assert all(p["currency"] == "USD" for p in plans)
+
+
 async def test__fetch_serverspace_plans__loads_price_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -568,6 +765,26 @@ async def test__plans_for__serverspace_fetches_dynamic_catalog(monkeypatch: pyte
     monkeypatch.setattr(provider_plans, "fetch_serverspace_plans", fake_fetch)
 
     assert await provider_plans.plans_for("Serverspace") == [{"id": "serverspace-live"}]
+
+
+async def test__plans_for__ultahost_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch() -> list[dict[str, Any]]:
+        return [{"id": "ulta-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_ultahost_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("UltaHost") == [{"id": "ulta-live"}]
+    assert await provider_plans.plans_for("ultahost") == [{"id": "ulta-live"}]
+
+
+async def test__plans_for__yun62_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch() -> list[dict[str, Any]]:
+        return [{"id": "62yun-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_yun62_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("62YUN") == [{"id": "62yun-live"}]
+    assert await provider_plans.plans_for("62yun") == [{"id": "62yun-live"}]
 
 
 async def test__plans_for__firstbyte_caches_dynamic_catalog_and_returns_copy(
