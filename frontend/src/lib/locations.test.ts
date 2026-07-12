@@ -50,6 +50,24 @@ describe("location canonicalization", () => {
     ["Австрия (Вена)", "AT"],
     ["Австрия (Грац)", "AT"],
     ["Италия (Милан)", "IT"],
+    // формат UltaHost «Город, Страна» + новые страны (SA/ZA/NG/KR)
+    ["Frankfurt, Germany", "DE"],
+    ["Amsterdam, Netherlands", "NL"],
+    ["Seattle, USA", "US"],
+    ["Chicago, USA", "US"],
+    ["Toronto, Canada", "CA"],
+    ["Sao Paulo, Brazil", "BR"],
+    ["Bogota, Colombia", "CO"],
+    ["Mexico City, Mexico", "MX"],
+    ["Riyadh, Saudi Arabia", "SA"],
+    ["Johannesburg, South Africa", "ZA"],
+    ["Lagos, Nigeria", "NG"],
+    ["Istanbul, Turkey", "TR"],
+    ["New Delhi, India", "IN"],
+    ["Kuala Lumpur, Malaysia", "MY"],
+    ["Seoul, South Korea", "KR"],
+    ["Tokyo, Japan", "JP"],
+    ["Sydney, Australia", "AU"],
   ])("maps %s -> %s", (raw, code) => {
     expect(canonicalLocation(raw).key).toBe(code);
   });

@@ -34,6 +34,7 @@ const providers: Provider[] = [
   { id: "ishosting", name: "ISHOSTING", url: "", blurb: "", tags: [] },
   { id: "ahost", name: "AHost", url: "", blurb: "", tags: [] },
   { id: "serverspace", name: "Serverspace", url: "", blurb: "", tags: [] },
+  { id: "ultahost", name: "UltaHost", url: "", blurb: "", tags: [] },
 ];
 
 describe("provider plan helpers", () => {
@@ -47,6 +48,9 @@ describe("provider plan helpers", () => {
     ["ahost.eu", "ahost"],
     ["Serverspace", "serverspace"],
     ["serverspace.ru", "serverspace"],
+    ["UltaHost", "ultahost"],
+    ["ulta", "ultahost"],
+    ["ultahost.com", "ultahost"],
   ])("normalizes %s to %s", (name, expected) => {
     expect(dynamicPlanProviderIdByName(name)).toBe(expected);
   });

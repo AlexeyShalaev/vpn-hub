@@ -76,6 +76,7 @@ export const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
   ishosting: "ISHOSTING",
   serverspace: "Serverspace",
   ufo: "UFO Hosting",
+  ultahost: "UltaHost",
 };
 
 export function normalizeProviderKey(value: string): string {
@@ -96,6 +97,7 @@ export function dynamicPlanProviderIdByName(name: string): string {
   if (key === "ishosting" || key === "ishostingcom") return "ishosting";
   if (key === "serverspace" || key === "serverspaceru" || key === "serverspaceio") return "serverspace";
   if (key === "ufo" || key === "ufohosting") return "ufo";
+  if (key === "ultahost" || key === "ulta" || key === "ultahostcom") return "ultahost";
   return "";
 }
 
