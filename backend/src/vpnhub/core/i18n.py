@@ -196,6 +196,10 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "Не удалось завести клиента на выходном сервере: {error}",
         "en": "Failed to create client on the exit server: {error}",
     },
+    "multihop.proto_not_chainable": {
+        "ru": "Протокол «{proto}» не подходит для мультихопа — нужен Xray (xray или xray_xhttp)",
+        "en": 'Protocol "{proto}" cannot be used for multi-hop — Xray required (xray or xray_xhttp)',
+    },
     "multihop.server_not_found": {"ru": "Сервер не найден", "en": "Server not found"},
     "multihop.xray_no_material": {
         "ru": "У сервера «{server}» нет материала Xray — переустановите протокол",

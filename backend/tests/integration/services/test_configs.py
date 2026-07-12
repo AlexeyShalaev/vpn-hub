@@ -7,6 +7,7 @@ SSH не задействован — конфиги устройства зар
 from __future__ import annotations
 
 import json
+from urllib.parse import unquote
 
 import pytest
 from sqlalchemy import select
@@ -249,8 +250,53 @@ async def test__generate__xray_xhttp_selected__own_config_without_bundle(uow, se
     # Assert — формата-бандла (id="amnezia") нет; отдана собственная vless-ссылка с uuid xhttp-клиента
     assert "amnezia" not in [f["id"] for f in res["formats"]]
     assert res["uri"].startswith("vless://") and "xhttp-uuid-1" in res["uri"]
-    # имя сервера помечено XHTTP — чтобы в клиенте отличать от обычного Xray/бандла
+    # имя сервера помечено меткой протокола (Xray XHTTP) — чтобы в клиенте отличать от бандла/др. протокола
     assert "XHTTP" in res["uri"]
+    assert unquote(res["uri"].split("#", 1)[1]).endswith("· Xray XHTTP")
+
+
+async def test__generate__single_protocol_name_has_label__bundle_name_does_not(uow, settings, session_maker):
+    """Одиночный протокол (bundle=False) → имя конфига (description в vpn://) содержит метку протокола,
+    чтобы конфиги разных протоколов одного сервера не путались. У бандла имя — только имя сервера."""
+    key = settings.secret_key
+    awg_material = encrypt_secret(key, json.dumps(ServerMaterial(server_public_key="SPUB", psk="PSK").as_dict()))
+    awg_params = json.dumps(gen_awg_params(is_awg2=True).as_dict())
+    async with seed(session_maker) as s:
+        owner = await make_user(s)
+        server = await make_server(s, owner_id=owner.id, status="online")
+        await make_server_protocol(
+            s,
+            server_id=server.id,
+            proto="awg",
+            vendor="amnezia",
+            container="amnezia-awg2",
+            state="installed",
+            installed=True,
+            running=True,
+            material_encrypted=awg_material,
+            params_json=awg_params,
+        )
+        dev = await make_device(s, user_id=owner.id)
+        await make_device_config(
+            s,
+            device_id=dev.id,
+            server_id=server.id,
+            vpn_type="amnezia",
+            proto="AmneziaWG",
+            client_id="WGPUB",
+            client_ip="10.8.1.2",
+        )
+    svc = ConfigService(uow, settings)
+
+    single = await svc._generate_provisioned(
+        "amnezia", owner.id, server.id, dev.id, "AmneziaWG", "ios", peek=False, bundle=False
+    )
+    assert vpn_uri.decode_vpn_url(single["uri"])["description"] == f"{server.name} · AmneziaWG"
+
+    bundled = await svc._generate_provisioned(
+        "amnezia", owner.id, server.id, dev.id, "AmneziaWG", "ios", peek=False, bundle=True
+    )
+    assert vpn_uri.decode_vpn_url(bundled["uri"])["description"] == server.name
 
 
 async def test__generate__single_bundlable_vs_bundle__containers_count(uow, settings, session_maker):

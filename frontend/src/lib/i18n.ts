@@ -794,7 +794,8 @@ const ru = {
   "srvDetail.chainCreated": "Цепочка Xray создана — трафик Xray пойдёт через выходной сервер",
   "srvDetail.chainDeleteFailed": "Не удалось удалить цепочку",
   "srvDetail.chainDeleted": "Цепочка удалена",
-  "srvDetail.chainExitVia": "Xray → выход через",
+  "srvDetail.chainEntryProto": "Входной протокол",
+  "srvDetail.chainExitVia": "→ выход через",
   "srvDetail.check": "Проверить",
   "srvDetail.checkFailed": "Не удалось проверить сервер",
   "srvDetail.checkedAt": "проверен: {time}",
@@ -865,6 +866,8 @@ const ru = {
   "srvDetail.multihopExplainAfter":
     "(VLESS + Reality): клиенты Xray этого сервера входят здесь, а в интернет выходят через Xray другого вашего сервера. Полезно, когда нужен вход с локальным IP, а выход — в другой стране. Клиенты остальных протоколов этого сервера (AmneziaWG, OpenVPN, Outline, Hysteria2) не затрагиваются.",
   "srvDetail.multihopExplainBefore": "Только для протокола",
+  "srvDetail.multihopNeedsXray":
+    "Для мультихопа установите на этом сервере Xray или Xray XHTTP (VLESS + Reality) — во вкладке протоколов выше.",
   "srvDetail.multihopTitle": "Мультихоп Xray → Xray",
   "srvDetail.neverChecked": "ещё не проверялся",
   "srvDetail.newServerIpLabel": "IP нового сервера",
@@ -904,7 +907,7 @@ const ru = {
   "srvDetail.resetLabel": "сброс: {day}",
   "srvDetail.runningState": "работает",
   "srvDetail.section": "Раздел",
-  "srvDetail.selectExitServer": "Выберите выходной сервер (Xray)…",
+  "srvDetail.selectExitServer": "Выберите выход (сервер и протокол)…",
   "srvDetail.server": "Сервер",
   "srvDetail.serverCostHelp":
     "Цена аренды сервера. При изменении сохраняется история — расход считается по фактически действовавшей цене за каждый период. Пусто — сервер бесплатный.",
@@ -2092,7 +2095,8 @@ const en = {
   "srvDetail.chainCreated": "Xray chain created — Xray traffic will route through the exit server",
   "srvDetail.chainDeleteFailed": "Failed to delete the chain",
   "srvDetail.chainDeleted": "Chain deleted",
-  "srvDetail.chainExitVia": "Xray → exit via",
+  "srvDetail.chainEntryProto": "Entry protocol",
+  "srvDetail.chainExitVia": "→ exit via",
   "srvDetail.check": "Check",
   "srvDetail.checkFailed": "Failed to check the server",
   "srvDetail.checkedAt": "checked: {time}",
@@ -2163,6 +2167,8 @@ const en = {
   "srvDetail.multihopExplainAfter":
     "protocol (VLESS + Reality): Xray clients of this server connect here and exit to the internet through Xray on another one of your servers. Useful when you need a local entry IP but exit in a different country. Clients of the other protocols on this server (AmneziaWG, OpenVPN, Outline, Hysteria2) are not affected.",
   "srvDetail.multihopExplainBefore": "Only for the",
+  "srvDetail.multihopNeedsXray":
+    "To use multi-hop, install Xray or Xray XHTTP (VLESS + Reality) on this server — in the protocols tab above.",
   "srvDetail.multihopTitle": "Multihop Xray → Xray",
   "srvDetail.neverChecked": "never checked",
   "srvDetail.newServerIpLabel": "New server IP",
@@ -2202,7 +2208,7 @@ const en = {
   "srvDetail.resetLabel": "reset: {day}",
   "srvDetail.runningState": "running",
   "srvDetail.section": "Section",
-  "srvDetail.selectExitServer": "Select an exit server (Xray)…",
+  "srvDetail.selectExitServer": "Select exit (server and protocol)…",
   "srvDetail.server": "Server",
   "srvDetail.serverCostHelp":
     "The server rental price. History is preserved on change — spend is calculated using the price that actually applied for each period. Empty — the server is free.",

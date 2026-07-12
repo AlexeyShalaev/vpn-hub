@@ -24,9 +24,11 @@ const VPN_TYPES: VpnType[] = ["amnezia", "openvpn", "outline", "hysteria2"];
 type ServerDetailTab = "connection" | "protocols" | "monitoring" | "access";
 const SERVER_TABS: ServerDetailTab[] = ["connection", "protocols", "monitoring", "access"];
 
-// установлен ли на сервере запущенный tcp-Reality Xray (условие мультихопа для entry/exit)
-const hasRunningXray = (s: Server): boolean =>
-  (s.protocols ?? []).some((p) => p.proto === "xray" && p.installed && p.running);
+// протоколы семейства Xray (VLESS+Reality), пригодные для мультихопа: tcp-xray и xray_xhttp.
+// Возвращаем установленные+запущенные — годятся и как вход (entry), и как выход (exit).
+const CHAIN_PROTOS = ["xray", "xray_xhttp"];
+const chainableProtos = (s: Server): string[] =>
+  (s.protocols ?? []).filter((p) => CHAIN_PROTOS.includes(p.proto) && p.installed && p.running).map((p) => p.proto);
 
 // человекочитаемые размеры/время для карточки ресурсов
 const fmtBytes = (t: TFunc, n: number | null): string => {
@@ -715,21 +717,44 @@ function ChainSection({ server }: { server: Server }) {
   const t = useT();
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
-  const [exitId, setExitId] = useState("");
+  const [entryProto, setEntryProto] = useState(""); // какой Xray-протокол entry цепляем
+  const [exitKey, setExitKey] = useState(""); // "<exitServerId>|<exitProto>"
+
+  const entryProtos = chainableProtos(server); // Xray-семейство на этом (entry) сервере
 
   const chainsQ = useQuery({
     queryKey: ["chains", server.id],
     queryFn: () => q.listChains(server.id),
-    enabled: hasRunningXray(server),
+    enabled: entryProtos.length > 0,
   });
   const serversQ = useQuery({ queryKey: ["servers"], queryFn: () => q.listServers() });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["chains", server.id] });
 
+  const chains = chainsQ.data ?? [];
+  // entry-протоколы без цепочки (один entry-протокол = один outbound = одна связка)
+  const chained = new Set(chains.map((c) => c.proto));
+  const freeEntryProtos = entryProtos.filter((p) => !chained.has(p));
+  const entryProtoEff = entryProto && freeEntryProtos.includes(entryProto) ? entryProto : (freeEntryProtos[0] ?? "");
+  // выходные точки: чужие онлайн-серверы владельца × их Xray-семейства протоколы (сервер + протокол)
+  const exitEndpoints = (serversQ.data ?? [])
+    .filter((s) => s.id !== server.id && s.status === "online")
+    .flatMap((s) =>
+      chainableProtos(s).map((proto) => ({
+        key: `${s.id}|${proto}`,
+        name: s.name,
+        location: s.location || s.ip,
+        proto,
+      })),
+    );
+
   const createMut = useMutation({
-    mutationFn: () => q.createChain(server.id, exitId),
+    mutationFn: () => {
+      const [exitServerId, exitProto] = exitKey.split("|");
+      return q.createChain(server.id, exitServerId, { entryProto: entryProtoEff, exitProto });
+    },
     onSuccess: () => {
-      setExitId("");
+      setExitKey("");
       invalidate();
       toast(t("srvDetail.chainCreated"));
     },
@@ -744,15 +769,6 @@ function ChainSection({ server }: { server: Server }) {
     onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.chainDeleteFailed")),
   });
 
-  // мультихоп работает только для tcp-Reality Xray — прячем секцию, если на entry его нет
-  if (!hasRunningXray(server)) return null;
-
-  const chains = chainsQ.data ?? [];
-  // кандидаты в exit: чужие серверы владельца, онлайн, с запущенным Xray
-  const candidates = (serversQ.data ?? []).filter(
-    (s) => s.id !== server.id && s.status === "online" && hasRunningXray(s),
-  );
-
   return (
     <div className="card stack">
       <div
@@ -762,10 +778,14 @@ function ChainSection({ server }: { server: Server }) {
         {t("srvDetail.multihopTitle")}
       </div>
       <p className="muted" style={{ fontSize: 13 }}>
-        {t("srvDetail.multihopExplainBefore")} <strong>Xray</strong> {t("srvDetail.multihopExplainAfter")}
+        {t("srvDetail.multihopExplainBefore")} <strong>Xray / Xray XHTTP</strong> {t("srvDetail.multihopExplainAfter")}
       </p>
 
-      {chains.length > 0 ? (
+      {entryProtos.length === 0 ? (
+        <p className="muted-3" style={{ fontSize: 12.5 }}>
+          {t("srvDetail.multihopNeedsXray")}
+        </p>
+      ) : (
         <div className="stack" style={{ gap: 8 }}>
           {chains.map((ch) => (
             <div
@@ -783,7 +803,8 @@ function ChainSection({ server }: { server: Server }) {
               <span className="rowflex" style={{ gap: 8, minWidth: 0 }}>
                 <Icon name="refresh" size={15} />
                 <span style={{ fontSize: 13.5 }}>
-                  {t("srvDetail.chainExitVia")} <strong>{ch.exitServerName || ch.exitServerId}</strong> (Xray)
+                  <strong>{protoLabel(t, ch.proto)}</strong> {t("srvDetail.chainExitVia")}{" "}
+                  <strong>{ch.exitServerName || ch.exitServerId}</strong>
                 </span>
                 <span className={`badge ${ch.state === "linked" ? "ok" : "warn"}`}>{ch.state}</span>
               </span>
@@ -798,25 +819,46 @@ function ChainSection({ server }: { server: Server }) {
               </Btn>
             </div>
           ))}
+          {freeEntryProtos.length > 0 && exitEndpoints.length > 0 ? (
+            <div className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
+              {freeEntryProtos.length > 1 && (
+                <select
+                  className="input"
+                  value={entryProtoEff}
+                  onChange={(e) => setEntryProto(e.target.value)}
+                  style={{ flex: "0 0 auto" }}
+                  title={t("srvDetail.chainEntryProto")}
+                >
+                  {freeEntryProtos.map((p) => (
+                    <option key={p} value={p}>
+                      {protoLabel(t, p)}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <select
+                className="input"
+                value={exitKey}
+                onChange={(e) => setExitKey(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                <option value="">{t("srvDetail.selectExitServer")}</option>
+                {exitEndpoints.map((ep) => (
+                  <option key={ep.key} value={ep.key}>
+                    {ep.name} · {ep.location} · {protoLabel(t, ep.proto)}
+                  </option>
+                ))}
+              </select>
+              <Btn variant="primary" disabled={!exitKey || createMut.isPending} onClick={() => createMut.mutate()}>
+                {createMut.isPending ? <Spinner /> : t("common.create")}
+              </Btn>
+            </div>
+          ) : chains.length === 0 ? (
+            <p className="muted-3" style={{ fontSize: 12.5 }}>
+              {t("srvDetail.noExitServers")}
+            </p>
+          ) : null}
         </div>
-      ) : candidates.length > 0 ? (
-        <div className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
-          <select className="input" value={exitId} onChange={(e) => setExitId(e.target.value)} style={{ flex: 1 }}>
-            <option value="">{t("srvDetail.selectExitServer")}</option>
-            {candidates.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} · {s.location || s.ip}
-              </option>
-            ))}
-          </select>
-          <Btn variant="primary" disabled={!exitId || createMut.isPending} onClick={() => createMut.mutate()}>
-            {createMut.isPending ? <Spinner /> : t("common.create")}
-          </Btn>
-        </div>
-      ) : (
-        <p className="muted-3" style={{ fontSize: 12.5 }}>
-          {t("srvDetail.noExitServers")}
-        </p>
       )}
     </div>
   );

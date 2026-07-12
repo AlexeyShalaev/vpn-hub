@@ -422,8 +422,15 @@ async def create_chain(
     ident: Identity = Depends(require_user),
     svc: ChainService = Depends(service(ChainService)),
 ) -> dict:
-    # body: { "exitServerId": str } — направить выход этого (entry) сервера через exit-сервер
-    return await svc.create(ident.id, sid, body.get("exitServerId", ""))
+    # body: { exitServerId, entryProto?, exitProto? } — направить выход этого (entry) сервера через exit.
+    # entryProto/exitProto ∈ {xray, xray_xhttp}; по умолчанию xray (обратная совместимость).
+    return await svc.create(
+        ident.id,
+        sid,
+        body.get("exitServerId", ""),
+        entry_proto=body.get("entryProto") or "xray",
+        exit_proto=body.get("exitProto") or "xray",
+    )
 
 
 @router.delete("/servers/{sid}/chains/{chain_id}")

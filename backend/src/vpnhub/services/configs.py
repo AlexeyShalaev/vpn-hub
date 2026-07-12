@@ -298,7 +298,13 @@ class ConfigService:
                 raise BadRequest(key="config.create_failed", params={"error": str(e)}) from e
             await self._persist_client(device_id, server_id, spec, client, client_name)
 
-        artifact = prov_obj.build_artifact(server_ip=server_ip, port=port, server_name=server_name, client=client)
+        # Имя, которое увидит клиент (description в vpn://). Для amnezia, когда выдаётся ОДИН протокол
+        # (не объединённый бандл awg/awg_legacy/xray), добавляем метку протокола — иначе конфиги разных
+        # протоколов одного сервера называются одинаково и их легко перепутать. У бандла и прочих вендоров
+        # имя не трогаем. server_name (без метки) остаётся для имён файлов — там протокол уже в suffix'е.
+        is_amnezia_single = vpn_type == pc.VENDOR_AMNEZIA and not (bundle and spec.id in _BUNDLABLE_AMNEZIA)
+        display_name = f"{server_name} · {spec.label}" if is_amnezia_single else server_name
+        artifact = prov_obj.build_artifact(server_ip=server_ip, port=port, server_name=display_name, client=client)
         clients = clients_for(vpn_type, platform)
         if spec.kind == "xray":
             clients = [c for c in clients if not c.get("wgOnly")]

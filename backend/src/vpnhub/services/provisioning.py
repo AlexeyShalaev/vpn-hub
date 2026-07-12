@@ -311,11 +311,15 @@ class ProvisioningService:
         exit_port: str,
         exit_material: ServerMaterial,
         exit_uuid: str,
+        exit_network: str = "tcp",
+        exit_path: str = "",
     ) -> None:
         """Мультихоп: направить outbound entry-контейнера на exit-сервер (vless+Reality) по SSH.
 
         `exit_uuid` — клиентский uuid, заведённый на exit через add_client: entry предъявляет его
         как обычный vless-клиент exit. Материал exit (pubkey/shortId/SNI) — из ServerProtocol exit.
+        `exit_network`/`exit_path` — транспорт exit-протокола (tcp | xhttp+path), под него строится
+        outbound entry (xray/xray_xhttp exit различаются транспортом).
         """
         prov = self.loaded_provisioner(entry_sp)
         if not isinstance(prov, XrayProvisioner):
@@ -329,7 +333,17 @@ class ProvisioningService:
                 exit_short_id=exit_material.short_id,
                 exit_sni=exit_material.site or pc.XRAY_DEFAULT_SITE,
                 exit_uuid=exit_uuid,
+                exit_network=exit_network,
+                exit_path=exit_path,
             )
+
+    async def client_ids(self, server: m.Server, sp: m.ServerProtocol) -> set[str]:
+        """Живые клиентские uuid протокола (для точечного снятия chain-клиента на нужном exit-контейнере)."""
+        prov = self.loaded_provisioner(sp)
+        if not isinstance(prov, XrayProvisioner):
+            return set()
+        async with SshClient(self.creds(server)) as ssh:
+            return await prov.list_client_ids(ssh)
 
     async def clear_chain(self, entry_server: m.Server, entry_sp: m.ServerProtocol) -> None:
         """Снять мультихоп: вернуть outbound entry-контейнера к прямому freedom по SSH."""
