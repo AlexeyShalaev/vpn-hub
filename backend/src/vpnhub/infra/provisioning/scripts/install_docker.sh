@@ -13,6 +13,21 @@ if ! sudo -n sh -c 'command -v fuser > /dev/null 2>&1'; then sudo -n $pm $check_
 if ! sudo -n sh -c 'command -v lsof > /dev/null 2>&1'; then sudo -n $pm $check_pkgs; sudo -n $pm $silent_inst lsof; fi;\
 if ! sudo -n sh -c 'command -v docker > /dev/null 2>&1'; then \
   sudo -n $pm $check_pkgs;\
+  if [ "$dist" = "debian" ]; then \
+    if sudo -n apt-get install -s docker-ce docker-ce-cli > /dev/null 2>&1; then \
+      docker_pkg="docker-ce docker-ce-cli";\
+    elif dpkg -l containerd.io 2>/dev/null | grep -q '^ii'; then \
+      . /etc/os-release; repo_os=ubuntu; [ "$ID" = "debian" ] && repo_os=debian;\
+      codename="${VERSION_CODENAME:-$(lsb_release -cs 2>/dev/null)}";\
+      sudo -n install -m 0755 -d /etc/apt/keyrings;\
+      sudo -n sh -c "curl -fsSL https://download.docker.com/linux/$repo_os/gpg -o /etc/apt/keyrings/docker.asc || wget -qO /etc/apt/keyrings/docker.asc https://download.docker.com/linux/$repo_os/gpg" > /dev/null 2>&1 || true;\
+      sudo -n chmod a+r /etc/apt/keyrings/docker.asc 2>/dev/null || true;\
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$repo_os $codename stable" | sudo -n tee /etc/apt/sources.list.d/docker.list > /dev/null;\
+      sudo -n $pm $check_pkgs;\
+      sudo -n apt-get install -s docker-ce docker-ce-cli > /dev/null 2>&1 && docker_pkg="docker-ce docker-ce-cli";\
+    fi;\
+  fi;\
+  echo "Docker pkg selected: $docker_pkg";\
   if ! sudo -n $pm $what_pkg $docker_pkg 2>/dev/null | grep -qi podman; then \
     sudo -n $pm $silent_inst $docker_pkg;\
     sleep 5; sudo -n systemctl enable --now docker; sleep 5;\
@@ -20,6 +35,7 @@ if ! sudo -n sh -c 'command -v docker > /dev/null 2>&1'; then \
     echo "Container runtime is not supported";\
     exit 1;\
   fi;\
+  if ! sudo -n sh -c 'command -v docker > /dev/null 2>&1' && ! command -v docker > /dev/null 2>&1; then echo "Docker package not installed"; fi;\
 fi;\
 if [ "$(sudo -n cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" = "Y" ]; then \
   if ! sudo -n sh -c 'command -v apparmor_parser > /dev/null 2>&1'; then \
