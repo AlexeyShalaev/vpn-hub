@@ -737,7 +737,10 @@ export function SystemScreen() {
                   {dbStatusLabel}
                 </span>
               </div>
-              <div className="mono" style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+              <div
+                className="mono"
+                style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2, overflowWrap: "anywhere" }}
+              >
                 {sys.db.engine} · {sys.db.host}/{sys.db.name}
               </div>
             </div>
@@ -782,7 +785,7 @@ export function SystemScreen() {
           {t("system.defaultUserLimitsHint")}
         </p>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
               <span className="muted">{t("system.devicesLabel")}</span>
               <input
@@ -808,7 +811,7 @@ export function SystemScreen() {
               {t("common.save")}
             </Btn>
           </div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
               <span className="muted">{t("system.trafficPerPeriod")}</span>
               <div style={{ display: "grid", gridTemplateColumns: "140px 92px", gap: 8 }}>

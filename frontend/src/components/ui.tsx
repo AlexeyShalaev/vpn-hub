@@ -473,13 +473,13 @@ export function ScreenHeader({
   onBack?: () => void;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+    <div className="screen-header">
       {onBack && (
         <Btn variant="ghost" sm onClick={onBack}>
           <Icon name="back" size={18} />
         </Btn>
       )}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="screen-header-titles">
         <div style={{ fontSize: 22, fontWeight: 800 }}>{title}</div>
         {sub && (
           <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
@@ -487,7 +487,7 @@ export function ScreenHeader({
           </div>
         )}
       </div>
-      {action}
+      {action && <div className="screen-header-action">{action}</div>}
     </div>
   );
 }

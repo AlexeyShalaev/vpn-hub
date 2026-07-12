@@ -28,6 +28,8 @@ function ServerCard({ s }: { s: Server }) {
         background: "var(--surface)",
         boxShadow: "var(--shadow)",
         cursor: "pointer",
+        // grid-элемент по умолчанию min-width:auto — без этого длинное имя/содержимое распирало бы карточку за трек.
+        minWidth: 0,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -82,6 +84,7 @@ function ServerCard({ s }: { s: Server }) {
                 gap: 4,
                 fontSize: 12,
                 color: "var(--text-2)",
+                whiteSpace: "nowrap",
               }}
             >
               <Icon name="refresh" size={13} />

@@ -8,6 +8,8 @@ import type { Session } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
 
+const THEMES = ["system", "dark", "light"] as const;
+
 export function ProfileScreen() {
   const me = useStore((s) => s.me);
   const theme = useStore((s) => s.theme);
@@ -22,6 +24,9 @@ export function ProfileScreen() {
   const toast = useStore((s) => s.toast);
   const go = useNav((s) => s.go);
   const qc = useQueryClient();
+
+  const themeLabel = (pref: (typeof THEMES)[number]) =>
+    pref === "system" ? t("profile.themeSystem") : pref === "dark" ? t("profile.themeDark") : t("profile.themeLight");
 
   const [pwOpen, setPwOpen] = useState(false);
   const [pw, setPw] = useState({ current: "", next: "", next2: "" });
@@ -211,15 +216,10 @@ export function ProfileScreen() {
               {t("profile.themeHint")}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {(["system", "dark", "light"] as const).map((pref) => {
+          {/* На десктопе — таблетки, на мобиле — компактный select (три кнопки не помещаются в строку). */}
+          <div className="theme-pills">
+            {THEMES.map((pref) => {
               const active = themePref === pref;
-              const label =
-                pref === "system"
-                  ? t("profile.themeSystem")
-                  : pref === "dark"
-                    ? t("profile.themeDark")
-                    : t("profile.themeLight");
               return (
                 <button
                   key={pref}
@@ -238,11 +238,23 @@ export function ProfileScreen() {
                     opacity: active ? 1 : 0.6,
                   }}
                 >
-                  {label}
+                  {themeLabel(pref)}
                 </button>
               );
             })}
           </div>
+          <select
+            className="theme-select"
+            value={themePref}
+            onChange={(e) => setThemePref(e.target.value as (typeof THEMES)[number])}
+            aria-label={t("profile.theme")}
+          >
+            {THEMES.map((pref) => (
+              <option key={pref} value={pref}>
+                {themeLabel(pref)}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="card-row" style={{ padding: "14px 0" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
