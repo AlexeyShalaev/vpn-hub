@@ -38,6 +38,8 @@ nav = [
         { "Группы и участники" = "owner/groups.md" },
         { "Пулы и доступы" = "owner/access.md" },
         { "Кто пользуется сервером" = "owner/clients.md" },
+        { "Финансы" = "owner/finance.md" },
+        { "События" = "owner/events.md" },
     ] },
     { "Участнику" = [
         { "Присоединение к группе" = "member/join.md" },

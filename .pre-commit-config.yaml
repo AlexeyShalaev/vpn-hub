@@ -16,6 +16,7 @@ repos:
       - id: check-yaml
       - id: check-merge-conflict
       - id: check-added-large-files
+        args: [--maxkb=6144]  # демо-медиа (docs/assets/reel/*.mp4/gif) крупнее дефолтных 500 КБ
       - id: check-case-conflict
       - id: end-of-file-fixer
       - id: trailing-whitespace
