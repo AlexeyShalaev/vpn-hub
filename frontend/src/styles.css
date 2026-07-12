@@ -248,6 +248,12 @@ a {
   gap: 14px;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
+/* На узких экранах minmax(300px) может «распирать» колонку шире вьюпорта — на мобиле одна колонка в 1fr. */
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* супер-апп-лаунчер на «Главной»: сетка плиток-разделов */
 .launcher-grid {
@@ -328,6 +334,31 @@ a {
     display: block;
   }
 }
+/* Переключатель темы: таблетки на десктопе, компактный select на мобиле (три кнопки не влезают в строку). */
+.theme-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.theme-select {
+  display: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: 600 13px var(--font);
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  .theme-pills {
+    display: none;
+  }
+  .theme-select {
+    display: block;
+  }
+}
 .muted {
   color: var(--text-2);
 }
@@ -351,6 +382,32 @@ a {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+/* Заголовок экрана: [назад] [заголовок+подзаголовок] [действия].
+   На десктопе — в один ряд; на мобиле кнопки действий не помещаются рядом с заголовком
+   и «наезжали» на него — переносим их на отдельную строку во всю ширину. */
+.screen-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.screen-header-titles {
+  flex: 1;
+  min-width: 0;
+}
+.screen-header-action {
+  flex: none;
+}
+@media (max-width: 640px) {
+  .screen-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .screen-header-action {
+    flex: 1 0 100%;
+  }
 }
 
 /* tabs */
@@ -510,6 +567,8 @@ a {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
+  flex: none;
 }
 .badge.ok {
   background: var(--ok-soft);
@@ -617,8 +676,12 @@ a {
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 460px;
-  max-height: 88vh;
-  overflow-y: auto;
+  /* dvh учитывает панель браузера на мобиле; c 88vh высота больше видимой области и верх модалки уходит за экран */
+  max-height: 88dvh;
+  /* колонка: шапка/футер фиксированы, скроллится только тело — заголовок всегда виден */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   animation: fadeUp 0.2s ease both;
 }
 .modal-head {
@@ -626,6 +689,7 @@ a {
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
+  flex: none;
 }
 .modal-head h3 {
   font-size: 17px;
@@ -633,6 +697,9 @@ a {
 }
 .modal-body {
   padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 .modal-foot {
   padding: 16px 20px;
@@ -640,6 +707,7 @@ a {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+  flex: none;
 }
 
 /* toast */
@@ -801,6 +869,10 @@ a {
     align-self: flex-end;
     border-radius: var(--r) var(--r) 0 0;
     animation: sheetUp 0.24s ease both;
+  }
+  /* нижний «лист» прижат к краю экрана — футер должен обходить home-индикатор/панель браузера */
+  .modal-foot {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
   .overlay {
     align-items: flex-end;
