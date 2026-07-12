@@ -85,12 +85,18 @@ function ObfuscationForm({ serverId, vtype, proto }: { serverId: string; vtype: 
               <input
                 className="input"
                 value={values[f] ?? ""}
+                placeholder={isAwg2 && f[0] === "H" ? "a-b" : undefined}
                 disabled={disabled}
                 onChange={(e) => setValues((v) => ({ ...v, [f]: e.target.value }))}
               />
             </Field>
           ))}
         </div>
+        {isAwg2 && (
+          <div className="muted-3" style={{ fontSize: 12 }}>
+            {t("vpnAdv.awg2HeaderRangeHint")}
+          </div>
+        )}
         <Btn
           sm
           disabled={disabled}
