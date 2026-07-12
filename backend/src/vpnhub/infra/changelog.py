@@ -27,6 +27,20 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.11.0",
+        "date": "2026-07-12",
+        "notes": [
+            {
+                "ru": "Иконка сайта (favicon) во вкладке браузера — раньше её не было",
+                "en": "Site favicon in the browser tab — previously missing",
+            },
+            {
+                "ru": "Документация дополнена скриншотами всех экранов и обзорным видео продукта",
+                "en": "Documentation now includes screenshots of every screen and a product overview video",
+            },
+        ],
+    },
+    {
         "v": "0.10.1",
         "date": "2026-07-12",
         "notes": [
