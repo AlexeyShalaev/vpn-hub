@@ -9,6 +9,8 @@ PostgreSQL.
 [![Image](https://img.shields.io/badge/ghcr.io-vpn--hub-blue?logo=docker)](https://github.com/AlexeyShalaev/vpn-hub/pkgs/container/vpn-hub)
 [![Docs](https://img.shields.io/badge/docs-online-blue)](https://AlexeyShalaev.github.io/vpn-hub/)
 
+![Обзор VPN Hub](docs/assets/reel/reel.gif)
+
 ## Требования
 
 - **Docker** 20.10+ и **Docker Compose** v2 — либо кластер **Kubernetes** 1.27+.

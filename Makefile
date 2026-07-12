@@ -69,4 +69,14 @@ docs-build: ##@ Собрать сайт документации в site/ (zensi
 	cp CHANGELOG.md docs/changelog.md
 	uv run --project backend --no-dev --group docs zensical build --clean
 
-.PHONY: help install fmt check test test-unit migrate migration run front-dev front-build front-lint db-up db-down build hadolint docs-serve docs-build
+## ---- demo media (скриншоты и промо-ролик; см. tools/demo/README.md) ----
+demo-up: ##@ Изолированный demo-инстанс (БД vpnhub_demo) для скринов/ролика
+	./tools/demo/run-demo-backend.sh
+
+screenshots: ##@ Снять скриншоты доков (нужен запущенный demo-up)
+	cd tools/demo && node screenshots/capture.mjs
+
+reel: ##@ Собрать промо-ролик в docs/assets/reel (нужен запущенный demo-up)
+	cd tools/demo && node reel/gen-assets.mjs && node reel/record.mjs && bash reel/compose.sh
+
+.PHONY: help install fmt check test test-unit migrate migration run front-dev front-build front-lint db-up db-down build hadolint docs-serve docs-build demo-up screenshots reel

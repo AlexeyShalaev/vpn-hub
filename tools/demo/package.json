@@ -1,0 +1,15 @@
+{
+  "name": "vpnhub-demo-media",
+  "private": true,
+  "type": "module",
+  "description": "Генерация синтетических демо-данных, скриншотов документации и промо-ролика VPN Hub",
+  "scripts": {
+    "screenshots": "node screenshots/capture.mjs",
+    "reel:assets": "node reel/gen-assets.mjs",
+    "reel:record": "node reel/record.mjs",
+    "reel": "node reel/gen-assets.mjs && node reel/record.mjs && bash reel/compose.sh"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
