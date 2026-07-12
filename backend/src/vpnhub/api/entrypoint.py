@@ -84,10 +84,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await normalize_user_phones(uow)
 
     # Домердж новых дефолтных провайдеров в каталог: после обновления версии они доезжают до
-    # существующих пользователей (их правки/удаления/кастомные провайдеры сохраняются).
-    added_providers = (await container.get(ProviderStore)).sync_default_providers()
-    if added_providers:
-        log.info("providers_synced", added=added_providers)
+    # существующих пользователей (их правки/удаления/кастомные провайдеры сохраняются). Каталог
+    # некритичен для старта — если файл недоступен на запись, не роняем панель, только предупреждаем.
+    try:
+        added_providers = (await container.get(ProviderStore)).sync_default_providers()
+        if added_providers:
+            log.info("providers_synced", added=added_providers)
+    except Exception:
+        log.warning("providers_sync_failed", exc_info=True)
 
     scheduler = AsyncIOScheduler()
     backups = await container.get(BackupService)
