@@ -5,6 +5,10 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.10.1](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.10.0...v0.10.1) - 2026-07-12
+
+- UI polish: refined layout and styling on the System, Profile and Servers screens
+
 ## [0.10.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.9.0...v0.10.0) - 2026-07-12
 
 - New providers UltaHost and 62YUN in the catalog; new default providers now reach existing users after an update, while their edits and deletions are kept

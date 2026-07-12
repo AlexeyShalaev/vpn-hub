@@ -27,6 +27,16 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.10.1",
+        "date": "2026-07-12",
+        "notes": [
+            {
+                "ru": "Полировка интерфейса: доработаны вёрстка и стили экранов «Система», «Профиль» и «Серверы»",
+                "en": "UI polish: refined layout and styling on the System, Profile and Servers screens",
+            },
+        ],
+    },
+    {
         "v": "0.10.0",
         "date": "2026-07-12",
         "notes": [
