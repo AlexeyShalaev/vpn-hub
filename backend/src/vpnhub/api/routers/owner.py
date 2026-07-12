@@ -390,6 +390,18 @@ async def finance_overview(
     return await svc.overview(ident.id, start if start is not None else now - _MONTH_SECONDS, end or now)
 
 
+@router.get("/finance/usage")
+async def finance_usage(
+    start: float | None = Query(default=None),
+    end: float | None = Query(default=None),
+    ident: Identity = Depends(require_user),
+    svc: FinanceService = Depends(service(FinanceService)),
+) -> dict:
+    # «кто и как использует серверы» за период + приписанная себестоимость (для дашборда/калькулятора)
+    now = time.time()
+    return await svc.usage_report(ident.id, start if start is not None else now - _MONTH_SECONDS, end or now)
+
+
 # ---------- multihop / chains (entry -> exit) ----------
 
 

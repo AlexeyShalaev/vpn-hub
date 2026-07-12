@@ -15,7 +15,7 @@ import math
 import time
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from vpnhub.api.config import Settings
 from vpnhub.core.errors import BadRequest, NotFound
@@ -29,6 +29,17 @@ PERIODS = ("minute", "day", "month")
 PERIOD_SECONDS: dict[str, float] = {"minute": 60.0, "day": 86400.0, "month": 365.25 / 12 * 86400}
 GIB = 1024**3
 SALE_MARGIN_PCTS = (20, 50, 100)
+DAY_SECONDS = 86400
+
+
+def _day_start(at: float) -> int:
+    """Начало суток UTC-сетки — как `traffic_rollup.bucket_start(at, 86400)`.
+
+    Нужно, чтобы посуточный ряд расходов лёг на ту же сетку бакетов, что и суточные агрегаты
+    трафика (`traffic_daily.bucket`), и графики расходов/трафика совпадали по оси X.
+    """
+    ts = int(at)
+    return ts - ts % DAY_SECONDS
 
 
 def accrue_segment(
@@ -280,12 +291,22 @@ class FinanceService:
             raise BadRequest(key="finance.report_period_invalid")
 
         totals_cost: dict[str, float] = {}
+        prev_cost: dict[str, float] = {}  # расход за предыдущее равное окно — для дельты «vs прошлый период»
         quota_cost: dict[str, float] = {}
         total_quota_bytes = 0
         total_used_bytes = 0
         priced = 0
         quota_servers = 0
         servers_out: list[dict] = []
+
+        prev_start = start - (end - start)
+        # суточная сетка [start, end) для рядов расходов/трафика (та же сетка, что traffic_daily.bucket)
+        day_buckets: list[int] = []
+        d = _day_start(start)
+        while d < end:
+            day_buckets.append(d)
+            d += DAY_SECONDS
+        cost_by_day: dict[int, dict[str, float]] = {b: {} for b in day_buckets}
 
         async with self.uow.query() as tx:
             servers = await tx.servers.for_owner(owner_id)
@@ -297,6 +318,12 @@ class FinanceService:
                 by_cur = accrued_by_currency(segs, start, end, now)
                 for currency, amount in by_cur.items():
                     totals_cost[currency] = totals_cost.get(currency, 0.0) + amount
+                for currency, amount in accrued_by_currency(segs, prev_start, start, now).items():
+                    prev_cost[currency] = prev_cost.get(currency, 0.0) + amount
+                for b in day_buckets:  # посуточная разбивка accrual (частичные крайние дни клиппятся)
+                    day_cost = accrued_by_currency(segs, max(b, start), min(b + DAY_SECONDS, end), now)
+                    for currency, amount in day_cost.items():
+                        cost_by_day[b][currency] = cost_by_day[b].get(currency, 0.0) + amount
 
                 billing_start = period_start(now, s.billing_day)
                 rx, txb = await period_usage(tx.session, s.id, None, billing_start)
@@ -330,6 +357,8 @@ class FinanceService:
                     }
                 )
 
+            traffic_by_day = await self._daily_traffic(tx, [s.id for s in servers], day_buckets, end)
+
         servers_out.sort(
             key=lambda row: (
                 -(row["trafficUtilizationPct"] or -1),
@@ -347,7 +376,171 @@ class FinanceService:
                 "trafficUsedBytes": total_used_bytes,
                 "trafficUtilizationPct": _pct(total_used_bytes, total_quota_bytes),
                 "costByCurrency": _money_items(totals_cost),
+                "prevCostByCurrency": _money_items(prev_cost),
                 "unitCosts": _unit_costs(totals_cost, total_used_bytes, total_quota_bytes or None, quota_cost),
             },
+            "costSeries": [{"at": b, "byCurrency": _money_items(cost_by_day[b])} for b in day_buckets],
+            "trafficSeries": [{"at": b, "bytes": traffic_by_day.get(b, 0)} for b in day_buckets],
             "servers": servers_out,
+        }
+
+    @staticmethod
+    async def _daily_traffic(
+        tx: UowTransaction, server_ids: list[str], day_buckets: list[int], end: float
+    ) -> dict[int, int]:
+        """Суммарный суточный трафик (rx+tx) по серверам владельца из ярусных агрегатов traffic_daily.
+
+        Ключ = bucket (epoch начала суток UTC), совпадает с сеткой `day_buckets` расходов. Для очень
+        свежих суток агрегат может отставать (rollup-джоба) — это осознанный компромисс дашборда.
+        """
+        if not server_ids or not day_buckets:
+            return {}
+        rows = (
+            await tx.session.execute(
+                select(m.TrafficDaily.bucket, func.sum(m.TrafficDaily.rx + m.TrafficDaily.tx))
+                .where(
+                    m.TrafficDaily.server_id.in_(server_ids),
+                    m.TrafficDaily.bucket >= day_buckets[0],
+                    m.TrafficDaily.bucket < end,
+                )
+                .group_by(m.TrafficDaily.bucket)
+            )
+        ).all()
+        return {int(b): int(v or 0) for b, v in rows}
+
+    @staticmethod
+    async def _resolve_configs(tx: UowTransaction, dc_ids: list[str]) -> dict[str, tuple[str, str, str]]:
+        """DeviceConfig.id → (user_id, имя пользователя, device_id). Тот же джойн, что мониторинг (_names).
+
+        `Device.user_id` не NULL → каждый резолвнутый конфиг всегда даёт пользователя (имя может быть
+        пустым, если User удалён — outer join). Строка без нашего конфига (dc_id=None или конфиг удалён)
+        в результат не попадает → трактуется вызывающим как external-клиент.
+        """
+        ids = {d for d in dc_ids if d}
+        if not ids:
+            return {}
+        rows = (
+            await tx.session.execute(
+                select(m.DeviceConfig.id, m.Device.user_id, m.User.name, m.Device.id)
+                .join(m.Device, m.Device.id == m.DeviceConfig.device_id)
+                .join(m.User, m.User.id == m.Device.user_id, isouter=True)
+                .where(m.DeviceConfig.id.in_(ids))
+            )
+        ).all()
+        return {cfg_id: (uid, uname or "", dev_id) for cfg_id, uid, uname, dev_id in rows}
+
+    async def usage_report(self, owner_id: str, start: float, end: float) -> dict:
+        """«Кто и как использует серверы»: трафик по пользователям за [start,end] + приписанная себестоимость.
+
+        Трафик — из суточных агрегатов `traffic_daily` (ретеншн ~2 года), сгруппированный по
+        (сервер, device_config). Резолвим device_config → устройство → пользователь; строки без нашего
+        конфига (external-клиенты) идут в бакет «неучтённые». Себестоимость сервера за окно раскидываем
+        по пользователям ПРОПОРЦИОНАЛЬНО их доле трафика на этом сервере; неатрибутированный остаток →
+        в «неучтённые». Окно ровно [start,end] — то же, что расход (в отличие от квотной утилизации в
+        overview, которая живёт в биллинг-периоде сервера), чтобы доли и стоимость были в одном горизонте.
+
+        Валюты не конвертируем (как везде в финучёте) — стоимость по каждому пользователю раздельно по
+        валютам; сведение к единой валюте делает фронт по курсу ЦБ.
+        """
+        now = time.time()
+        end = min(end, now)
+        if end <= start:
+            raise BadRequest(key="finance.report_period_invalid")
+        empty_ext: dict[str, Any] = {"usedBytes": 0, "sharePct": None, "costByCurrency": []}
+
+        users: dict[str, dict] = {}  # user_id -> {name, bytes, devices:set[str], cost:{cur:amt}}
+        ext_bytes = 0
+        ext_cost: dict[str, float] = {}
+        total_bytes = 0
+
+        async with self.uow.query() as tx:
+            servers = await tx.servers.for_owner(owner_id)
+            server_ids = [s.id for s in servers]
+            if not server_ids:
+                return {
+                    "start": start,
+                    "end": end,
+                    "totalUsedBytes": 0,
+                    "userCount": 0,
+                    "deviceCount": 0,
+                    "users": [],
+                    "external": empty_ext,
+                }
+
+            cost_by_server: dict[str, dict[str, float]] = {}
+            for s in servers:
+                cost_by_server[s.id] = accrued_by_currency(await self._segments(tx, s.id), start, end, now)
+
+            rows = (
+                await tx.session.execute(
+                    select(
+                        m.TrafficDaily.server_id,
+                        m.TrafficDaily.device_config_id,
+                        func.sum(m.TrafficDaily.rx + m.TrafficDaily.tx),
+                    )
+                    .where(
+                        m.TrafficDaily.server_id.in_(server_ids),
+                        m.TrafficDaily.bucket >= _day_start(start),
+                        m.TrafficDaily.bucket < end,
+                    )
+                    .group_by(m.TrafficDaily.server_id, m.TrafficDaily.device_config_id)
+                )
+            ).all()
+
+            resolve = await self._resolve_configs(tx, [dc for _, dc, _ in rows if dc])
+
+            # сгруппировать по серверу, чтобы знать server_total для долей
+            by_server: dict[str, list[tuple[str | None, int]]] = {}
+            server_total: dict[str, int] = {}
+            for sid, dc, raw in rows:
+                b = int(raw or 0)
+                if b <= 0:
+                    continue
+                by_server.setdefault(sid, []).append((dc, b))
+                server_total[sid] = server_total.get(sid, 0) + b
+                total_bytes += b
+
+            for sid, entries in by_server.items():
+                stot = server_total[sid]
+                scost = cost_by_server.get(sid, {})
+                for dc, b in entries:
+                    share = b / stot if stot > 0 else 0.0
+                    info = resolve.get(dc) if dc else None
+                    if info:  # конфиг резолвится в пользователя (external/удалённый конфиг → в else)
+                        uid, uname, dev_id = info
+                        u = users.setdefault(uid, {"name": uname, "bytes": 0, "devices": set(), "cost": {}})
+                        u["bytes"] += b
+                        if dev_id:
+                            u["devices"].add(dev_id)
+                        for c, v in scost.items():
+                            u["cost"][c] = u["cost"].get(c, 0.0) + v * share
+                    else:  # external-клиент или удалённый конфиг → «неучтённые»
+                        ext_bytes += b
+                        for c, v in scost.items():
+                            ext_cost[c] = ext_cost.get(c, 0.0) + v * share
+
+        users_out = [
+            {
+                "userId": uid,
+                "name": u["name"],
+                "usedBytes": u["bytes"],
+                "sharePct": _pct(u["bytes"], total_bytes),
+                "deviceCount": len(u["devices"]),
+                "costByCurrency": _money_items(u["cost"]),
+            }
+            for uid, u in users.items()
+        ]
+        users_out.sort(key=lambda x: (-x["usedBytes"], x["name"].lower()))
+        return {
+            "start": start,
+            "end": end,
+            "totalUsedBytes": total_bytes,
+            "userCount": len(users_out),
+            "deviceCount": sum(len(u["devices"]) for u in users.values()),
+            "users": users_out,
+            "external": {
+                "usedBytes": ext_bytes,
+                "sharePct": _pct(ext_bytes, total_bytes),
+                "costByCurrency": _money_items(ext_cost),
+            },
         }

@@ -21,7 +21,19 @@ function niceMax(max: number): number {
   return step * pow;
 }
 
-export function LineChart({ lines, height = H }: { lines: ChartLine[]; height?: number }) {
+// fmtX/fmtY — необязательные форматтеры подписей осей. По умолчанию X = время ЧЧ:ММ (мониторинг),
+// Y = округление. Раздел «Финансы» передаёт даты (ДД.ММ) и деньги/байты.
+export function LineChart({
+  lines,
+  height = H,
+  fmtX,
+  fmtY,
+}: {
+  lines: ChartLine[];
+  height?: number;
+  fmtX?: (at: number) => string;
+  fmtY?: (v: number) => string;
+}) {
   const t = useT();
   const all = lines.flatMap((l) => l.points);
   const hasData = all.length > 0;
@@ -36,8 +48,9 @@ export function LineChart({ lines, height = H }: { lines: ChartLine[]; height?: 
   const x = (at: number) => PAD.left + ((at - minAt) / spanAt) * plotW;
   const y = (v: number) => PAD.top + plotH - (v / yMax) * plotH;
 
-  const fmtTime = (at: number) =>
-    new Date(at * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const fmtTime =
+    fmtX ?? ((at: number) => new Date(at * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }));
+  const fmtYLabel = fmtY ?? ((v: number) => String(Math.round(v)));
 
   return (
     <div style={{ width: "100%", overflowX: "auto" }}>
@@ -52,7 +65,7 @@ export function LineChart({ lines, height = H }: { lines: ChartLine[]; height?: 
           <g key={v}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeWidth={1} />
             <text x={PAD.left - 6} y={y(v) + 3} textAnchor="end" fontSize={9} fill="var(--text-3)">
-              {Math.round(v)}
+              {fmtYLabel(v)}
             </text>
           </g>
         ))}

@@ -18,6 +18,8 @@ interface State {
   setThemePref: (pref: ThemePref) => void;
   lang: Lang;
   setLang: (lang: Lang) => void;
+  financeCurrency: string; // валюта, в которой сводится раздел «Финансы» (конвертация по курсу ЦБ)
+  setFinanceCurrency: (cur: string) => void;
   viewRole: "owner" | "member";
   setViewRole: (r: "owner" | "member") => void;
   toastMsg: string | null;
@@ -40,6 +42,12 @@ function initialThemePref(): ThemePref {
 // Эффективная тема из предпочтения: «системная» → смотрим prefers-color-scheme.
 function effectiveTheme(pref: ThemePref): "light" | "dark" {
   return pref === "system" ? systemTheme() : pref;
+}
+
+// Сохранённая валюта раздела «Финансы» (vpnhub.finance.currency); по умолчанию — рубли.
+function initialFinanceCurrency(): string {
+  const stored = HAS_LS ? localStorage.getItem("vpnhub.finance.currency") : null;
+  return stored && /^[A-Z]{3,8}$/.test(stored) ? stored : "RUB";
 }
 
 const savedThemePref = initialThemePref();
@@ -70,6 +78,12 @@ export const useStore = create<State>((set) => ({
       if (HAS_LS) localStorage.setItem("vpnhub.lang", lang);
       if (HAS_DOM) document.documentElement.setAttribute("lang", lang);
       return { lang };
+    }),
+  financeCurrency: initialFinanceCurrency(),
+  setFinanceCurrency: (financeCurrency) =>
+    set(() => {
+      if (HAS_LS) localStorage.setItem("vpnhub.finance.currency", financeCurrency);
+      return { financeCurrency };
     }),
   viewRole: "member",
   setViewRole: (viewRole) => set({ viewRole }),

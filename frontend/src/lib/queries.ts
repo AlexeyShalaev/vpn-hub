@@ -10,6 +10,7 @@ import type {
   Device,
   DeviceLimit,
   FinanceOverview,
+  FinanceUsage,
   FxRates,
   Group,
   InvitePeek,
@@ -131,6 +132,11 @@ export const financeCost = () => http.get<CostReport>("/finance/cost");
 export const financeOverview = (start: number, end: number) => {
   const qs = new URLSearchParams({ start: String(start), end: String(end) });
   return http.get<FinanceOverview>(`/finance/overview?${qs.toString()}`);
+};
+// «кто и как использует серверы» за период + приписанная себестоимость (для дашборда/калькулятора)
+export const financeUsage = (start: number, end: number) => {
+  const qs = new URLSearchParams({ start: String(start), end: String(end) });
+  return http.get<FinanceUsage>(`/finance/usage?${qs.toString()}`);
 };
 
 // мультихоп: цепочки, где этот сервер — вход (entry); трафик выходит через exit-сервер (Xray outbound)

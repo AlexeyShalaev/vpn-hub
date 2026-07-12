@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from tests.factories.orm import make_server, make_user, seed
+from tests.factories.orm import make_device, make_device_config, make_server, make_user, seed
 from vpnhub.infra.db.orm import models as m
-from vpnhub.services.finance import GIB, MICROS, FinanceService, accrue_segment, accrued_by_currency
+from vpnhub.services.finance import GIB, MICROS, FinanceService, _day_start, accrue_segment, accrued_by_currency
 from vpnhub.services.limits import period_start
 
 pytestmark = pytest.mark.integration
@@ -162,3 +162,94 @@ async def test__overview__combines_cost_traffic_and_unit_economics(session_maker
     assert row["provider"] == "FirstByte"
     assert row["providerPlan"] == "MSK-highmem-KVM-SSD-2"
     assert row["trafficUtilizationPct"] == 30.0
+
+
+async def test__overview__daily_cost_series_and_prev_period(session_maker, uow, settings) -> None:
+    now = time.time()
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79008880006")
+        srv = await make_server(s, owner_id=owner.id, name="daily")
+        s.add(
+            m.ServerPrice(
+                server_id=srv.id,
+                amount_micros=round(100 * MICROS),
+                currency="RUB",
+                period="day",
+                anchor_day=None,
+                effective_from=now - 5 * DAY,
+                effective_to=None,
+            )
+        )
+        oid = owner.id
+
+    rep = await FinanceService(uow, settings).overview(oid, now - 3 * DAY, now)
+
+    # окно 3 дня × 100/день = 300; сумма посуточного ряда == итогу за окно
+    assert rep["totals"]["costByCurrency"] == [{"currency": "RUB", "amount": 300.0}]
+    series_sum = sum(x["amount"] for pt in rep["costSeries"] for x in pt["byCurrency"])
+    assert series_sum == pytest.approx(300.0, rel=1e-6)
+    assert all(pt["at"] % DAY == 0 for pt in rep["costSeries"])  # бакеты на суточной сетке UTC
+    # прошлый период [now-6d, now-3d] пересекает цену только с now-5d → ровно 2 дня × 100 = 200
+    assert rep["totals"]["prevCostByCurrency"] == [{"currency": "RUB", "amount": 200.0}]
+    # ряд трафика есть и выровнен по той же сетке (данных нет → нули)
+    assert len(rep["trafficSeries"]) == len(rep["costSeries"])
+    assert all(pt["bytes"] == 0 for pt in rep["trafficSeries"])
+
+
+async def test__usage_report__attributes_cost_by_traffic_share(session_maker, uow, settings) -> None:
+    now = time.time()
+    bucket = _day_start(now - 10 * DAY)  # суточный бакет внутри окна [now-30d, now]
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79008880007")
+        srv = await make_server(s, owner_id=owner.id, name="srv-usage")
+        s.add(
+            m.ServerPrice(
+                server_id=srv.id,
+                amount_micros=round(300 * MICROS),
+                currency="RUB",
+                period="month",
+                anchor_day=None,
+                effective_from=now - 40 * DAY,
+                effective_to=None,
+            )
+        )
+        ua = await make_user(s, phone="+79008881001", name="Аня")
+        ub = await make_user(s, phone="+79008881002", name="Боря")
+        da = await make_device(s, user_id=ua.id, name="Аня-iPhone")
+        db = await make_device(s, user_id=ub.id, name="Боря-ПК")
+        ca = await make_device_config(s, device_id=da.id, server_id=srv.id, vpn_type="amnezia", client_id="pubA")
+        cb = await make_device_config(s, device_id=db.id, server_id=srv.id, vpn_type="amnezia", client_id="pubB")
+        for dc_id, client_id, rx in ((ca.id, "pubA", 6 * GIB), (cb.id, "pubB", 3 * GIB), (None, "ext-1", 1 * GIB)):
+            s.add(
+                m.TrafficDaily(
+                    server_id=srv.id,
+                    proto="awg",
+                    client_id=client_id,
+                    device_config_id=dc_id,
+                    bucket=bucket,
+                    rx=rx,
+                    tx=0,
+                )
+            )
+        oid, ua_id = owner.id, ua.id
+
+    rep = await FinanceService(uow, settings).usage_report(oid, now - 30 * DAY, now)
+
+    assert rep["totalUsedBytes"] == 10 * GIB
+    assert rep["userCount"] == 2
+    assert rep["deviceCount"] == 2
+    top = rep["users"][0]  # сорт по трафику desc → Аня (6 ГиБ) первая
+    assert top["userId"] == ua_id and top["name"] == "Аня"
+    assert top["usedBytes"] == 6 * GIB and top["sharePct"] == 60.0 and top["deviceCount"] == 1
+    assert rep["users"][1]["usedBytes"] == 3 * GIB and rep["users"][1]["sharePct"] == 30.0
+    # external-клиент (без нашего конфига) — в «неучтённые», доля 10%
+    assert rep["external"]["usedBytes"] == 1 * GIB and rep["external"]["sharePct"] == 10.0
+    # себестоимость раскидана пропорционально трафику: Аня ≈ 2× Боря, external ≈ доля Бори/3-я часть
+    ca_rub = top["costByCurrency"][0]["amount"]
+    cb_rub = rep["users"][1]["costByCurrency"][0]["amount"]
+    ext_rub = rep["external"]["costByCurrency"][0]["amount"]
+    assert ca_rub == pytest.approx(2 * cb_rub, rel=1e-3)
+    assert ext_rub == pytest.approx(cb_rub / 3, rel=1e-3)
+    # доли суммируются в 1.0 → сумма приписанной стоимости == себестоимость сервера за окно (300₽/мес × 30 сут)
+    expected = 300 * (30 * DAY) / (365.25 / 12 * DAY)
+    assert ca_rub + cb_rub + ext_rub == pytest.approx(expected, abs=0.05)
