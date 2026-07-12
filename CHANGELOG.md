@@ -5,6 +5,13 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.10.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.9.0...v0.10.0) (2026-07-12)
+
+
+### Features
+
+* v0.10.0 — new providers, finance dashboard, provisioning & multihop improvements ([#42](https://github.com/AlexeyShalaev/vpn-hub/issues/42)) ([4e68c9c](https://github.com/AlexeyShalaev/vpn-hub/commit/4e68c9c1bbe9e6bf247b306d855ff034a7352ee0))
+
 ## [0.9.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.8.0...v0.9.0) - 2026-07-12
 
 - Full bilingual support: the entire UI and server responses switch between Russian and English
