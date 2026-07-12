@@ -5,12 +5,13 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
-## [0.10.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.9.0...v0.10.0) (2026-07-12)
+## [0.10.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.9.0...v0.10.0) - 2026-07-12
 
-
-### Features
-
-* v0.10.0 — new providers, finance dashboard, provisioning & multihop improvements ([#42](https://github.com/AlexeyShalaev/vpn-hub/issues/42)) ([4e68c9c](https://github.com/AlexeyShalaev/vpn-hub/commit/4e68c9c1bbe9e6bf247b306d855ff034a7352ee0))
+- New providers UltaHost and 62YUN in the catalog; new default providers now reach existing users after an update, while their edits and deletions are kept
+- Reworked Finance section: a single display currency for all servers (CBR conversion), spend and traffic trend charts, a who-uses-it breakdown with imputed cost, and a sale-price calculator (per GB and per device/month)
+- Xray multi-hop now supports Xray XHTTP too — as entry and as exit, in any combination with plain Xray; the multi-hop card is always shown, with a hint to install Xray
+- When issuing a single Amnezia protocol, the config name now includes the protocol (e.g. Server · Xray XHTTP), so a server's configs are no longer easy to mix up
+- Reliable Docker install on Ubuntu: docker-ce is used when containerd.io is present (previously the conflicting docker.io failed silently), with a clear error on failure
 
 ## [0.9.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.8.0...v0.9.0) - 2026-07-12
 

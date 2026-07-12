@@ -27,6 +27,32 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.10.0",
+        "date": "2026-07-12",
+        "notes": [
+            {
+                "ru": "Новые провайдеры UltaHost и 62YUN в каталоге; новые дефолтные провайдеры теперь доезжают до существующих пользователей после обновления, а их правки и удаления сохраняются",  # noqa: E501
+                "en": "New providers UltaHost and 62YUN in the catalog; new default providers now reach existing users after an update, while their edits and deletions are kept",  # noqa: E501
+            },
+            {
+                "ru": "Раздел «Финансы» переделан: единая валюта для всех серверов (конвертация по курсу ЦБ), графики трендов расходов и трафика, разбивка «кто использует» с приписанной себестоимостью и калькулятор цены продажи (за ГБ и за устройство в месяц)",  # noqa: E501
+                "en": "Reworked Finance section: a single display currency for all servers (CBR conversion), spend and traffic trend charts, a who-uses-it breakdown with imputed cost, and a sale-price calculator (per GB and per device/month)",  # noqa: E501
+            },
+            {
+                "ru": "Мультихоп Xray теперь работает и с Xray XHTTP — и на входе, и на выходе, в любой комбинации с обычным Xray; карточка мультихопа показывается всегда, с подсказкой поставить Xray",  # noqa: E501
+                "en": "Xray multi-hop now supports Xray XHTTP too — as entry and as exit, in any combination with plain Xray; the multi-hop card is always shown, with a hint to install Xray",  # noqa: E501
+            },
+            {
+                "ru": "При выдаче одного протокола Amnezia имя конфига содержит протокол (например «Сервер · Xray XHTTP») — конфиги одного сервера больше не путаются",  # noqa: E501
+                "en": "When issuing a single Amnezia protocol, the config name now includes the protocol (e.g. Server · Xray XHTTP), so a server's configs are no longer easy to mix up",  # noqa: E501
+            },
+            {
+                "ru": "Надёжная установка Docker на Ubuntu: ставим docker-ce при наличии containerd.io (раньше конфликтующий docker.io молча не устанавливался), с внятной ошибкой при неудаче",  # noqa: E501
+                "en": "Reliable Docker install on Ubuntu: docker-ce is used when containerd.io is present (previously the conflicting docker.io failed silently), with a clear error on failure",  # noqa: E501
+            },
+        ],
+    },
+    {
         "v": "0.9.0",
         "date": "2026-07-12",
         "notes": [
