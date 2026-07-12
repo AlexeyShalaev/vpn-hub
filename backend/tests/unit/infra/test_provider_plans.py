@@ -20,6 +20,7 @@ from vpnhub.infra.provider_plans import (
     parse_serverspace_plans,
     parse_ufo_plans,
     parse_ultahost_plans,
+    parse_yun62_plans,
     plan_bandwidth_bytes,
 )
 
@@ -304,6 +305,38 @@ ULTAHOST_STORE = """
 </body></html>
 """
 
+# Страница заказа 62YUN: характеристики+месячная цена зашиты в onClick кнопки тарифа, код локации — во
+# втором css-классе (tarifs frm), а карта «код→страна» — на кнопках выбора локации ($('#loc').val()).
+# У каждой локации СВОЙ набор тарифов: в США есть promo-S но нет ultra-S, в Гонконге только promo-B.
+YUN62_ORDER = """
+<html><body>
+  <div id="ordering-server__geo">
+    <button onClick=" $('.frm').css('display','block'); $('#loc').val('frm'); $('#plan403').click(); ">США</button>
+    <button onClick=" $('.fra').css('display','block'); $('#loc').val('fra'); $('#plan439').click(); ">Германия</button>
+    <button onClick=" $('.hk').css('display','block'); $('#loc').val('hk'); $('#plan421').click(); ">Гонконг</button>
+  </div>
+  <input type="hidden" id="loc" value="frm">
+  <div id="ordering-server__rates">
+    <button class="tarifs frm " style="" id="plan403" onClick="
+      orderingServerInner('1 vCPU', '1 Gb', '10 Gb NVMe', '1 IPv4');
+      localStorage.setItem('diskType','nvme'); orderingServerSetPrice(219);
+      $('#plan').val('403'); checkForm(); ">promo-S</button>
+    <button class="tarifs frm " style="display:none;" id="plan445" onClick="
+      orderingServerInner('2 vCPU', '2 Gb', '500 Gb HDD', '1 IPv4');
+      localStorage.setItem('diskType','hdd'); orderingServerSetPrice(369);
+      $('#plan').val('445'); checkForm(); ">promo-M</button>
+    <button class="tarifs fra " style="display:none;" id="plan439" onClick="
+      orderingServerInner('1 vCPU', '1 Gb', '10 Gb NVMe', '1 IPv4');
+      localStorage.setItem('diskType','nvme'); orderingServerSetPrice(269);
+      $('#plan').val('439'); checkForm(); ">ultra-S</button>
+    <button class="tarifs hk " style="display:none;" id="plan421" onClick="
+      orderingServerInner('4 vCPU', '8 Gb', '150 Gb NVMe', '1 IPv4');
+      localStorage.setItem('diskType','nvme'); orderingServerSetPrice(1199);
+      $('#plan').val('421'); checkForm(); ">promo-B</button>
+  </div>
+</body></html>
+"""
+
 # Годовой тариф (не помесячный) должен отсеиваться — берём только платёжный цикл Monthly.
 ULTAHOST_ANNUAL_ONLY = """
 <html><body><div class="package"><div class="package-side package-side-left">
@@ -550,6 +583,56 @@ def test__ultahost_price__parses_thousands_separator() -> None:
     assert price("no digits here") is None
 
 
+def test__parse_yun62_plans__extracts_per_location_tariffs_from_onclick() -> None:
+    source = "https://62yun.ru/servers/order"
+    plans = parse_yun62_plans({source: YUN62_ORDER})
+    by_id = {p["id"]: p for p in plans}
+
+    # 4 кнопки тарифов → 4 плана; коды локаций разрезолвлены в названия стран (frm=США, fra=Германия, hk=Гонконг)
+    assert len(plans) == 4
+    assert by_id["62yun-frm-promo-s"] == {
+        "id": "62yun-frm-promo-s",
+        "name": "promo-S · США",
+        "region": "США",
+        "cpu": 1,
+        "ramGb": 1,
+        "diskGb": 10,
+        "diskType": "NVMe",
+        "portMbps": 0,
+        "trafficTb": None,
+        "price": 219.0,
+        "currency": "RUB",
+        "period": "month",
+        "available": True,
+        "sourceUrl": source,
+    }
+    # HDD-тариф читается как HDD, цена месячная в рублях
+    assert by_id["62yun-frm-promo-m"]["diskType"] == "HDD"
+    assert by_id["62yun-frm-promo-m"]["diskGb"] == 500
+    assert by_id["62yun-frm-promo-m"]["price"] == 369.0
+    # у каждой локации СВОЙ набор: в США нет ultra-S, в Гонконге только promo-B
+    regions_by_tier = {(p["name"].split(" · ")[0], p["region"]) for p in plans}
+    assert ("promo-S", "США") in regions_by_tier
+    assert ("ultra-S", "США") not in regions_by_tier
+    assert ("ultra-S", "Германия") in regions_by_tier
+    assert {p["region"] for p in plans if p["name"].startswith("promo-B")} == {"Гонконг"}
+    assert all(p["currency"] == "RUB" and p["period"] == "month" for p in plans)
+
+
+async def test__fetch_yun62_plans__loads_order_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        assert timeout > 0
+        assert "62yun.ru/servers/order" in url
+        return YUN62_ORDER
+
+    monkeypatch.setattr(provider_plans.yun62, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_yun62_plans()
+
+    assert {p["region"] for p in plans} == {"США", "Германия", "Гонконг"}
+    assert all(p["currency"] == "RUB" for p in plans)
+
+
 async def test__fetch_ultahost_plans__loads_store_page(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch_browser_url(url: str, timeout: float) -> str:
         assert timeout > 0
@@ -692,6 +775,16 @@ async def test__plans_for__ultahost_fetches_dynamic_catalog(monkeypatch: pytest.
 
     assert await provider_plans.plans_for("UltaHost") == [{"id": "ulta-live"}]
     assert await provider_plans.plans_for("ultahost") == [{"id": "ulta-live"}]
+
+
+async def test__plans_for__yun62_fetches_dynamic_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch() -> list[dict[str, Any]]:
+        return [{"id": "62yun-live"}]
+
+    monkeypatch.setattr(provider_plans, "fetch_yun62_plans", fake_fetch)
+
+    assert await provider_plans.plans_for("62YUN") == [{"id": "62yun-live"}]
+    assert await provider_plans.plans_for("62yun") == [{"id": "62yun-live"}]
 
 
 async def test__plans_for__firstbyte_caches_dynamic_catalog_and_returns_copy(

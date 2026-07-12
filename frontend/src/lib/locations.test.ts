@@ -68,6 +68,11 @@ describe("location canonicalization", () => {
     ["Seoul, South Korea", "KR"],
     ["Tokyo, Japan", "JP"],
     ["Sydney, Australia", "AU"],
+    // локации 62YUN (русские названия стран)
+    ["Финляндия", "FI"],
+    ["Гонконг", "HK"],
+    ["Германия", "DE"],
+    ["США", "US"],
   ])("maps %s -> %s", (raw, code) => {
     expect(canonicalLocation(raw).key).toBe(code);
   });

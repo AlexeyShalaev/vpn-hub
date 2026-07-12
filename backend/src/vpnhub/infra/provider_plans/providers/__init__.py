@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from . import ahost, firstbyte, ishosting, serverspace, ufo, ultahost
+from . import ahost, firstbyte, ishosting, serverspace, ufo, ultahost, yun62
 
-__all__ = ["ahost", "firstbyte", "ishosting", "serverspace", "ufo", "ultahost"]
+__all__ = ["ahost", "firstbyte", "ishosting", "serverspace", "ufo", "ultahost", "yun62"]

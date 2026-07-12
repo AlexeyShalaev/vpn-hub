@@ -71,6 +71,7 @@ export function fmtMoney(amount: number, currency: string): string {
 }
 
 export const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
+  "62yun": "62YUN",
   ahost: "AHost",
   firstbyte: "FirstByte",
   ishosting: "ISHOSTING",
@@ -98,6 +99,7 @@ export function dynamicPlanProviderIdByName(name: string): string {
   if (key === "serverspace" || key === "serverspaceru" || key === "serverspaceio") return "serverspace";
   if (key === "ufo" || key === "ufohosting") return "ufo";
   if (key === "ultahost" || key === "ulta" || key === "ultahostcom") return "ultahost";
+  if (key === "62yun" || key === "yun62" || key === "62yunru") return "62yun";
   return "";
 }
 
