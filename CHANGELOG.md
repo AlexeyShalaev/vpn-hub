@@ -5,13 +5,10 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
-## [0.11.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.10.1...v0.11.0) (2026-07-12)
+## [0.11.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.10.1...v0.11.0) - 2026-07-12
 
-
-### Features
-
-* **frontend:** site favicon ([72b37d8](https://github.com/AlexeyShalaev/vpn-hub/commit/72b37d8fc496997b791ef806b139d8dadeb41aa2))
-* site favicon + docs UI screenshots & promo reel ([288daa6](https://github.com/AlexeyShalaev/vpn-hub/commit/288daa649b1c403cc23f019caff033b42a6d1fe6))
+- Site favicon in the browser tab — previously missing
+- Documentation now includes screenshots of every screen and a product overview video
 
 ## [0.10.1](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.10.0...v0.10.1) - 2026-07-12
 
