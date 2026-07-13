@@ -113,7 +113,7 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Save image
         run: docker save -o image.tar "$IMAGE:$CI_TAG"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vpnhub-image
           path: image.tar
