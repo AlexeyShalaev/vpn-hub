@@ -118,6 +118,8 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
         ),
     ),
     PlanSource("u1host", "U1 HOST", ("u1host.com",)),
+    PlanSource("retzor", "Retzor", ("retzor.com",)),
+    PlanSource("megahost-kz", "MEGAHOST", ("megahost", "megahost.kz")),
 )
 
 _COMPACT_RE = re.compile(r"[\s._-]+")

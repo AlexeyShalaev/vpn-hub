@@ -36,4 +36,11 @@ BILLMANAGER_SOURCES: Mapping[str, Src] = {
     "spacecore": Src("https://billing.spacecore.pro/billmgr", "https://spacecore.pro/ru/"),
     "xorek": Src("https://my.xorek.cloud/billmgr", "https://xorek.cloud/ru/vps"),
     "u1host": Src("https://my.u1host.com/billmgr", "https://u1host.com/ru"),
+    # в имени ДЦ Retzor «Сzech republic» начинается с кириллической «С» — страны задаём явно
+    "retzor": Src(
+        "https://billing.retzor.com/billmgr",
+        "https://retzor.com/",
+        dc_countries={"zech": "CZ", "Netherlands": "NL", "Russia": "RU"},
+    ),
+    "megahost-kz": Src("https://lk.megahost.kz/billmgr", "https://megahost.kz/vps/", country="KZ"),
 }

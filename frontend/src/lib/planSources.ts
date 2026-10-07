@@ -60,4 +60,6 @@ export const PLAN_SOURCES: readonly PlanSource[] = [
   { id: "spacecore", label: "SpaceCore", aliases: ["spacecore.pro"] },
   { id: "xorek", label: "XorekCloud", aliases: ["xorek", "xorek.cloud"] },
   { id: "u1host", label: "U1 HOST", aliases: ["u1host.com"] },
+  { id: "retzor", label: "Retzor", aliases: ["retzor.com"] },
+  { id: "megahost-kz", label: "MEGAHOST", aliases: ["megahost", "megahost.kz"] },
 ];
