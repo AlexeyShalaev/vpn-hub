@@ -13,7 +13,8 @@ from collections.abc import Awaitable, Callable
 from functools import partial
 from typing import Any
 
-from . import cache
+from . import billmanager, cache, whmcs
+from .billmanager import BillmanagerSource, fetch_billmanager_plans, parse_billmanager_export
 from .cache import _cached_provider_plans, clear_provider_plan_cache
 from .catalog import plans_for as _plans_for
 from .common import TIB, plan_bandwidth_bytes
@@ -35,6 +36,7 @@ from .providers import (
 )
 from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
 from .providers.beget import fetch_beget_plans, parse_beget_plans
+from .providers.billmanager_sources import BILLMANAGER_SOURCES
 from .providers.cherry import fetch_cherry_plans, parse_cherry_plans
 from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
 from .providers.hetzner import fetch_hetzner_plans, parse_hetzner_plans
@@ -94,19 +96,24 @@ async def plans_for(provider_id: str) -> list[dict[str, Any]]:
     }
     # провайдеры на WHMCS: общий загрузчик + конфиг витрин (providers/whmcs_stores.py)
     fetchers.update({pid: partial(fetch_whmcs_plans, pid, pages) for pid, pages in WHMCS_STORES.items()})
+    # провайдеры на BILLmanager: общий загрузчик публичного прайса (providers/billmanager_sources.py)
+    fetchers.update({pid: partial(fetch_billmanager_plans, pid, src) for pid, src in BILLMANAGER_SOURCES.items()})
     return await _plans_for(provider_id, fetchers)
 
 
 __all__ = [
+    "BILLMANAGER_SOURCES",
     "PLAN_SOURCES",
     "TIB",
     "WHMCS_STORES",
+    "BillmanagerSource",
     "PlanSource",
     "WhmcsPage",
     "_cached_provider_plans",
     "_provider_key",
     "ahost",
     "beget",
+    "billmanager",
     "cache",
     "cherry",
     "clear_provider_plan_cache",
@@ -116,6 +123,7 @@ __all__ = [
     "discover_ufo_countries",
     "fetch_ahost_plans",
     "fetch_beget_plans",
+    "fetch_billmanager_plans",
     "fetch_cherry_plans",
     "fetch_firstbyte_plans",
     "fetch_hetzner_plans",
@@ -134,6 +142,7 @@ __all__ = [
     "linode",
     "parse_ahost_plans",
     "parse_beget_plans",
+    "parse_billmanager_export",
     "parse_cherry_plans",
     "parse_firstbyte_plans",
     "parse_hetzner_plans",
@@ -154,5 +163,6 @@ __all__ = [
     "ufo",
     "ultahost",
     "vultr",
+    "whmcs",
     "yun62",
 ]

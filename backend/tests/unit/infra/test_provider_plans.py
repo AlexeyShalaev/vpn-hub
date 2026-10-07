@@ -860,8 +860,13 @@ _FRONTEND_PLAN_SOURCES = Path(__file__).resolve().parents[4] / "frontend" / "src
 def test__plan_sources__every_source_has_a_fetcher() -> None:
     ids = [src.id for src in provider_plans.PLAN_SOURCES]
     assert len(ids) == len(set(ids))
-    assert set(ids) == set(provider_plans._FETCHER_NAMES) | set(provider_plans.WHMCS_STORES)
-    assert not set(provider_plans._FETCHER_NAMES) & set(provider_plans.WHMCS_STORES)
+    named, whmcs, billmanager = (
+        set(provider_plans._FETCHER_NAMES),
+        set(provider_plans.WHMCS_STORES),
+        set(provider_plans.BILLMANAGER_SOURCES),
+    )
+    assert set(ids) == named | whmcs | billmanager
+    assert len(named) + len(whmcs) + len(billmanager) == len(ids)  # движки не пересекаются
     for name in provider_plans._FETCHER_NAMES.values():
         assert callable(getattr(provider_plans, name))
 
@@ -1457,3 +1462,127 @@ def test__parse_cherry_plans__expands_vps_by_region_with_stock() -> None:
         1,
     )
     assert (lt["price"], lt["currency"], lt["country"]) == (3.0, "EUR", "LT")
+
+
+# --- общий парсер BILLmanager -------------------------------------------------------------------
+
+
+def _bm_addon(intname: str, limit: str, unit: str = "", name: str = "") -> str:
+    measure = f"<measure>6</measure><measure><id>6</id><name>{unit}</name></measure>" if unit else ""
+    return (
+        f"<addon><name>{name}</name><addonlimit>{limit}</addonlimit>{measure}"
+        f"<addon_itemtype_info><intname>{intname}</intname></addon_itemtype_info></addon>"
+    )
+
+
+def _bm_pricelist(pid: int, name: str, cost: str, addons: str, dcs: str = "", **flags: str) -> str:
+    extra = "".join(f"<{k}>{v}</{k}>" for k, v in flags.items())
+    return (
+        f"<pricelist><id>{pid}</id><name>{name}</name><active>on</active>{extra}"
+        f"<itemtype_info><intname>vds</intname></itemtype_info>{dcs}"
+        f'<price currency="RUB"><period cost="0.0000" type="month" length="-100">trial</period>'
+        f'<period cost="{cost}" type="month" length="1">monthly</period></price>{addons}</pricelist>'
+    )
+
+
+BM_EXPORT = (
+    "<doc>"
+    + _bm_pricelist(
+        1400,
+        "Взлёт",
+        "490.0000",
+        _bm_addon("ncpu", "2", "Unit")
+        + _bm_addon("mem", "2048", "Mb")
+        + _bm_addon("disc", "40", "Gb", "Дисковое пространство NVMe")
+        + _bm_addon("inbound", "905", "Mbps")
+        + _bm_addon("outbound", "100", "Mbps"),
+        "<datacenter><id>4</id><name>Moscow</name><name_ru>Москва, Россия</name_ru></datacenter>"
+        "<datacenter><id>7</id><name>Host-Telecom (CZ)</name></datacenter>",
+    )
+    + _bm_pricelist(
+        1500,
+        "VDS-KVM-SSD 4.0",
+        "949.0000",
+        _bm_addon("ncpu", "2")
+        + _bm_addon("mem", "2")
+        + _bm_addon("disc", "20")
+        + _bm_addon("bandwidth", "32", "Tb", "Port 1 Gbit/s, 32 Tb included"),
+    )
+    + _bm_pricelist(1600, "Конфигуратор", "0.0000", _bm_addon("ncpu", "1") + _bm_addon("mem", "1024", "Mb"))
+    + _bm_pricelist(1700, "Скрытый", "100.0000", _bm_addon("ncpu", "1"), hideinorder="on")
+    + _bm_pricelist(
+        1800,
+        "KVM-HB-20",
+        "400.0000",
+        _bm_addon("ip", "1"),
+        description_ru=(
+            "&lt;ul&gt;&lt;li&gt;1 vCPU&lt;/li&gt;&lt;li&gt;2 GB RAM&lt;/li&gt;"
+            "&lt;li&gt;20 GB HDD&lt;/li&gt;&lt;/ul&gt;"
+        ),
+    )
+    + "</doc>"
+)
+
+
+def test__parse_billmanager_export__reads_addons_datacenters_and_description_fallback() -> None:
+    source = provider_plans.BillmanagerSource(
+        "https://my.example.ru/billmgr", "https://example.ru/vps", default_region="Россия", country="RU"
+    )
+
+    plans = {p["id"]: p for p in provider_plans.parse_billmanager_export("vds-sh", source, BM_EXPORT)}
+
+    assert set(plans) == {"vds-sh-1400-4", "vds-sh-1400-7", "vds-sh-1500", "vds-sh-1800"}  # без конструктора и скрытого
+    msk = plans["vds-sh-1400-4"]
+    assert (msk["name"], msk["region"], msk["country"]) == ("Взлёт · Москва, Россия", "Москва, Россия", "RU")
+    assert (msk["cpu"], msk["ramGb"], msk["diskGb"], msk["diskType"], msk["portMbps"]) == (2, 2, 40, "NVMe", 100)
+    assert (msk["price"], msk["currency"], msk["sourceUrl"]) == (490.0, "RUB", "https://example.ru/vps")
+    assert plans["vds-sh-1400-7"]["country"] == "CZ"  # код страны в скобках у имени ДЦ
+    ssd = plans["vds-sh-1500"]  # без ДЦ — регион по умолчанию; единицы не указаны — RAM в ГБ
+    assert (ssd["region"], ssd["ramGb"], ssd["diskType"], ssd["portMbps"], ssd["trafficTb"]) == (
+        "Россия",
+        2,
+        "SSD",
+        1000,
+        32.0,
+    )
+    described = plans["vds-sh-1800"]  # характеристики только в описании
+    assert (described["cpu"], described["ramGb"], described["diskGb"], described["diskType"]) == (1, 2, 20, "HDD")
+
+
+def test__billmanager_export_url__asks_for_available_vds_only() -> None:
+    from vpnhub.infra.provider_plans.billmanager import export_url
+
+    url = export_url(provider_plans.BillmanagerSource("https://my.example.ru/billmgr", "https://example.ru"))
+
+    assert url == ("https://my.example.ru/billmgr?func=pricelist.export&out=xml&itemtype=vds&onlyavailable=on")
+
+
+async def test__fetch_billmanager_plans__downloads_and_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def fake_fetch_export(url: str, timeout: float) -> str:
+        calls.append(url)
+        if "down" in url:
+            raise TimeoutError
+        return BM_EXPORT
+
+    monkeypatch.setattr(provider_plans.billmanager, "_fetch_export", fake_fetch_export)
+    ok = provider_plans.BillmanagerSource("https://up.example/billmgr", "https://up.example", default_region="Россия")
+    down = provider_plans.BillmanagerSource("https://down.example/billmgr", "https://down.example")
+
+    assert len(await provider_plans.fetch_billmanager_plans("x", ok)) == 4
+    assert await provider_plans.fetch_billmanager_plans("x", down) == []
+    assert len(calls) == 2
+
+
+def test__parse_billmanager_export__broken_xml_is_empty() -> None:
+    source = provider_plans.BillmanagerSource("https://my.example.ru/billmgr", "https://example.ru")
+
+    assert provider_plans.parse_billmanager_export("x", source, "<doc><pricelist>") == []
+
+
+def test__parse_billmanager_export__rejects_documents_with_dtd() -> None:
+    source = provider_plans.BillmanagerSource("https://my.example.ru/billmgr", "https://example.ru")
+    bomb = '<?xml version="1.0"?><!DOCTYPE doc [<!ENTITY a "aaaa">]>' + BM_EXPORT
+
+    assert provider_plans.parse_billmanager_export("x", source, bomb) == []
