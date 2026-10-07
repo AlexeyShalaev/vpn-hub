@@ -17,6 +17,7 @@ import { PLAN_SOURCES } from "../lib/planSources";
 import {
   type CatalogFilter,
   type CatalogSort,
+  cardTags,
   EMPTY_CATALOG_FILTER,
   facetCounts,
   filterProviders,
@@ -790,7 +791,7 @@ export function CatalogScreen() {
                         {t(`pay.${m}`)}
                       </span>
                     ))}
-                    {p.tags.map((tag) => (
+                    {cardTags(p, lang).map((tag) => (
                       <span key={tag} style={chipStyle}>
                         {tag}
                       </span>

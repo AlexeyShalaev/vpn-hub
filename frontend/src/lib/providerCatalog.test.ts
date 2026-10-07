@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_CATALOG_FILTER, facetCounts, filterProviders, providerBlurb } from "./providerCatalog";
+import { cardTags, EMPTY_CATALOG_FILTER, facetCounts, filterProviders, providerBlurb } from "./providerCatalog";
 import type { Provider } from "./types";
 
 function provider(id: string, over: Partial<Provider> = {}): Provider {
@@ -83,5 +83,21 @@ describe("bilingual description", () => {
     expect(providerBlurb(p, "en")).toBe("Русский");
     expect(providerBlurb({ ...p, blurbEn: "English" }, "en")).toBe("English");
     expect(providerBlurb({ ...p, blurbEn: "English" }, "ru")).toBe("Русский");
+  });
+});
+
+describe("card tags", () => {
+  const p = provider("x", { tags: ["Карта РФ", "Крипта", "40+ стран", "Почасовая оплата", "NVMe"], payments: [] });
+
+  it("drops tags that repeat a payment method in either language", () => {
+    expect(cardTags(p, "ru")).toEqual(["40+ стран", "Почасовая оплата", "NVMe"]);
+  });
+
+  it("translates the catalog's standard tags for the English UI", () => {
+    expect(cardTags(p, "en")).toEqual(["40+ countries", "Hourly billing", "NVMe"]);
+    expect(cardTags(provider("y", { tags: ["35 стран", "30+ локаций"] }), "en")).toEqual([
+      "35 countries",
+      "30+ locations",
+    ]);
   });
 });
