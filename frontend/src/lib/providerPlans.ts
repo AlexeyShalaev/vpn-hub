@@ -1,4 +1,5 @@
 import { tg } from "./i18n";
+import { PLAN_SOURCES } from "./planSources";
 import type { CostByCurrency, Provider, ProviderPlan } from "./types";
 
 // --- форматирование тарифов (общее для ServerForm-автозаполнения и каталога) ---
@@ -88,15 +89,9 @@ export function sumCostIn(
   return { amount, partial };
 }
 
-export const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = {
-  "62yun": "62YUN",
-  ahost: "AHost",
-  firstbyte: "FirstByte",
-  ishosting: "ISHOSTING",
-  serverspace: "Serverspace",
-  ufo: "UFO Hosting",
-  ultahost: "UltaHost",
-};
+export const DYNAMIC_PLAN_PROVIDER_LABELS: Record<string, string> = Object.fromEntries(
+  PLAN_SOURCES.map((s) => [s.id, s.label]),
+);
 
 export function normalizeProviderKey(value: string): string {
   return value
@@ -105,20 +100,17 @@ export function normalizeProviderKey(value: string): string {
     .replace(/[\s._-]+/g, "");
 }
 
+// нормализованное написание (id, подпись, синонимы) → id источника живых тарифов
+const PLAN_SOURCE_BY_ALIAS: ReadonlyMap<string, string> = new Map(
+  PLAN_SOURCES.flatMap((s) => [s.id, s.label, ...s.aliases].map((name) => [normalizeProviderKey(name), s.id])),
+);
+
 export function isDynamicPlanProviderId(providerId: string | undefined): providerId is string {
   return !!providerId && Object.hasOwn(DYNAMIC_PLAN_PROVIDER_LABELS, providerId);
 }
 
 export function dynamicPlanProviderIdByName(name: string): string {
-  const key = normalizeProviderKey(name);
-  if (key === "ahost" || key === "ahosteu") return "ahost";
-  if (key === "firstbyte") return "firstbyte";
-  if (key === "ishosting" || key === "ishostingcom") return "ishosting";
-  if (key === "serverspace" || key === "serverspaceru" || key === "serverspaceio") return "serverspace";
-  if (key === "ufo" || key === "ufohosting") return "ufo";
-  if (key === "ultahost" || key === "ulta" || key === "ultahostcom") return "ultahost";
-  if (key === "62yun" || key === "yun62" || key === "62yunru") return "62yun";
-  return "";
+  return PLAN_SOURCE_BY_ALIAS.get(normalizeProviderKey(name)) ?? "";
 }
 
 export function findDynamicPlanProvider(providers: Provider[], providerName: string): Provider | null {

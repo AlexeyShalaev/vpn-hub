@@ -15,7 +15,7 @@ from . import cache
 from .cache import _cached_provider_plans, clear_provider_plan_cache
 from .catalog import plans_for as _plans_for
 from .common import TIB, plan_bandwidth_bytes
-from .keys import _provider_key
+from .keys import PLAN_SOURCES, PlanSource, _provider_key
 from .providers import ahost, firstbyte, ishosting, serverspace, ufo, ultahost, yun62
 from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
 from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
@@ -38,23 +38,31 @@ for _name, _module in _COMPAT_MODULES.items():
     sys.modules.setdefault(f"{__name__}.{_name}", _module)
 
 
+# id источника (см. keys.PLAN_SOURCES) → загрузчик его тарифов. Резолвится на каждый вызов через
+# глобальные имена модуля, чтобы monkeypatch `provider_plans.fetch_*` в тестах продолжал работать.
+_FETCHER_NAMES: dict[str, str] = {
+    "firstbyte": "fetch_firstbyte_plans",
+    "ufo": "fetch_ufo_plans",
+    "ishosting": "fetch_ishosting_plans",
+    "ahost": "fetch_ahost_plans",
+    "serverspace": "fetch_serverspace_plans",
+    "ultahost": "fetch_ultahost_plans",
+    "62yun": "fetch_yun62_plans",
+}
+
+
 async def plans_for(provider_id: str) -> list[dict[str, Any]]:
+    module = sys.modules[__name__]
     return await _plans_for(
         provider_id,
-        {
-            "firstbyte": fetch_firstbyte_plans,
-            "ufo": fetch_ufo_plans,
-            "ishosting": fetch_ishosting_plans,
-            "ahost": fetch_ahost_plans,
-            "serverspace": fetch_serverspace_plans,
-            "ultahost": fetch_ultahost_plans,
-            "62yun": fetch_yun62_plans,
-        },
+        {pid: getattr(module, name) for pid, name in _FETCHER_NAMES.items()},
     )
 
 
 __all__ = [
+    "PLAN_SOURCES",
     "TIB",
+    "PlanSource",
     "_cached_provider_plans",
     "_provider_key",
     "ahost",

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -850,3 +852,28 @@ def test__plan_bandwidth_bytes() -> None:
     assert plan_bandwidth_bytes({"trafficTb": 5}) == 5 * TIB
     assert plan_bandwidth_bytes({"trafficTb": None}) is None  # безлимит
     assert plan_bandwidth_bytes({}) is None
+
+
+_FRONTEND_PLAN_SOURCES = Path(__file__).resolve().parents[4] / "frontend" / "src" / "lib" / "planSources.ts"
+
+
+def test__plan_sources__every_source_has_a_fetcher() -> None:
+    ids = [src.id for src in provider_plans.PLAN_SOURCES]
+    assert len(ids) == len(set(ids))
+    assert set(ids) == set(provider_plans._FETCHER_NAMES)
+    for name in provider_plans._FETCHER_NAMES.values():
+        assert callable(getattr(provider_plans, name))
+
+
+@pytest.mark.parametrize("src", provider_plans.PLAN_SOURCES, ids=lambda s: s.id)
+def test__provider_key__resolves_id_label_and_aliases(src: provider_plans.PlanSource) -> None:
+    for name in (src.id, src.label, src.label.upper(), *src.aliases):
+        assert provider_plans._provider_key(name) == src.id
+
+
+def test__plan_sources__frontend_mirror_matches_backend_registry() -> None:
+    if not _FRONTEND_PLAN_SOURCES.exists():
+        pytest.skip("frontend sources are not part of this checkout")
+    text = _FRONTEND_PLAN_SOURCES.read_text(encoding="utf-8")
+    frontend = dict(re.findall(r'\{ id: "([^"]+)", label: "([^"]+)"', text))
+    assert frontend == {src.id: src.label for src in provider_plans.PLAN_SOURCES}

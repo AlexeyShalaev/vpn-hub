@@ -1,0 +1,19 @@
+// Реестр провайдеров с живыми тарифами — зеркало `backend/.../provider_plans/keys.py` (PLAN_SOURCES).
+// Совпадение id/подписей проверяет backend-тест реестра, так что добавлять провайдера нужно в оба места.
+// aliases — дополнительные написания имени (домен, сокращение); id и label сопоставляются и так.
+
+export interface PlanSource {
+  id: string;
+  label: string;
+  aliases: string[];
+}
+
+export const PLAN_SOURCES: readonly PlanSource[] = [
+  { id: "firstbyte", label: "FirstByte", aliases: [] },
+  { id: "ufo", label: "UFO Hosting", aliases: [] },
+  { id: "ishosting", label: "ISHOSTING", aliases: ["ishosting.com"] },
+  { id: "ahost", label: "AHost", aliases: ["ahost.eu"] },
+  { id: "serverspace", label: "Serverspace", aliases: ["serverspace.ru", "serverspace.io"] },
+  { id: "ultahost", label: "UltaHost", aliases: ["ulta", "ultahost.com"] },
+  { id: "62yun", label: "62YUN", aliases: ["yun62", "62yun.ru"] },
+];
