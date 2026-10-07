@@ -21,6 +21,7 @@ export const PLAN_SOURCES: readonly PlanSource[] = [
   { id: "hetzner", label: "Hetzner", aliases: ["hetzner.com", "hetzner cloud"] },
   { id: "vultr", label: "Vultr", aliases: ["vultr.com"] },
   { id: "linode", label: "Akamai (Linode)", aliases: ["linode", "linode.com", "akamai", "akamai cloud"] },
+  { id: "cherry-servers", label: "Cherry Servers", aliases: ["cherry", "cherryservers.com"] },
   { id: "edis-global", label: "EDIS Global", aliases: ["edis", "edisglobal.com"] },
   { id: "flokinet", label: "FlokiNET", aliases: ["flokinet.is"] },
   { id: "zappie-host", label: "Zappie Host", aliases: ["zappiehost.com"] },

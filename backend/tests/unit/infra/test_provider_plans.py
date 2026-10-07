@@ -1404,3 +1404,56 @@ async def test__plans_for__routes_whmcs_providers_to_their_store_config(monkeypa
 
     assert seen == [p.url for p in provider_plans.WHMCS_STORES["flokinet"]]
     assert plans and all(p["id"].startswith("flokinet-") for p in plans)
+
+
+# --- Cherry Servers (публичный API) -------------------------------------------------------------
+
+CHERRY_PLANS = [
+    {
+        "slug": "e3-1240v3",
+        "name": "E3-1240v3",
+        "type": "baremetal",
+        "specs": {},
+        "pricing": [],
+        "available_regions": [],
+    },
+    {
+        "slug": "B2-1-1gb-20s-shared",
+        "name": "Cloud VPS 1 (Gen 2)",
+        "type": "vps",
+        "specs": {
+            "cpus": {"cores": 1},
+            "memory": {"total": 1},
+            "storage": [{"count": 1, "size": 20, "type": "SSD"}],
+            "nics": {"name": "1Gbps"},
+            "bandwidth": {"name": "1TB"},
+        },
+        "pricing": [
+            {"unit": "Hourly", "price": 0.015, "currency": "EUR"},
+            {"unit": "Monthly", "price": 3.0, "currency": "EUR"},
+        ],
+        "available_regions": [
+            {"region_iso_2": "LT", "location": "Lithuania, Šiauliai", "stock_qty": 113},
+            {"region_iso_2": "SG", "location": "Singapore", "stock_qty": 0},
+        ],
+    },
+]
+
+
+def test__parse_cherry_plans__expands_vps_by_region_with_stock() -> None:
+    plans = provider_plans.parse_cherry_plans(CHERRY_PLANS)
+
+    assert [(p["id"], p["region"], p["available"]) for p in plans] == [
+        ("cherry-sg-b2-1-1gb-20s-shared", "Singapore", False),
+        ("cherry-lt-b2-1-1gb-20s-shared", "Šiauliai, Lithuania", True),
+    ]
+    lt = plans[1]
+    assert (lt["cpu"], lt["ramGb"], lt["diskGb"], lt["diskType"], lt["portMbps"], lt["trafficTb"]) == (
+        1,
+        1,
+        20,
+        "SSD",
+        1000,
+        1,
+    )
+    assert (lt["price"], lt["currency"], lt["country"]) == (3.0, "EUR", "LT")

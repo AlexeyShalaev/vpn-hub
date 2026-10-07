@@ -21,6 +21,7 @@ from .keys import PLAN_SOURCES, PlanSource, _provider_key
 from .providers import (
     ahost,
     beget,
+    cherry,
     firstbyte,
     hetzner,
     ishosting,
@@ -34,6 +35,7 @@ from .providers import (
 )
 from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
 from .providers.beget import fetch_beget_plans, parse_beget_plans
+from .providers.cherry import fetch_cherry_plans, parse_cherry_plans
 from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
 from .providers.hetzner import fetch_hetzner_plans, parse_hetzner_plans
 from .providers.ishosting import discover_ishosting_plan_urls, fetch_ishosting_plans, parse_ishosting_plans
@@ -50,6 +52,7 @@ from .whmcs import WhmcsPage, fetch_whmcs_plans, parse_whmcs_page, parse_whmcs_p
 _COMPAT_MODULES = {
     "ahost": ahost,
     "beget": beget,
+    "cherry": cherry,
     "firstbyte": firstbyte,
     "hetzner": hetzner,
     "ishosting": ishosting,
@@ -80,6 +83,7 @@ _FETCHER_NAMES: dict[str, str] = {
     "hetzner": "fetch_hetzner_plans",
     "vultr": "fetch_vultr_plans",
     "linode": "fetch_linode_plans",
+    "cherry-servers": "fetch_cherry_plans",
 }
 
 
@@ -104,6 +108,7 @@ __all__ = [
     "ahost",
     "beget",
     "cache",
+    "cherry",
     "clear_provider_plan_cache",
     "discover_ahost_plan_urls",
     "discover_firstbyte_plan_urls",
@@ -111,6 +116,7 @@ __all__ = [
     "discover_ufo_countries",
     "fetch_ahost_plans",
     "fetch_beget_plans",
+    "fetch_cherry_plans",
     "fetch_firstbyte_plans",
     "fetch_hetzner_plans",
     "fetch_ishosting_plans",
@@ -128,6 +134,7 @@ __all__ = [
     "linode",
     "parse_ahost_plans",
     "parse_beget_plans",
+    "parse_cherry_plans",
     "parse_firstbyte_plans",
     "parse_hetzner_plans",
     "parse_ishosting_plans",
