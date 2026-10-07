@@ -31,6 +31,12 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("hetzner", "Hetzner", ("hetzner.com", "hetzner cloud")),
     PlanSource("vultr", "Vultr", ("vultr.com",)),
     PlanSource("linode", "Akamai (Linode)", ("linode", "linode.com", "akamai", "akamai cloud")),
+    # WHMCS-витрины (providers/whmcs_stores.py)
+    PlanSource("edis-global", "EDIS Global", ("edis", "edisglobal.com")),
+    PlanSource("flokinet", "FlokiNET", ("flokinet.is",)),
+    PlanSource("zappie-host", "Zappie Host", ("zappiehost.com",)),
+    PlanSource("idhost-kazakhtelecom", "iDHost (Kazakhtelecom)", ("idhost", "idhost.kz", "idhost.telecom.kz")),
+    PlanSource("hosteroid", "Hosteroid", ("hosteroid.uk",)),
 )
 
 _COMPACT_RE = re.compile(r"[\s._-]+")

@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import Any
 
 from . import cache
@@ -41,7 +43,9 @@ from .providers.timeweb import fetch_timeweb_plans, parse_timeweb_plans
 from .providers.ufo import discover_ufo_countries, fetch_ufo_plans, parse_ufo_plans
 from .providers.ultahost import fetch_ultahost_plans, parse_ultahost_plans
 from .providers.vultr import fetch_vultr_plans, parse_vultr_plans
+from .providers.whmcs_stores import WHMCS_STORES
 from .providers.yun62 import fetch_yun62_plans, parse_yun62_plans
+from .whmcs import WhmcsPage, fetch_whmcs_plans, parse_whmcs_page, parse_whmcs_plans
 
 _COMPAT_MODULES = {
     "ahost": ahost,
@@ -81,16 +85,20 @@ _FETCHER_NAMES: dict[str, str] = {
 
 async def plans_for(provider_id: str) -> list[dict[str, Any]]:
     module = sys.modules[__name__]
-    return await _plans_for(
-        provider_id,
-        {pid: getattr(module, name) for pid, name in _FETCHER_NAMES.items()},
-    )
+    fetchers: dict[str, Callable[[], Awaitable[list[dict[str, Any]]]]] = {
+        pid: getattr(module, name) for pid, name in _FETCHER_NAMES.items()
+    }
+    # провайдеры на WHMCS: общий загрузчик + конфиг витрин (providers/whmcs_stores.py)
+    fetchers.update({pid: partial(fetch_whmcs_plans, pid, pages) for pid, pages in WHMCS_STORES.items()})
+    return await _plans_for(provider_id, fetchers)
 
 
 __all__ = [
     "PLAN_SOURCES",
     "TIB",
+    "WHMCS_STORES",
     "PlanSource",
+    "WhmcsPage",
     "_cached_provider_plans",
     "_provider_key",
     "ahost",
@@ -112,6 +120,7 @@ __all__ = [
     "fetch_ufo_plans",
     "fetch_ultahost_plans",
     "fetch_vultr_plans",
+    "fetch_whmcs_plans",
     "fetch_yun62_plans",
     "firstbyte",
     "hetzner",
@@ -128,6 +137,8 @@ __all__ = [
     "parse_ufo_plans",
     "parse_ultahost_plans",
     "parse_vultr_plans",
+    "parse_whmcs_page",
+    "parse_whmcs_plans",
     "parse_yun62_plans",
     "plan_bandwidth_bytes",
     "plans_for",

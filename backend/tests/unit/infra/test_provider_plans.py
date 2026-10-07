@@ -860,7 +860,8 @@ _FRONTEND_PLAN_SOURCES = Path(__file__).resolve().parents[4] / "frontend" / "src
 def test__plan_sources__every_source_has_a_fetcher() -> None:
     ids = [src.id for src in provider_plans.PLAN_SOURCES]
     assert len(ids) == len(set(ids))
-    assert set(ids) == set(provider_plans._FETCHER_NAMES)
+    assert set(ids) == set(provider_plans._FETCHER_NAMES) | set(provider_plans.WHMCS_STORES)
+    assert not set(provider_plans._FETCHER_NAMES) & set(provider_plans.WHMCS_STORES)
     for name in provider_plans._FETCHER_NAMES.values():
         assert callable(getattr(provider_plans, name))
 
@@ -875,7 +876,7 @@ def test__plan_sources__frontend_mirror_matches_backend_registry() -> None:
     if not _FRONTEND_PLAN_SOURCES.exists():
         pytest.skip("frontend sources are not part of this checkout")
     text = _FRONTEND_PLAN_SOURCES.read_text(encoding="utf-8")
-    frontend = dict(re.findall(r'\{ id: "([^"]+)", label: "([^"]+)"', text))
+    frontend = dict(re.findall(r'\{\s*id:\s*"([^"]+)",\s*label:\s*"([^"]+)"', text))  # biome переносит длинные строки
     assert frontend == {src.id: src.label for src in provider_plans.PLAN_SOURCES}
 
 
@@ -1288,3 +1289,118 @@ async def test__fetch_hetzner_plans__loads_prices_and_every_line(monkeypatch: py
     assert len(pages) == 3
     assert len(plans) == 4
     assert {p["sourceUrl"] for p in plans} == {"https://www.hetzner.com/cloud/cost-optimized/"}
+
+
+# --- общий парсер WHMCS ---------------------------------------------------------------------------
+
+WHMCS_PAGE = """
+<html><body>
+<div class="product clearfix" id="product1">
+  <header><span id="product1-name">KVM SMART</span><span class="qty">1608 Available</span></header>
+  <div class="product-desc"><ul>
+    <li>1 GB RAM</li><li>1 vCPU</li><li>15 GB SSD</li>
+    <li><span>Traffic:</span></li><li><span>1 TB</span></li>
+    <li>1 Gbps port</li>
+  </ul></div>
+  <footer><div class="product-pricing" id="product1-price">Starting from <span class="price">EUR 4.99</span>
+    <br/>Monthly</div></footer>
+</div>
+<div class="product clearfix" id="product2">
+  <header><span id="product2-name">512MB VPS [CL]</span><span class="qty">0 Available</span></header>
+  <div class="product-desc">
+    <div>1 Core</div><div>CPU</div><div>512MB</div><div>RAM</div><div>30GB</div><div>SSD</div>
+    <div>200GB @ 100Mbps</div><div>Bandwidth</div>
+  </div>
+  <footer><div class="product-pricing" id="product2-price">
+    <span class="price">$65.00 USD</span><br/>Annually</div></footer>
+</div>
+<div class="product clearfix" id="product3">
+  <header><span id="product3-name">Қайнар</span></header>
+  <div class="product-desc"><p id="product3-description"><ul>
+    <li><strong>15 ГБ</strong> дискового пространства</li><li><strong>1</strong> ядро vCPU</li>
+    <li><strong>2 ГБ</strong> оперативной памяти (RAM)</li><li>Трафик безлимитный</li>
+  </ul></p></div>
+  <footer><div class="product-pricing" id="product3-price">
+    Начиная от <span class="price">2 383.00₸</span><br/>ежемесячно</div></footer>
+</div>
+<div class="product clearfix" id="product4">
+  <header><span id="product4-name">Licence</span></header>
+  <div class="product-desc"><ul><li>Software licence</li></ul></div>
+  <footer><div class="product-pricing" id="product4-price">$10.00 USD One Time</div></footer>
+</div>
+</body></html>
+"""
+
+
+def test__parse_whmcs_page__reads_standard_cart_products_in_any_layout() -> None:
+    page = provider_plans.WhmcsPage("https://example.com/cart.php?gid=1", "Vienna, Austria", "AT")
+
+    plans = {p["name"]: p for p in provider_plans.parse_whmcs_page("edis", page, WHMCS_PAGE)}
+
+    assert set(plans) == {"KVM SMART · Vienna", "512MB VPS [CL] (yearly) · Vienna", "Қайнар · Vienna"}  # без лицензии
+    smart = plans["KVM SMART · Vienna"]
+    assert (smart["cpu"], smart["ramGb"], smart["diskGb"], smart["diskType"]) == (1, 1, 15, "SSD")
+    assert (smart["trafficTb"], smart["portMbps"], smart["price"], smart["currency"]) == (1, 1000, 4.99, "EUR")
+    assert (smart["region"], smart["country"], smart["available"]) == ("Vienna, Austria", "AT", True)
+    assert smart["id"] == "edis-vienna-austria-kvm-smart"
+    # значения и подписи разнесены по строкам, цена за год приведена к месяцу
+    split = plans["512MB VPS [CL] (yearly) · Vienna"]
+    assert (split["cpu"], split["ramGb"], split["diskGb"], split["portMbps"]) == (1, 0.5, 30, 100)
+    assert (split["price"], split["currency"], split["available"]) == (5.42, "USD", False)
+    kz = plans["Қайнар · Vienna"]
+    assert (kz["cpu"], kz["ramGb"], kz["diskGb"], kz["trafficTb"], kz["price"]) == (1, 2, 15, None, 2383.0)
+    assert kz["currency"] == "KZT"
+
+
+@pytest.mark.parametrize(
+    ("text", "default", "expected"),
+    [
+        ("Starting from $1,299.00 USD Monthly", "", (1299.0, "USD", 1, "")),
+        ("Desde $6,000CLP Mensualmente", "", (6000.0, "CLP", 1, "")),
+        ("Desde $79.900 Mensualmente", "CLP", (79900.0, "CLP", 1, "")),
+        ("R$ 49,90 mensal", "", (49.9, "BRL", 1, "")),
+        ("€7.99EUR Quarterly €5.00 Setup Fee", "", (2.66, "EUR", 3, "quarterly")),
+        ("$10.00 USD One Time", "", None),
+        ("Free", "", None),
+    ],
+)
+def test__whmcs_parse_price__currencies_separators_and_cycles(
+    text: str, default: str, expected: tuple[float, str, int, str] | None
+) -> None:
+    from vpnhub.infra.provider_plans.whmcs import _parse_price
+
+    assert _parse_price(text, default) == expected
+
+
+async def test__fetch_whmcs_plans__skips_unreachable_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = (
+        provider_plans.WhmcsPage("https://a.example/store/vps", "Vienna, Austria", "AT"),
+        provider_plans.WhmcsPage("https://a.example/store/down", "Oslo, Norway", "NO"),
+    )
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        if url.endswith("down"):
+            raise TimeoutError
+        return WHMCS_PAGE
+
+    monkeypatch.setattr(provider_plans.whmcs, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_whmcs_plans("edis", pages)
+
+    assert {p["region"] for p in plans} == {"Vienna, Austria"}
+    assert len(plans) == 3
+
+
+async def test__plans_for__routes_whmcs_providers_to_their_store_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        seen.append(url)
+        return WHMCS_PAGE
+
+    monkeypatch.setattr(provider_plans.whmcs, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.plans_for("FlokiNET")
+
+    assert seen == [p.url for p in provider_plans.WHMCS_STORES["flokinet"]]
+    assert plans and all(p["id"].startswith("flokinet-") for p in plans)
