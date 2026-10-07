@@ -22,6 +22,7 @@ from .keys import PLAN_SOURCES, PlanSource, _provider_key
 from .providers import (
     ahost,
     beget,
+    binarylane,
     cherry,
     firstbyte,
     fourvps,
@@ -38,6 +39,7 @@ from .providers import (
 from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
 from .providers.beget import fetch_beget_plans, parse_beget_plans
 from .providers.billmanager_sources import BILLMANAGER_SOURCES
+from .providers.binarylane import fetch_binarylane_plans, fetch_mammoth_plans, parse_binarylane_sizes
 from .providers.cherry import fetch_cherry_plans, parse_cherry_plans
 from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
 from .providers.fourvps import discover_fourvps_clusters, fetch_fourvps_plans, parse_fourvps_tariffs
@@ -89,6 +91,8 @@ _FETCHER_NAMES: dict[str, str] = {
     "linode": "fetch_linode_plans",
     "cherry-servers": "fetch_cherry_plans",
     "4vps": "fetch_fourvps_plans",
+    "binarylane": "fetch_binarylane_plans",
+    "mammoth-cloud": "fetch_mammoth_plans",
 }
 
 
@@ -117,6 +121,7 @@ __all__ = [
     "ahost",
     "beget",
     "billmanager",
+    "binarylane",
     "cache",
     "cherry",
     "clear_provider_plan_cache",
@@ -128,12 +133,14 @@ __all__ = [
     "fetch_ahost_plans",
     "fetch_beget_plans",
     "fetch_billmanager_plans",
+    "fetch_binarylane_plans",
     "fetch_cherry_plans",
     "fetch_firstbyte_plans",
     "fetch_fourvps_plans",
     "fetch_hetzner_plans",
     "fetch_ishosting_plans",
     "fetch_linode_plans",
+    "fetch_mammoth_plans",
     "fetch_serverspace_plans",
     "fetch_timeweb_plans",
     "fetch_ufo_plans",
@@ -149,6 +156,7 @@ __all__ = [
     "parse_ahost_plans",
     "parse_beget_plans",
     "parse_billmanager_export",
+    "parse_binarylane_sizes",
     "parse_cherry_plans",
     "parse_firstbyte_plans",
     "parse_fourvps_tariffs",

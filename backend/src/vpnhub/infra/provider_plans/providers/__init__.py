@@ -21,6 +21,7 @@ from . import (
 __all__ = [
     "ahost",
     "beget",
+    "binarylane",
     "cherry",
     "firstbyte",
     "fourvps",

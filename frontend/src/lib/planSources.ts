@@ -22,6 +22,8 @@ export const PLAN_SOURCES: readonly PlanSource[] = [
   { id: "vultr", label: "Vultr", aliases: ["vultr.com"] },
   { id: "linode", label: "Akamai (Linode)", aliases: ["linode", "linode.com", "akamai", "akamai cloud"] },
   { id: "4vps", label: "4VPS", aliases: ["4vps.su", "fourvps"] },
+  { id: "binarylane", label: "BinaryLane", aliases: ["binarylane.com.au"] },
+  { id: "mammoth-cloud", label: "Mammoth Cloud", aliases: ["mammoth", "mammoth.com.au"] },
   { id: "cherry-servers", label: "Cherry Servers", aliases: ["cherry", "cherryservers.com"] },
   { id: "edis-global", label: "EDIS Global", aliases: ["edis", "edisglobal.com"] },
   { id: "flokinet", label: "FlokiNET", aliases: ["flokinet.is"] },

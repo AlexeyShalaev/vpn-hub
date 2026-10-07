@@ -1680,3 +1680,36 @@ def test__parse_billmanager_export__streams_large_documents_without_dtd_check_fa
 
     assert len(doc.encode()) > 65_536
     assert len(plans) == 4
+
+
+# --- BinaryLane / Mammoth (одинаковый публичный API) -------------------------------------------
+
+BL_REGIONS = {"regions": [{"slug": "syd", "name": "Sydney"}, {"slug": "sin", "name": "Singapore"}]}
+BL_SIZES = {
+    "sizes": [
+        {"slug": "std-min", "size_type": {"slug": "vps", "name": "Standard"}, "available": True,
+         "regions": ["syd", "sin"], "regions_out_of_stock": ["sin"], "price_monthly": 4.9, "disk": 20,
+         "memory": 1024, "transfer": 1, "vcpus": 1},
+        {"slug": "ded-e2136-400gb", "size_type": {"slug": "ded", "name": "Dedicated"}, "available": True,
+         "regions": ["syd"], "regions_out_of_stock": [], "price_monthly": 200, "disk": 400, "memory": 32768,
+         "transfer": 10, "vcpus": 6},
+    ]
+}  # fmt: skip
+
+
+def test__parse_binarylane_sizes__expands_vps_by_region_and_skips_dedicated() -> None:
+    plans = provider_plans.parse_binarylane_sizes("binarylane", "https://bl.example/pricing", BL_SIZES, BL_REGIONS)
+
+    assert [(p["id"], p["region"], p["country"], p["available"]) for p in plans] == [
+        ("binarylane-sin-std-min", "Singapore, SG", "SG", False),
+        ("binarylane-syd-std-min", "Sydney, AU", "AU", True),
+    ]
+    syd = plans[1]
+    assert (syd["cpu"], syd["ramGb"], syd["diskGb"], syd["trafficTb"], syd["price"], syd["currency"]) == (
+        1,
+        1,
+        20,
+        1.0,
+        4.9,
+        "AUD",
+    )
