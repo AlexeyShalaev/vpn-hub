@@ -39,6 +39,9 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("zappie-host", "Zappie Host", ("zappiehost.com",)),
     PlanSource("idhost-kazakhtelecom", "iDHost (Kazakhtelecom)", ("idhost", "idhost.kz", "idhost.telecom.kz")),
     PlanSource("hosteroid", "Hosteroid", ("hosteroid.uk",)),
+    PlanSource("virtono", "Virtono", ("virtono.com",)),
+    PlanSource("vm6-networks", "VM6 Networks", ("vm6", "vm6.co.uk")),
+    PlanSource("webtuga", "WebTuga", ("webtuga.pt",)),
     # BILLmanager: публичный прайс-лист (providers/billmanager_sources.py)
     PlanSource("firstvds", "FirstVDS", ("firstvds.ru",)),
     PlanSource(

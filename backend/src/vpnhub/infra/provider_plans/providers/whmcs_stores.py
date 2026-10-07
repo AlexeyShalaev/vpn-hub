@@ -13,6 +13,7 @@ from ..whmcs import WhmcsPage
 _EDIS = "https://manage.edisglobal.com/cart.php?language=english&gid="
 _FLOKINET = "https://billing.flokinet.is/index.php?rp=/store/virtual-private-server-"
 _ZAPPIE = "https://billing.zappiehost.com/index.php?rp=/store/"
+_VIRTONO = "https://www.virtono.com/index.php?rp=/store/"
 
 WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
     # EDIS Global (Австрия): KVM в 17 городах, в т.ч. Москва и Дубай
@@ -60,4 +61,36 @@ WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
     ),
     # Hosteroid: VPS в Великобритании
     "hosteroid": (WhmcsPage("https://hosteroid.uk/store/vps", "London, United Kingdom", "GB", currency="EUR"),),
+    # Virtono (Румыния): KVM в 13 городах Европы, США и Азии
+    "virtono": tuple(
+        WhmcsPage(f"{_VIRTONO}{slug}", region, country, currency="EUR")
+        for slug, region, country in (
+            ("bucharest-ro-vps", "Bucharest, Romania", "RO"),
+            ("amsterdam-nl-vps", "Amsterdam, Netherlands", "NL"),
+            ("budapest-hu-vps", "Budapest, Hungary", "HU"),
+            ("copenhagen-dk-vps", "Copenhagen, Denmark", "DK"),
+            ("frankfurt-de-vps", "Frankfurt, Germany", "DE"),
+            ("madrid-es-vps", "Madrid, Spain", "ES"),
+            ("milan-it-vps", "Milan, Italy", "IT"),
+            ("miami-fl-vps", "Miami, USA", "US"),
+            ("new-york-ny-vps", "New York, USA", "US"),
+            ("hong-kong-hk-vps", "Hong Kong", "HK"),
+            ("singapore-sg-vps", "Singapore", "SG"),
+            ("tokyo-jp-vps", "Tokyo, Japan", "JP"),
+            ("sydney-au-vps", "Sydney, Australia", "AU"),
+        )
+    ),
+    # VM6 Networks: бюджетные VPS в Великобритании (Норвич)
+    "vm6-networks": (
+        WhmcsPage("https://www.vm6.co.uk/manager/store/budget-uk-vps-hosting", "Norwich, United Kingdom", "GB"),
+    ),
+    # WebTuga: VPS в Португалии
+    "webtuga": (
+        WhmcsPage(
+            "https://clientes.webtuga.pt/index.php?rp=/store/vps-ssd-unmanaged-2024",
+            "Lisbon, Portugal",
+            "PT",
+            currency="EUR",
+        ),
+    ),
 }

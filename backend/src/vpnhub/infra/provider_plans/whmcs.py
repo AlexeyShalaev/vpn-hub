@@ -49,13 +49,15 @@ _BREAK_RE = re.compile(r"(?i)<\s*/?\s*(?:br|li|p|div|tr|td|h\d|ul)\b[^>]*>")
 _NAME_RE = re.compile(r'id="product(\d+)-name"[^>]*>(.*?)</', re.S)
 _DIGIT_RE = re.compile(r"\d")
 
-_RAM_RE = re.compile(r"\b(?:ram|memory|memoria|mem)\b|памят|озу|оперативн", re.I)
+_RAM_RE = re.compile(r"\b(?:ram|memory|mem[oó]ria|mem|ddr[345])\b|памят|озу|оперативн|arbeitsspeicher|mémoire", re.I)
 _CPU_RE = re.compile(
-    r"(\d+)\s*(?:x\s*)?(?:v?cpu|v?cores?|vcore|ядр|ядер|процессор|cpu virtual)|\b(?:v?cpu|cores?)\s*[:\-]?\s*(\d+)\b",
+    r"(\d+)\s*(?:x\s*)?(?:v?cpu|v?cores?|vcore|ядр|ядер|процессор|cpu virtual|n[uú]cleos?|kerne)"
+    r"|\b(?:v?cpu|cores?)\s*[:\-]?\s*(\d+)\b"
+    r"|(\d+)\s*x\s*\d+(?:[.,]\d+)?\s*ghz",  # «1x2.1Ghz - 3.9Ghz CPU»
     re.I,
 )
 _DISK_RE = re.compile(r"ssd|nvme|hdd|disk|storage|almacenamiento|espacio|hard drive|space|диск|накопител", re.I)
-_TRAFFIC_RE = re.compile(r"bandwidth|traffic|transfer|transferencia|трафик", re.I)
+_TRAFFIC_RE = re.compile(r"bandwidth|traffic|transfer|transferencia|tr[aá]fego|tr[aá]fico|трафик", re.I)
 _UNMETERED_RE = re.compile(r"unmetered|unlimited|ilimitad|безлимит|без огранич", re.I)
 _PORT_RE = re.compile(r"\d\s*(?:[mg]bps|[mg]bit|[мг]бит)", re.I)
 _GIGAS_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*gigas?\b", re.I)
@@ -150,7 +152,7 @@ def _parse_specs(lines: Sequence[str]) -> _Specs:
             specs.ram_gb = _gb(line)
             continue
         if specs.cpu is None and (m := _CPU_RE.search(line)):
-            specs.cpu = int(m.group(1) or m.group(2))
+            specs.cpu = int(next(g for g in m.groups() if g))
             continue
         if not specs.traffic_seen and _TRAFFIC_RE.search(line):
             specs.traffic_seen = True

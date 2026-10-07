@@ -1634,3 +1634,25 @@ async def test__fetch_fourvps_plans__posts_month_period_per_cluster(monkeypatch:
     assert (cheap["cpu"], cheap["ramGb"], cheap["diskGb"], cheap["portMbps"], cheap["price"]) == (1, 1, 10, 2000, 472.0)
     assert (cheap["currency"], cheap["available"]) == ("RUB", True)
     assert (sold["ramGb"], sold["available"]) == (2, False)  # МиБ → ГБ, распродан
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        (["1x2.1Ghz - 3.9Ghz CPU", "1GB RAM", "20GB SSD Storage", "3TB @ 1Gbps Monthly Traffic"], (1, 1, 20, 3, 1000)),
+        (
+            ["CPU: 1vCPU", "Memória: 2GB", "Armazenamento: 50GB SSD", "Tráfego Mensal: Ilimitado"],
+            (1, 2, 50, None, None),
+        ),
+        (["2 vCPU Cores", "4 GB ECC DDR4", "40 GB NVMe"], (2, 4, 40, None, None)),
+        (["Geekbench Score 500+", "½ vCPU Core (3.4GHz+ Ryzen)", "384MB Memory"], (None, 0.38, None, None, None)),
+    ],
+)
+def test__whmcs_parse_specs__multilingual_and_odd_layouts(
+    lines: list[str], expected: tuple[int | None, float | None, float | None, float | None, int | None]
+) -> None:
+    from vpnhub.infra.provider_plans.whmcs import _parse_specs
+
+    specs = _parse_specs(lines)
+
+    assert (specs.cpu, specs.ram_gb, specs.disk_gb, specs.traffic_tb, specs.port_mbps) == expected
