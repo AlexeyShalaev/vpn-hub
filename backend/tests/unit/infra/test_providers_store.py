@@ -502,3 +502,22 @@ def test__default_catalog__every_entry_is_complete_and_unique() -> None:
         assert norm["countries"] == p["countries"], p["id"]  # в дефолте только валидные коды
         assert norm["payments"] == p["payments"], p["id"]  # и только известные способы оплаты
         assert norm["hq"] == p.get("hq", ""), p["id"]
+
+
+def test__update__same_size_rewrite_is_not_served_from_parse_cache(empty_store: ProviderStore) -> None:
+    """Каталог кэшируется по mtime/размеру файла; правка той же длины сразу после записи всё равно видна."""
+    item = empty_store.create({"name": "Acme", "blurb": "aaaa"})
+    empty_store.list()  # прогрели кэш разбора
+
+    empty_store.update(item["id"], {"blurb": "bbbb"})
+
+    assert empty_store.list()[0]["blurb"] == "bbbb"
+
+
+def test__list__returns_independent_copies(empty_store: ProviderStore) -> None:
+    """Кэш разбора не протекает наружу: правка результата list() не меняет следующий list()."""
+    empty_store.create({"name": "Acme", "countries": ["DE"]})
+
+    empty_store.list()[0]["countries"].append("NL")
+
+    assert empty_store.list()[0]["countries"] == ["DE"]

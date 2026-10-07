@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -69,6 +70,24 @@ def _payments(value: object) -> list[str]:
     return [m for m in PAYMENT_METHODS if m in wanted]
 
 
+# libyaml (C) разбирает каталог из сотен провайдеров в разы быстрее чистого Python; без него — fallback
+_Loader: type[yaml.SafeLoader] = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_Dumper: type[yaml.SafeDumper] = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
+# разобранный YAML по (путь, mtime, размер): каталог читается на каждый запрос, а меняется редко
+_PARSE_CACHE: dict[Path, tuple[tuple[int, int], object]] = {}
+
+
+def _load_yaml(path: Path) -> object:
+    st = path.stat()
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _PARSE_CACHE.get(path)
+    if cached is not None and cached[0] == stamp:
+        return copy.deepcopy(cached[1])
+    data = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)  # noqa: S506 — SafeLoader/CSafeLoader
+    _PARSE_CACHE[path] = (stamp, data)
+    return copy.deepcopy(data)
+
+
 def _slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return s or "provider"
@@ -88,10 +107,10 @@ class ProviderStore:
 
     def _default_items(self) -> list[dict]:
         try:
-            data = yaml.safe_load(_DEFAULT.read_text(encoding="utf-8")) or []
+            data = _load_yaml(_DEFAULT) or []
         except Exception:
             data = []
-        return [self._norm(p) for p in data if isinstance(p, dict)]
+        return [self._norm(p) for p in data if isinstance(p, dict)] if isinstance(data, list) else []
 
     def _read_seeded(self) -> set[str]:
         try:
@@ -157,7 +176,7 @@ class ProviderStore:
 
     def _read_raw(self) -> list[dict]:
         try:
-            data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or []
+            data = _load_yaml(self.path) or []
         except Exception:
             data = []
         return [p for p in data if isinstance(p, dict)] if isinstance(data, list) else []
@@ -166,7 +185,11 @@ class ProviderStore:
         return [self._norm(p) for p in self._read_raw()]
 
     def _write(self, items: list[dict]) -> None:
-        self.path.write_text(yaml.safe_dump(items, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        text = yaml.dump(
+            items, Dumper=_Dumper, allow_unicode=True, sort_keys=False, default_flow_style=None, width=4096
+        )
+        self.path.write_text(text, encoding="utf-8")
+        _PARSE_CACHE.pop(self.path, None)  # mtime на некоторых ФС грубый — не доверяем ему сразу после записи
 
     def list(self) -> list[dict]:
         return self._read()
