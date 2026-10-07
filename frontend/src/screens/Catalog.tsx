@@ -3,8 +3,16 @@ import { type CSSProperties, useMemo, useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { useT } from "../lib/i18n";
-import { canonicalLocation } from "../lib/locations";
-import { PAYMENT_METHODS, providerBlurb } from "../lib/providerCatalog";
+import { canonicalLocation, countryLabel, flagEmoji } from "../lib/locations";
+import {
+  type CatalogFilter,
+  type CatalogSort,
+  EMPTY_CATALOG_FILTER,
+  facetCounts,
+  filterProviders,
+  PAYMENT_METHODS,
+  providerBlurb,
+} from "../lib/providerCatalog";
 import {
   currencySymbol,
   DYNAMIC_PLAN_PROVIDER_LABELS,
@@ -433,6 +441,31 @@ const EMPTY: FormState = {
   payments: [],
 };
 
+// сколько карточек рисовать сразу (дальше — «Показать ещё») и сколько флагов локаций на карточке
+const PAGE_SIZE = 48;
+const MAX_FLAGS = 10;
+
+const hasLivePlans = (p: Provider) => isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name));
+
+// опции мультивыбора стран: «🇩🇪 Германия / Germany · 12» (12 — сколько провайдеров там есть)
+function countryOptions(lists: string[][]): [string, string][] {
+  return facetCounts(lists).map(([code, n]) => [code, `${flagEmoji(code)} ${countryLabel(code)} · ${n}`]);
+}
+
+const chipStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  padding: "4px 9px",
+  borderRadius: 999,
+  background: "var(--surface-2)",
+  color: "var(--text-2)",
+};
+const outlineChipStyle: CSSProperties = {
+  ...chipStyle,
+  background: "transparent",
+  border: "1px solid var(--border-strong)",
+};
+
 // строка «a, b, c» из формы → список без пустых
 const splitList = (text: string) =>
   text
@@ -454,6 +487,26 @@ export function CatalogScreen() {
   });
 
   const [form, setForm] = useState<FormState | null>(null);
+  const [filter, setFilter] = useState<CatalogFilter>(EMPTY_CATALOG_FILTER);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  // любое изменение фильтра — снова с первой «страницы», чтобы не держать сотни карточек в DOM
+  const patchFilter = (patch: Partial<CatalogFilter>) => {
+    setFilter((f) => ({ ...f, ...patch }));
+    setLimit(PAGE_SIZE);
+  };
+  const all = providers ?? [];
+  const shown = useMemo(() => filterProviders(all, filter, hasLivePlans), [all, filter]);
+  const countryOpts = useMemo(() => countryOptions(all.map((p) => p.countries)), [all]);
+  const hqOpts = useMemo(() => countryOptions(all.map((p) => (p.hq ? [p.hq] : []))), [all]);
+  const paymentOpts: [string, string][] = PAYMENT_METHODS.filter((m) => all.some((p) => p.payments.includes(m))).map(
+    (m) => [m, t(`pay.${m}`)],
+  );
+  const filtered =
+    filter.query.trim() !== "" ||
+    filter.countries.length > 0 ||
+    filter.payments.length > 0 ||
+    filter.hq.length > 0 ||
+    filter.liveOnly;
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [plansFor, setPlansFor] = useState<{ pid: string; provider: Provider } | null>(null);
   const [showFinder, setShowFinder] = useState(false);
@@ -537,7 +590,7 @@ export function CatalogScreen() {
         <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
           <Spinner />
         </div>
-      ) : !providers || providers.length === 0 ? (
+      ) : all.length === 0 ? (
         <Empty
           title={t("catalog.emptyTitle")}
           sub={t("catalog.emptySub")}
@@ -550,89 +603,203 @@ export function CatalogScreen() {
           }
         />
       ) : (
-        <div className="grid">
-          {providers.map((p) => (
-            <div key={p.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    background: "var(--surface-2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 800,
-                    fontSize: 17,
-                    color: "var(--text-2)",
-                    flex: "none",
-                  }}
-                >
-                  {(p.name || "?").trim().slice(0, 2).toUpperCase()}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-.01em" }}>{p.name}</div>
-                </div>
-                {isAdmin && (
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <Btn variant="ghost" sm onClick={() => openEdit(p)}>
-                      <Icon name="edit" size={16} />
-                    </Btn>
-                    <Btn variant="ghost" sm onClick={() => setConfirmId(p.id)}>
-                      <Icon name="trash" size={16} />
-                    </Btn>
-                  </div>
-                )}
-              </div>
-
-              <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.45, minHeight: 38, margin: 0 }}>
-                {providerBlurb(p, lang)}
-              </p>
-
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 24 }}>
-                {p.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      padding: "4px 9px",
-                      borderRadius: 999,
-                      background: "var(--surface-2)",
-                      color: "var(--text-2)",
-                    }}
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-
-              {/* действия: основная — «Перейти и купить» на всю ширину; ниже — второй ряд */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: "auto" }}>
-                <a href={p.url} target="_blank" rel="noopener" style={primaryAction}>
-                  {t("catalog.goAndBuy")}
-                  <Icon name="external" size={15} />
-                </a>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name)) && (
-                    <button
-                      type="button"
-                      onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
-                      title={t("catalog.currentTariffsTitle")}
-                      style={secondaryAction}
-                    >
-                      {t("catalog.tariffs")}
-                    </button>
-                  )}
-                  <button type="button" onClick={() => go("serverForm", { provider: p.name })} style={secondaryAction}>
-                    {t("catalog.alreadyHave")}
-                  </button>
-                </div>
-              </div>
+        <>
+          <div className="stack" style={{ gap: 10 }}>
+            <div style={{ position: "relative" }}>
+              <span
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", display: "flex" }}
+                className="muted-3"
+              >
+                <Icon name="search" size={16} />
+              </span>
+              <input
+                className="input"
+                type="search"
+                placeholder={t("catalog.searchPlaceholder")}
+                value={filter.query}
+                onChange={(e) => patchFilter({ query: e.target.value })}
+                style={{ paddingLeft: 36, width: "100%", boxSizing: "border-box" }}
+              />
             </div>
-          ))}
-        </div>
+            <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <MultiSelect
+                label={t("catalog.locations")}
+                options={countryOpts}
+                selected={filter.countries}
+                onChange={(countries) => patchFilter({ countries })}
+              />
+              <MultiSelect
+                label={t("catalog.payments")}
+                options={paymentOpts}
+                selected={filter.payments}
+                onChange={(payments) => patchFilter({ payments: payments as PaymentMethod[] })}
+              />
+              <MultiSelect
+                label={t("catalog.hq")}
+                options={hqOpts}
+                selected={filter.hq}
+                onChange={(hq) => patchFilter({ hq })}
+              />
+              <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={filter.liveOnly}
+                  onChange={(e) => patchFilter({ liveOnly: e.target.checked })}
+                />
+                {t("catalog.liveOnly")}
+              </label>
+              <select
+                className="input"
+                value={filter.sort}
+                onChange={(e) => patchFilter({ sort: e.target.value as CatalogSort })}
+                style={{ width: "auto", marginLeft: "auto" }}
+              >
+                <option value="catalog">{t("catalog.sortCatalog")}</option>
+                <option value="name">{t("catalog.sortName")}</option>
+                <option value="locations">{t("catalog.sortLocations")}</option>
+              </select>
+            </div>
+            <div className="rowflex" style={{ gap: 10, alignItems: "center" }}>
+              <span className="muted-3" style={{ fontSize: 12 }}>
+                {t("catalog.shownOf", { n: shown.length, total: all.length })}
+              </span>
+              {filtered && (
+                <Btn variant="ghost" sm onClick={() => patchFilter({ ...EMPTY_CATALOG_FILTER, sort: filter.sort })}>
+                  {t("catalog.resetFilters")}
+                </Btn>
+              )}
+            </div>
+          </div>
+
+          {shown.length === 0 ? (
+            <Empty title={t("catalog.nothingFoundTitle")} sub={t("catalog.nothingFoundSub")} />
+          ) : (
+            <div className="grid">
+              {shown.slice(0, limit).map((p) => (
+                <div key={p.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        background: "var(--surface-2)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 800,
+                        fontSize: 17,
+                        color: "var(--text-2)",
+                        flex: "none",
+                      }}
+                    >
+                      {(p.name || "?").trim().slice(0, 2).toUpperCase()}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-.01em" }}>{p.name}</div>
+                    </div>
+                    {isAdmin && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Btn variant="ghost" sm onClick={() => openEdit(p)}>
+                          <Icon name="edit" size={16} />
+                        </Btn>
+                        <Btn variant="ghost" sm onClick={() => setConfirmId(p.id)}>
+                          <Icon name="trash" size={16} />
+                        </Btn>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.45, minHeight: 38, margin: 0 }}>
+                    {providerBlurb(p, lang)}
+                  </p>
+
+                  {p.countries.length > 0 && (
+                    <div
+                      title={p.countries.map(countryLabel).join(", ")}
+                      style={{
+                        fontSize: 16,
+                        lineHeight: 1.3,
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 4,
+                        alignItems: "center",
+                      }}
+                    >
+                      {p.countries.slice(0, MAX_FLAGS).map((c) => (
+                        <span key={c}>{flagEmoji(c)}</span>
+                      ))}
+                      {p.countries.length > MAX_FLAGS && (
+                        <span className="muted-3" style={{ fontSize: 12, fontWeight: 600 }}>
+                          +{p.countries.length - MAX_FLAGS}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 24 }}>
+                    {hasLivePlans(p) && (
+                      <span
+                        style={{
+                          ...chipStyle,
+                          background: "var(--ok-soft)",
+                          color: "var(--ok)",
+                        }}
+                      >
+                        {t("catalog.liveBadge")}
+                      </span>
+                    )}
+                    {p.payments.map((m) => (
+                      <span key={m} style={outlineChipStyle}>
+                        {t(`pay.${m}`)}
+                      </span>
+                    ))}
+                    {p.tags.map((tag) => (
+                      <span key={tag} style={chipStyle}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* действия: основная — «Перейти и купить» на всю ширину; ниже — второй ряд */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: "auto" }}>
+                    <a href={p.url} target="_blank" rel="noopener" style={primaryAction}>
+                      {t("catalog.goAndBuy")}
+                      <Icon name="external" size={15} />
+                    </a>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name)) && (
+                        <button
+                          type="button"
+                          onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
+                          title={t("catalog.currentTariffsTitle")}
+                          style={secondaryAction}
+                        >
+                          {t("catalog.tariffs")}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => go("serverForm", { provider: p.name })}
+                        style={secondaryAction}
+                      >
+                        {t("catalog.alreadyHave")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {shown.length > limit && (
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Btn variant="ghost" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+                {t("catalog.showMore", { n: shown.length - limit })}
+              </Btn>
+            </div>
+          )}
+        </>
       )}
 
       {showFinder && (
