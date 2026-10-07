@@ -424,18 +424,24 @@ export function Modal({
   children,
   footer,
   wide,
+  xl,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  xl?: boolean; // плотные инструменты (подбор тарифа): шире wide, на мобиле всё равно во всю ширину
 }) {
   // Портал в body: модалка не должна зависеть от трансформируемых/анимируемых
   // родителей (иначе position: fixed считается от них, и центрирование ломается).
   return createPortal(
     <div className="overlay" onClick={onClose}>
-      <div className="modal" style={wide ? { maxWidth: 560 } : undefined} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        style={xl ? { maxWidth: 880 } : wide ? { maxWidth: 560 } : undefined}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-head">
           <h3>{title}</h3>
           <div className="spacer" />

@@ -13,6 +13,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from vpnhub.api.compression import CatalogGZipMiddleware
 from vpnhub.api.config import get_settings
 from vpnhub.api.routers import api_router
 from vpnhub.api.static import add_static
@@ -263,6 +264,7 @@ def create_app() -> FastAPI:
             resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return resp
 
+    app.add_middleware(CatalogGZipMiddleware)
     app.include_router(api_router)
     add_static(app)
     return app

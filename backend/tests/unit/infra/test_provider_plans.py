@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -419,6 +422,7 @@ def test__parse_ufo_plans__extracts_cards_from_landing_and_ajax_fragments() -> N
         "diskType": "NVMe",
         "portMbps": 10000,
         "trafficTb": None,
+        "trafficKnown": False,
         "price": 577,
         "currency": "RUB",
         "period": "month",
@@ -514,6 +518,7 @@ def test__parse_serverspace_plans__extracts_fixed_plans_for_all_dcs() -> None:
         "diskType": "SSD",
         "portMbps": 50,
         "trafficTb": None,
+        "trafficKnown": False,
         "price": 438.21,
         "currency": "RUB",
         "period": "month",
@@ -600,6 +605,7 @@ def test__parse_yun62_plans__extracts_per_location_tariffs_from_onclick() -> Non
         "diskType": "NVMe",
         "portMbps": 0,
         "trafficTb": None,
+        "trafficKnown": False,  # квота не опубликована
         "price": 219.0,
         "currency": "RUB",
         "period": "month",
@@ -850,3 +856,860 @@ def test__plan_bandwidth_bytes() -> None:
     assert plan_bandwidth_bytes({"trafficTb": 5}) == 5 * TIB
     assert plan_bandwidth_bytes({"trafficTb": None}) is None  # безлимит
     assert plan_bandwidth_bytes({}) is None
+
+
+_FRONTEND_PLAN_SOURCES = Path(__file__).resolve().parents[4] / "frontend" / "src" / "lib" / "planSources.ts"
+
+
+def test__plan_sources__every_source_has_a_fetcher() -> None:
+    ids = [src.id for src in provider_plans.PLAN_SOURCES]
+    assert len(ids) == len(set(ids))
+    named, whmcs, billmanager = (
+        set(provider_plans._FETCHER_NAMES),
+        set(provider_plans.WHMCS_STORES),
+        set(provider_plans.BILLMANAGER_SOURCES),
+    )
+    assert set(ids) == named | whmcs | billmanager
+    assert len(named) + len(whmcs) + len(billmanager) == len(ids)  # движки не пересекаются
+    for name in provider_plans._FETCHER_NAMES.values():
+        assert callable(getattr(provider_plans, name))
+
+
+@pytest.mark.parametrize("src", provider_plans.PLAN_SOURCES, ids=lambda s: s.id)
+def test__provider_key__resolves_id_label_and_aliases(src: provider_plans.PlanSource) -> None:
+    for name in (src.id, src.label, src.label.upper(), *src.aliases):
+        assert provider_plans._provider_key(name) == src.id
+
+
+def test__plan_sources__frontend_mirror_matches_backend_registry() -> None:
+    if not _FRONTEND_PLAN_SOURCES.exists():
+        pytest.skip("frontend sources are not part of this checkout")
+    text = _FRONTEND_PLAN_SOURCES.read_text(encoding="utf-8")
+    frontend = dict(re.findall(r'\{\s*id:\s*"([^"]+)",\s*label:\s*"([^"]+)"', text))  # biome переносит длинные строки
+    assert frontend == {src.id: src.label for src in provider_plans.PLAN_SOURCES}
+
+
+# --- Nuxt payload (Timeweb, Beget) --------------------------------------------------------------
+
+
+def _nuxt_html(state: Any) -> str:
+    """Страница с payload `__NUXT_DATA__` в формате devalue (плоский массив индексов), как отдаёт Nuxt 3."""
+    values: list[Any] = []
+
+    def add(value: Any) -> int:
+        index = len(values)
+        values.append(None)
+        if isinstance(value, dict):
+            values[index] = {k: add(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            values[index] = [add(v) for v in value]
+        else:
+            values[index] = value
+        return index
+
+    add(state)
+    payload = json.dumps(values, ensure_ascii=False)
+    return f'<html><script type="application/json" data-ssr="true" id="__NUXT_DATA__">{payload}</script></html>'
+
+
+def test__parse_nuxt_payload__resolves_devalue_tags_and_shared_refs() -> None:
+    from vpnhub.infra.provider_plans.nuxt import parse_nuxt_payload
+
+    values = [
+        ["ShallowReactive", 1],
+        {"data": 2, "when": 6, "tags": 7, "none": -1, "map": 8},
+        ["Reactive", 3],
+        [4, 4],  # один и тот же объект дважды (общая ссылка)
+        {"name": 5},
+        "Cloud-15",
+        ["Date", "2026-10-07T00:00:00.000Z"],
+        ["Set", 5],
+        ["Map", 5, 4],
+    ]
+    html = f'<script id="__NUXT_DATA__" type="application/json">{json.dumps(values)}</script>'
+
+    state = parse_nuxt_payload(html)
+
+    assert state["data"] == [{"name": "Cloud-15"}, {"name": "Cloud-15"}]
+    assert state["data"][0] is state["data"][1]
+    assert state["when"] == "2026-10-07T00:00:00.000Z"
+    assert state["tags"] == ["Cloud-15"]
+    assert state["none"] is None
+    assert state["map"] == {"Cloud-15": {"name": "Cloud-15"}}
+
+
+@pytest.mark.parametrize("html", ["<html></html>", '<script id="__NUXT_DATA__">{broken</script>'])
+def test__parse_nuxt_payload__missing_or_broken_payload_is_none(html: str) -> None:
+    from vpnhub.infra.provider_plans.nuxt import parse_nuxt_payload
+
+    assert parse_nuxt_payload(html) is None
+
+
+TIMEWEB_STATE = {
+    "data": {
+        "vds/fetchTariffs": [
+            {
+                "id": 2573,
+                "name": "SSD-15",
+                "cpu": "1 x 2.8 ГГц",
+                "memory": "1 ГБ",
+                "storage": [{"size": "15 ГБ", "type": "SSD"}],
+                "bandwidth": 100,
+                "price": 149,
+                "tags": ["site", "cp", "ssd_2022"],
+            },
+            {
+                "id": 6767,
+                "name": "Cloud NL-30",
+                "cpu": "1 x 3.3 ГГц",
+                "memory": "2 ГБ",
+                "storage": [{"size": "30 ГБ", "type": "NVME"}],
+                "bandwidth": 1000,
+                "price": 810,
+                "tags": ["site", "cp", "nl_base"],
+            },
+            {
+                "id": 7000,
+                "name": "Cloud XX",
+                "cpu": "1 x 3 ГГц",
+                "memory": "1 ГБ",
+                "storage": [{"size": "15 ГБ", "type": "NVME"}],
+                "bandwidth": 100,
+                "price": 300,
+                "tags": ["site", "cp", "unknown_tag"],  # локация не сопоставлена — тариф пропускаем
+            },
+        ],
+        "configurator/servers": [
+            {"location": "ru-1", "tags": ["ssd_2022"], "requirements": {}},
+            {"location": "nl-1", "tags": ["nl_base"], "requirements": {}},
+        ],
+    }
+}
+
+
+def test__parse_timeweb_plans__maps_tariff_tags_to_locations_via_configurator() -> None:
+    plans = provider_plans.parse_timeweb_plans({"https://timeweb.cloud/services/vds-vps": _nuxt_html(TIMEWEB_STATE)})
+
+    assert [(p["id"], p["region"]) for p in plans] == [
+        ("timeweb-6767", "Амстердам, Нидерланды"),
+        ("timeweb-2573", "Санкт-Петербург, Россия"),
+    ]
+    nl = plans[0]
+    assert nl["name"] == "Cloud NL-30 · Амстердам"
+    assert (nl["cpu"], nl["ramGb"], nl["diskGb"], nl["diskType"], nl["portMbps"]) == (1, 2, 30, "NVMe", 1000)
+    assert (nl["price"], nl["currency"], nl["period"], nl["trafficTb"]) == (810.0, "RUB", "month", None)
+    assert "trafficKnown" not in nl  # у Timeweb трафик явно безлимитный
+
+
+BEGET_STATE = {
+    "pinia": {
+        "services": {
+            "planList": {
+                "hostingPlans": [{"name": "blog", "specs": {"disk_size": 1}, "prices": {}, "type": "X"}],
+                "vpsPlans": [
+                    {
+                        "name": "ru1_prime_v5",
+                        "display_name": "Prime",
+                        "specs": {"disk_size": 30720, "memory_size": 2048, "cpu_cores": 2, "bandwidth_public": 1000},
+                        "prices": {"no_discount": {"month_amount": 810, "day_amount": 27}},
+                        "region": "ru1",
+                    },
+                    {
+                        "name": "kz1_prime_v5",
+                        "display_name": "Prime",
+                        "specs": {"disk_size": 30720, "memory_size": 2048, "cpu_cores": 2, "bandwidth_public": 150},
+                        "prices": {"no_discount": {"month_amount": 900}},
+                        "region": "kz1",
+                    },
+                ],
+            }
+        }
+    }
+}
+
+
+def test__parse_beget_plans__extracts_vps_plans_from_pinia_state() -> None:
+    plans = provider_plans.parse_beget_plans({"https://beget.com/ru/vps": _nuxt_html(BEGET_STATE)})
+
+    assert [(p["id"], p["region"], p["price"]) for p in plans] == [
+        ("beget-kz1_prime_v5", "Казахстан", 900.0),
+        ("beget-ru1_prime_v5", "Санкт-Петербург, Россия", 810.0),
+    ]
+    spb = plans[1]
+    assert (spb["cpu"], spb["ramGb"], spb["diskGb"], spb["diskType"], spb["portMbps"]) == (2, 2, 30, "NVMe", 1000)
+    assert (spb["trafficTb"], spb["trafficKnown"]) == (None, False)  # квота не опубликована — не «безлимит»
+
+
+@pytest.mark.parametrize(
+    ("provider", "module", "fetch_name"),
+    [("timeweb", "timeweb", "fetch_timeweb_plans"), ("beget", "beget", "fetch_beget_plans")],
+)
+async def test__fetch_nuxt_providers__parse_the_downloaded_page(
+    monkeypatch: pytest.MonkeyPatch, provider: str, module: str, fetch_name: str
+) -> None:
+    state = TIMEWEB_STATE if provider == "timeweb" else BEGET_STATE
+    calls: list[str] = []
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        calls.append(url)
+        return _nuxt_html(state)
+
+    monkeypatch.setattr(getattr(provider_plans, module), "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await getattr(provider_plans, fetch_name)()
+
+    assert len(calls) == 1
+    assert len(plans) == 2
+
+
+async def test__fetch_timeweb_plans__network_error_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def boom(url: str, timeout: float) -> str:
+        raise TimeoutError
+
+    monkeypatch.setattr(provider_plans.timeweb, "_fetch_browser_url", boom)
+
+    assert await provider_plans.fetch_timeweb_plans() == []
+
+
+# --- публичные API облаков (Vultr, Linode) ------------------------------------------------------
+
+VULTR_REGIONS = {
+    "regions": [
+        {"id": "ams", "city": "Amsterdam", "country": "NL"},
+        {"id": "sao", "city": "São Paulo", "country": "BR"},
+    ]
+}
+VULTR_PLANS = {
+    "plans": [
+        {"id": "vc2-1c-0.5gb-free", "type": "vc2", "vcpu_count": 1, "ram": 512, "disk": 10, "bandwidth": 0,
+         "monthly_cost": 0, "locations": ["ams"]},
+        {"id": "vc2-1c-0.5gb-v6", "type": "vc2", "vcpu_count": 1, "ram": 512, "disk": 10, "bandwidth": 512,
+         "monthly_cost": 2.5, "locations": ["ams"]},
+        {"id": "vc2-1c-1gb", "type": "vc2", "vcpu_count": 1, "ram": 1024, "disk": 25, "bandwidth": 1024,
+         "monthly_cost": 5, "locations": ["ams", "sao", "unknown"],
+         "location_cost": {"sao": {"monthly_cost": 7.5}}},
+        {"id": "vhp-1c-1gb-amd", "type": "vhp", "vcpu_count": 1, "ram": 1024, "disk": 25, "bandwidth": 2048,
+         "monthly_cost": 6, "locations": ["ams"]},
+        {"id": "vcg-a16-2c-8g-2vram", "type": "vcg", "vcpu_count": 2, "ram": 8192, "disk": 50, "bandwidth": 1024,
+         "monthly_cost": 43, "locations": ["ams"]},
+    ]
+}  # fmt: skip
+
+
+def test__parse_vultr_plans__expands_vps_plans_by_location_with_location_prices() -> None:
+    plans = provider_plans.parse_vultr_plans(VULTR_PLANS, VULTR_REGIONS)
+
+    assert [(p["id"], p["price"], p["country"]) for p in plans] == [
+        ("vultr-ams-vc2-1c-1gb", 5.0, "NL"),
+        ("vultr-ams-vhp-1c-1gb-amd", 6.0, "NL"),
+        ("vultr-sao-vc2-1c-1gb", 7.5, "BR"),  # поправка цены для Сан-Паулу
+    ]
+    amd = plans[1]
+    assert amd["name"] == "High Performance AMD 1C/1GB · Amsterdam"
+    assert (amd["region"], amd["diskType"], amd["trafficTb"], amd["currency"]) == ("Amsterdam, NL", "NVMe", 2.0, "USD")
+
+
+LINODE_REGIONS = {
+    "data": [
+        {
+            "id": "nl-ams",
+            "label": "Amsterdam, NL",
+            "country": "nl",
+            "site_type": "core",
+            "status": "ok",
+            "capabilities": ["Linodes", "Block Storage"],
+        },
+        {
+            "id": "br-gru",
+            "label": "Sao Paulo, BR",
+            "country": "br",
+            "site_type": "core",
+            "status": "ok",
+            "capabilities": ["Linodes"],
+        },
+        {
+            "id": "us-edge",
+            "label": "Edge, US",
+            "country": "us",
+            "site_type": "distributed",
+            "status": "ok",
+            "capabilities": ["Linodes"],
+        },
+        {
+            "id": "xx-obj",
+            "label": "Storage only",
+            "country": "us",
+            "site_type": "core",
+            "status": "ok",
+            "capabilities": ["Object Storage"],
+        },
+    ]
+}
+LINODE_TYPES = {
+    "data": [
+        {"id": "g6-nanode-1", "label": "Nanode 1GB", "class": "nanode", "vcpus": 1, "memory": 1024, "disk": 25600,
+         "transfer": 1000, "network_out": 1000, "price": {"monthly": 5.0},
+         "region_prices": [{"id": "br-gru", "monthly": 7.0}]},
+        {"id": "g1-gpu-rtx6000-1", "label": "GPU", "class": "gpu", "vcpus": 8, "memory": 32768, "disk": 655360,
+         "transfer": 16000, "network_out": 10000, "price": {"monthly": 1000.0}, "region_prices": []},
+        {"id": "g8-dedicated-4-2", "label": "G8 Dedicated 4x2", "class": "dedicated", "vcpus": 2, "memory": 4096,
+         "disk": 41984, "transfer": 0, "network_out": 4000, "price": {"monthly": None}, "region_prices": []},
+    ]
+}  # fmt: skip
+
+
+def test__parse_linode_plans__expands_types_over_core_linode_regions() -> None:
+    plans = provider_plans.parse_linode_plans(LINODE_TYPES, LINODE_REGIONS)
+
+    assert [(p["id"], p["price"], p["country"]) for p in plans] == [
+        ("linode-nl-ams-g6-nanode-1", 5.0, "NL"),
+        ("linode-br-gru-g6-nanode-1", 7.0, "BR"),  # региональная цена
+    ]
+    nl = plans[0]
+    assert (nl["name"], nl["cpu"], nl["ramGb"], nl["diskGb"], nl["portMbps"], nl["trafficTb"]) == (
+        "Nanode 1GB · Amsterdam",
+        1,
+        1,
+        25,
+        1000,
+        1.0,
+    )
+
+
+async def test__fetch_vultr_plans__follows_cursor_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = {
+        "https://api.vultr.com/v2/plans?per_page=500": {
+            "plans": VULTR_PLANS["plans"][:3],
+            "meta": {"links": {"next": "abc"}},
+        },
+        "https://api.vultr.com/v2/plans?per_page=500&cursor=abc": {
+            "plans": VULTR_PLANS["plans"][3:],
+            "meta": {"links": {"next": ""}},
+        },
+        "https://api.vultr.com/v2/regions?per_page=500": VULTR_REGIONS,
+    }
+
+    async def fake_fetch_json(url: str, timeout: float) -> Any:
+        return pages[url]
+
+    monkeypatch.setattr(provider_plans.vultr, "_fetch_json", fake_fetch_json)
+
+    plans = await provider_plans.fetch_vultr_plans()
+
+    assert len(plans) == 3
+
+
+async def test__fetch_linode_plans__api_error_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def boom(url: str, timeout: float) -> Any:
+        raise OSError("down")
+
+    monkeypatch.setattr(provider_plans.linode, "_fetch_json", boom)
+
+    assert await provider_plans.fetch_linode_plans() == []
+
+
+# --- Hetzner (HTML линеек + фид цен) ------------------------------------------------------------
+
+HETZNER_ROW = """
+<div class="cloud-matrix-product {extra}" style="order: 1;">
+  <div class="cell name-cell"><div class="no-wrap ">{name}</div></div>
+  <div class="cell cpu-cell"><svg><path d="M1"/></svg> {cpu} <div class="arch-type-badge">AMD</div></div>
+  <div class="cell ram-cell"><svg></svg> {ram} GB</div>
+  <div class="cell drive-cell"><svg></svg> {disk} GB <span class="product-cloud-drive-label">NVMe</span></div>
+  <div class="cell month-price-cell">
+    <ho-price-container country="fi,de" product-key="{key}" ></ho-price-container>
+  </div>
+  <div class="product-details-container">
+    <div class="location-box text-caption-2 box-1">
+      <span class="location-label">eu-central</span>
+      <span class="traffic-info-amount">20
+          TB</span>
+      <ho-price-container class="text-price" product-key="CLOUD_66" price-type="hourly" location=ALL>
+      </ho-price-container>
+      <ho-price-container location="NBG1,HEL1" product-key="{key}" ></ho-price-container>
+    </div>
+    <div class="location-box text-caption-2 box-2">
+      <span class="traffic-info-amount">1 TB</span>
+      <ho-price-container location="SIN1" product-key="{key}" ></ho-price-container>
+    </div>
+  </div>
+</div>
+"""
+HETZNER_PAGE = (
+    "<html>"
+    + HETZNER_ROW.format(extra="", name="CPX22", cpu=2, ram=4, disk=80, key="CLOUD_124+CLOUD_21")
+    + HETZNER_ROW.format(extra="not-available", name="CX23", cpu=2, ram=4, disk=40, key="CLOUD_132+CLOUD_21")
+    + '<div class="cloud-matrix-product-fold"></div></html>'
+)
+HETZNER_PRICES = {
+    "products": {
+        "CLOUD_124": {
+            "locations": [
+                {"countryCode": "de", "datacenter": "NBG1", "active": True, "prices": {"monthly": {"EUR": "19.49"}}},
+                {"countryCode": "fi", "datacenter": "HEL1", "active": True, "prices": {"monthly": {"EUR": "19.49"}}},
+                {"countryCode": "sg", "datacenter": "SIN1", "active": True, "prices": {"monthly": {"EUR": "26.49"}}},
+            ]
+        },
+        "CLOUD_132": {
+            "locations": [
+                {"countryCode": "de", "datacenter": "NBG1", "active": True, "prices": {"monthly": {"EUR": "5.49"}}},
+            ]
+        },
+        "CLOUD_21": {"locations": [{"datacenter": "ALL", "prices": {"monthly": {"EUR": "0.50"}}}]},
+    }
+}
+
+
+def test__parse_hetzner_plans__joins_html_specs_with_per_dc_prices_and_ipv4() -> None:
+    url = "https://www.hetzner.com/cloud/regular-performance/"
+    plans = provider_plans.parse_hetzner_plans({url: HETZNER_PAGE}, HETZNER_PRICES)
+
+    assert [(p["id"], p["price"], p["trafficTb"], p["available"]) for p in plans] == [
+        ("hetzner-hel1-cpx22", 19.99, 20.0, True),
+        ("hetzner-nbg1-cx23", 5.99, 20.0, False),  # «not available» на сайте; в HEL1/SIN1 цены нет — пропуск
+        ("hetzner-nbg1-cpx22", 19.99, 20.0, True),
+        ("hetzner-sin1-cpx22", 26.99, 1.0, True),
+    ]
+    hel = plans[0]
+    assert (hel["name"], hel["region"], hel["country"], hel["currency"]) == (
+        "CPX22 · Helsinki",
+        "Helsinki, FI",
+        "FI",
+        "EUR",
+    )
+    assert (hel["cpu"], hel["ramGb"], hel["diskGb"], hel["diskType"]) == (2, 4, 80, "NVMe")
+
+
+async def test__fetch_hetzner_plans__loads_prices_and_every_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages: list[str] = []
+
+    async def fake_fetch_json(url: str, timeout: float) -> Any:
+        return HETZNER_PRICES
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        pages.append(url)
+        if url.endswith("general-purpose/"):
+            raise TimeoutError  # одна линейка недоступна — остальные всё равно разбираются
+        return HETZNER_PAGE if url.endswith("cost-optimized/") else "<html></html>"
+
+    monkeypatch.setattr(provider_plans.hetzner, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(provider_plans.hetzner, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_hetzner_plans()
+
+    assert len(pages) == 3
+    assert len(plans) == 4
+    assert {p["sourceUrl"] for p in plans} == {"https://www.hetzner.com/cloud/cost-optimized/"}
+
+
+# --- общий парсер WHMCS ---------------------------------------------------------------------------
+
+WHMCS_PAGE = """
+<html><body>
+<div class="product clearfix" id="product1">
+  <header><span id="product1-name">KVM SMART</span><span class="qty">1608 Available</span></header>
+  <div class="product-desc"><ul>
+    <li>1 GB RAM</li><li>1 vCPU</li><li>15 GB SSD</li>
+    <li><span>Traffic:</span></li><li><span>1 TB</span></li>
+    <li>1 Gbps port</li>
+  </ul></div>
+  <footer><div class="product-pricing" id="product1-price">Starting from <span class="price">EUR 4.99</span>
+    <br/>Monthly</div></footer>
+</div>
+<div class="product clearfix" id="product2">
+  <header><span id="product2-name">512MB VPS [CL]</span><span class="qty">0 Available</span></header>
+  <div class="product-desc">
+    <div>1 Core</div><div>CPU</div><div>512MB</div><div>RAM</div><div>30GB</div><div>SSD</div>
+    <div>200GB @ 100Mbps</div><div>Bandwidth</div>
+  </div>
+  <footer><div class="product-pricing" id="product2-price">
+    <span class="price">$65.00 USD</span><br/>Annually</div></footer>
+</div>
+<div class="product clearfix" id="product3">
+  <header><span id="product3-name">Қайнар</span></header>
+  <div class="product-desc"><p id="product3-description"><ul>
+    <li><strong>15 ГБ</strong> дискового пространства</li><li><strong>1</strong> ядро vCPU</li>
+    <li><strong>2 ГБ</strong> оперативной памяти (RAM)</li><li>Трафик безлимитный</li>
+  </ul></p></div>
+  <footer><div class="product-pricing" id="product3-price">
+    Начиная от <span class="price">2 383.00₸</span><br/>ежемесячно</div></footer>
+</div>
+<div class="product clearfix" id="product4">
+  <header><span id="product4-name">Licence</span></header>
+  <div class="product-desc"><ul><li>Software licence</li></ul></div>
+  <footer><div class="product-pricing" id="product4-price">$10.00 USD One Time</div></footer>
+</div>
+</body></html>
+"""
+
+
+def test__parse_whmcs_page__reads_standard_cart_products_in_any_layout() -> None:
+    page = provider_plans.WhmcsPage("https://example.com/cart.php?gid=1", "Vienna, Austria", "AT")
+
+    plans = {p["name"]: p for p in provider_plans.parse_whmcs_page("edis", page, WHMCS_PAGE)}
+
+    assert set(plans) == {"KVM SMART · Vienna", "512MB VPS [CL] (yearly) · Vienna", "Қайнар · Vienna"}  # без лицензии
+    smart = plans["KVM SMART · Vienna"]
+    assert (smart["cpu"], smart["ramGb"], smart["diskGb"], smart["diskType"]) == (1, 1, 15, "SSD")
+    assert (smart["trafficTb"], smart["portMbps"], smart["price"], smart["currency"]) == (1, 1000, 4.99, "EUR")
+    assert (smart["region"], smart["country"], smart["available"]) == ("Vienna, Austria", "AT", True)
+    assert smart["id"] == "edis-vienna-austria-kvm-smart"
+    # значения и подписи разнесены по строкам, цена за год приведена к месяцу
+    split = plans["512MB VPS [CL] (yearly) · Vienna"]
+    assert (split["cpu"], split["ramGb"], split["diskGb"], split["portMbps"]) == (1, 0.5, 30, 100)
+    assert (split["price"], split["currency"], split["available"]) == (5.42, "USD", False)
+    kz = plans["Қайнар · Vienna"]
+    assert (kz["cpu"], kz["ramGb"], kz["diskGb"], kz["trafficTb"], kz["price"]) == (1, 2, 15, None, 2383.0)
+    assert kz["currency"] == "KZT"
+    assert "trafficKnown" not in kz  # «Трафик безлимитный» — квота известна
+    assert "trafficKnown" not in smart
+
+
+@pytest.mark.parametrize(
+    ("text", "default", "expected"),
+    [
+        ("Starting from $1,299.00 USD Monthly", "", (1299.0, "USD", 1, "")),
+        ("Desde $6,000CLP Mensualmente", "", (6000.0, "CLP", 1, "")),
+        ("Desde $79.900 Mensualmente", "CLP", (79900.0, "CLP", 1, "")),
+        ("R$ 49,90 mensal", "", (49.9, "BRL", 1, "")),
+        ("€7.99EUR Quarterly €5.00 Setup Fee", "", (2.66, "EUR", 3, "quarterly")),
+        ("$10.00 USD One Time", "", None),
+        ("Free", "", None),
+    ],
+)
+def test__whmcs_parse_price__currencies_separators_and_cycles(
+    text: str, default: str, expected: tuple[float, str, int, str] | None
+) -> None:
+    from vpnhub.infra.provider_plans.whmcs import _parse_price
+
+    assert _parse_price(text, default) == expected
+
+
+async def test__fetch_whmcs_plans__skips_unreachable_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = (
+        provider_plans.WhmcsPage("https://a.example/store/vps", "Vienna, Austria", "AT"),
+        provider_plans.WhmcsPage("https://a.example/store/down", "Oslo, Norway", "NO"),
+    )
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        if url.endswith("down"):
+            raise TimeoutError
+        return WHMCS_PAGE
+
+    monkeypatch.setattr(provider_plans.whmcs, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_whmcs_plans("edis", pages)
+
+    assert {p["region"] for p in plans} == {"Vienna, Austria"}
+    assert len(plans) == 3
+
+
+async def test__plans_for__routes_whmcs_providers_to_their_store_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        seen.append(url)
+        return WHMCS_PAGE
+
+    monkeypatch.setattr(provider_plans.whmcs, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.plans_for("FlokiNET")
+
+    assert seen == [p.url for p in provider_plans.WHMCS_STORES["flokinet"]]
+    assert plans and all(p["id"].startswith("flokinet-") for p in plans)
+
+
+# --- Cherry Servers (публичный API) -------------------------------------------------------------
+
+CHERRY_PLANS = [
+    {
+        "slug": "e3-1240v3",
+        "name": "E3-1240v3",
+        "type": "baremetal",
+        "specs": {},
+        "pricing": [],
+        "available_regions": [],
+    },
+    {
+        "slug": "B2-1-1gb-20s-shared",
+        "name": "Cloud VPS 1 (Gen 2)",
+        "type": "vps",
+        "specs": {
+            "cpus": {"cores": 1},
+            "memory": {"total": 1},
+            "storage": [{"count": 1, "size": 20, "type": "SSD"}],
+            "nics": {"name": "1Gbps"},
+            "bandwidth": {"name": "1TB"},
+        },
+        "pricing": [
+            {"unit": "Hourly", "price": 0.015, "currency": "EUR"},
+            {"unit": "Monthly", "price": 3.0, "currency": "EUR"},
+        ],
+        "available_regions": [
+            {"region_iso_2": "LT", "location": "Lithuania, Šiauliai", "stock_qty": 113},
+            {"region_iso_2": "SG", "location": "Singapore", "stock_qty": 0},
+        ],
+    },
+]
+
+
+def test__parse_cherry_plans__expands_vps_by_region_with_stock() -> None:
+    plans = provider_plans.parse_cherry_plans(CHERRY_PLANS)
+
+    assert [(p["id"], p["region"], p["available"]) for p in plans] == [
+        ("cherry-sg-b2-1-1gb-20s-shared", "Singapore", False),
+        ("cherry-lt-b2-1-1gb-20s-shared", "Šiauliai, Lithuania", True),
+    ]
+    lt = plans[1]
+    assert (lt["cpu"], lt["ramGb"], lt["diskGb"], lt["diskType"], lt["portMbps"], lt["trafficTb"]) == (
+        1,
+        1,
+        20,
+        "SSD",
+        1000,
+        1,
+    )
+    assert (lt["price"], lt["currency"], lt["country"]) == (3.0, "EUR", "LT")
+
+
+# --- общий парсер BILLmanager -------------------------------------------------------------------
+
+
+def _bm_addon(intname: str, limit: str, unit: str = "", name: str = "") -> str:
+    measure = f"<measure>6</measure><measure><id>6</id><name>{unit}</name></measure>" if unit else ""
+    return (
+        f"<addon><name>{name}</name><addonlimit>{limit}</addonlimit>{measure}"
+        f"<addon_itemtype_info><intname>{intname}</intname></addon_itemtype_info></addon>"
+    )
+
+
+def _bm_pricelist(pid: int, name: str, cost: str, addons: str, dcs: str = "", **flags: str) -> str:
+    extra = "".join(f"<{k}>{v}</{k}>" for k, v in flags.items())
+    return (
+        f"<pricelist><id>{pid}</id><name>{name}</name><active>on</active>{extra}"
+        f"<itemtype_info><intname>vds</intname></itemtype_info>{dcs}"
+        f'<price currency="RUB"><period cost="0.0000" type="month" length="-100">trial</period>'
+        f'<period cost="{cost}" type="month" length="1">monthly</period></price>{addons}</pricelist>'
+    )
+
+
+BM_EXPORT = (
+    "<doc>"
+    + _bm_pricelist(
+        1400,
+        "Взлёт",
+        "490.0000",
+        _bm_addon("ncpu", "2", "Unit")
+        + _bm_addon("mem", "2048", "Mb")
+        + _bm_addon("disc", "40", "Gb", "Дисковое пространство NVMe")
+        + _bm_addon("inbound", "905", "Mbps")
+        + _bm_addon("outbound", "100", "Mbps"),
+        "<datacenter><id>4</id><name>Moscow</name><name_ru>Москва, Россия</name_ru></datacenter>"
+        "<datacenter><id>7</id><name>Host-Telecom (CZ)</name></datacenter>",
+    )
+    + _bm_pricelist(
+        1500,
+        "VDS-KVM-SSD 4.0",
+        "949.0000",
+        _bm_addon("ncpu", "2")
+        + _bm_addon("mem", "2")
+        + _bm_addon("disc", "20")
+        + _bm_addon("bandwidth", "32", "Tb", "Port 1 Gbit/s, 32 Tb included"),
+    )
+    + _bm_pricelist(1600, "Конфигуратор", "0.0000", _bm_addon("ncpu", "1") + _bm_addon("mem", "1024", "Mb"))
+    + _bm_pricelist(1700, "Скрытый", "100.0000", _bm_addon("ncpu", "1"), hideinorder="on")
+    + _bm_pricelist(
+        1800,
+        "KVM-HB-20",
+        "400.0000",
+        _bm_addon("ip", "1"),
+        description_ru=(
+            "&lt;ul&gt;&lt;li&gt;1 vCPU&lt;/li&gt;&lt;li&gt;2 GB RAM&lt;/li&gt;"
+            "&lt;li&gt;20 GB HDD&lt;/li&gt;&lt;/ul&gt;"
+        ),
+    )
+    + "</doc>"
+)
+
+
+def test__parse_billmanager_export__reads_addons_datacenters_and_description_fallback() -> None:
+    source = provider_plans.BillmanagerSource(
+        "https://my.example.ru/billmgr", "https://example.ru/vps", default_region="Россия", country="RU"
+    )
+
+    plans = {p["id"]: p for p in provider_plans.parse_billmanager_export("vds-sh", source, BM_EXPORT)}
+
+    assert set(plans) == {"vds-sh-1400-4", "vds-sh-1400-7", "vds-sh-1500", "vds-sh-1800"}  # без конструктора и скрытого
+    msk = plans["vds-sh-1400-4"]
+    assert (msk["name"], msk["region"], msk["country"]) == ("Взлёт · Москва, Россия", "Москва, Россия", "RU")
+    assert (msk["cpu"], msk["ramGb"], msk["diskGb"], msk["diskType"], msk["portMbps"]) == (2, 2, 40, "NVMe", 100)
+    assert (msk["price"], msk["currency"], msk["sourceUrl"]) == (490.0, "RUB", "https://example.ru/vps")
+    assert plans["vds-sh-1400-7"]["country"] == "CZ"  # код страны в скобках у имени ДЦ
+    ssd = plans["vds-sh-1500"]  # без ДЦ — регион по умолчанию; единицы не указаны — RAM в ГБ
+    assert (ssd["region"], ssd["ramGb"], ssd["diskType"], ssd["portMbps"], ssd["trafficTb"]) == (
+        "Россия",
+        2,
+        "SSD",
+        1000,
+        32.0,
+    )
+    described = plans["vds-sh-1800"]  # характеристики только в описании
+    assert (described["cpu"], described["ramGb"], described["diskGb"], described["diskType"]) == (1, 2, 20, "HDD")
+    assert msk["trafficKnown"] is False  # ни квоты, ни «безлимита» в прайсе
+    assert "trafficKnown" not in ssd  # 32 ТБ указаны
+
+
+def test__billmanager_export_url__asks_for_available_vds_only() -> None:
+    from vpnhub.infra.provider_plans.billmanager import export_url
+
+    url = export_url(provider_plans.BillmanagerSource("https://my.example.ru/billmgr", "https://example.ru"))
+
+    assert url == ("https://my.example.ru/billmgr?func=pricelist.export&out=xml&itemtype=vds&onlyavailable=on")
+
+
+async def test__fetch_billmanager_plans__downloads_and_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def fake_open_export(url: str, timeout: float) -> io.BytesIO:
+        calls.append(url)
+        if "down" in url:
+            raise TimeoutError
+        return io.BytesIO(BM_EXPORT.encode())
+
+    monkeypatch.setattr(provider_plans.billmanager, "_open_export", fake_open_export)
+    ok = provider_plans.BillmanagerSource("https://up.example/billmgr", "https://up.example", default_region="Россия")
+    down = provider_plans.BillmanagerSource("https://down.example/billmgr", "https://down.example")
+
+    assert len(await provider_plans.fetch_billmanager_plans("x", ok)) == 4
+    assert await provider_plans.fetch_billmanager_plans("x", down) == []
+    assert len(calls) == 2
+
+
+def test__parse_billmanager_export__broken_xml_is_empty() -> None:
+    source = provider_plans.BillmanagerSource("https://my.example.ru/billmgr", "https://example.ru")
+
+    assert provider_plans.parse_billmanager_export("x", source, "<doc><pricelist>") == []
+
+
+def test__parse_billmanager_export__rejects_documents_with_dtd() -> None:
+    source = provider_plans.BillmanagerSource("https://my.example.ru/billmgr", "https://example.ru")
+    bomb = '<?xml version="1.0"?><!DOCTYPE doc [<!ENTITY a "aaaa">]>' + BM_EXPORT
+
+    assert provider_plans.parse_billmanager_export("x", source, bomb) == []
+
+
+# --- 4VPS (публичный POST getTariffs) -----------------------------------------------------------
+
+FOURVPS_HOME = """
+<div class="grid__block selectCountry" data-country="Нидерланды" data-panel-id="1" data-cluster="5">NL</div>
+<div class="grid__block selectCountry" data-country="Германия" data-panel-id="1" data-cluster="8">DE</div>
+<div class="grid__block selectCountry" data-country="Нидерланды" data-panel-id="1" data-cluster="5">дубль</div>
+"""
+FOURVPS_TARIFFS = {
+    "error": False,
+    "data": [
+        {"id": 13, "name": "NL-cx01", "cpu_number": 1, "ram_mib": 1, "rom": 10, "eth": "2Gbit/s", "price": 472,
+         "sold_out": False},
+        {"id": 14, "name": "NL-cx11", "cpu_number": 1, "ram_mib": 2048, "rom": 20, "eth": "1Gbit/s", "price": 616,
+         "sold_out": True},
+    ],
+}  # fmt: skip
+
+
+def test__discover_fourvps_clusters__reads_country_buttons_once() -> None:
+    clusters = provider_plans.discover_fourvps_clusters(FOURVPS_HOME)
+
+    assert [(c.country, c.panel_id, c.cluster) for c in clusters] == [("Нидерланды", "1", "5"), ("Германия", "1", "8")]
+
+
+async def test__fetch_fourvps_plans__posts_month_period_per_cluster(monkeypatch: pytest.MonkeyPatch) -> None:
+    forms: list[dict[str, str]] = []
+
+    async def fake_home(url: str, timeout: float) -> str:
+        return FOURVPS_HOME
+
+    async def fake_post(url: str, form: dict[str, str], timeout: float) -> str:
+        forms.append(dict(form))
+        return json.dumps(FOURVPS_TARIFFS)
+
+    monkeypatch.setattr(provider_plans.fourvps, "_fetch_browser_url", fake_home)
+    monkeypatch.setattr(provider_plans.fourvps, "_post_form_url", fake_post)
+
+    plans = await provider_plans.fetch_fourvps_plans()
+
+    assert sorted(f["cluster"] for f in forms) == ["5", "8"]
+    assert all(f["period"] == "720" and f["panelId"] == "1" for f in forms)
+    nl = {p["id"]: p for p in plans if p["region"] == "Нидерланды"}
+    cheap, sold = nl["4vps-5-nl-cx01"], nl["4vps-5-nl-cx11"]
+    assert (cheap["cpu"], cheap["ramGb"], cheap["diskGb"], cheap["portMbps"], cheap["price"]) == (1, 1, 10, 2000, 472.0)
+    assert (cheap["currency"], cheap["available"]) == ("RUB", True)
+    assert (sold["ramGb"], sold["available"]) == (2, False)  # МиБ → ГБ, распродан
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        (["1x2.1Ghz - 3.9Ghz CPU", "1GB RAM", "20GB SSD Storage", "3TB @ 1Gbps Monthly Traffic"], (1, 1, 20, 3, 1000)),
+        (
+            ["CPU: 1vCPU", "Memória: 2GB", "Armazenamento: 50GB SSD", "Tráfego Mensal: Ilimitado"],
+            (1, 2, 50, None, None),
+        ),
+        (["2 vCPU Cores", "4 GB ECC DDR4", "40 GB NVMe"], (2, 4, 40, None, None)),
+        (["Geekbench Score 500+", "½ vCPU Core (3.4GHz+ Ryzen)", "384MB Memory"], (None, 0.38, None, None, None)),
+    ],
+)
+def test__whmcs_parse_specs__multilingual_and_odd_layouts(
+    lines: list[str], expected: tuple[int | None, float | None, float | None, float | None, int | None]
+) -> None:
+    from vpnhub.infra.provider_plans.whmcs import _parse_specs
+
+    specs = _parse_specs(lines)
+
+    assert (specs.cpu, specs.ram_gb, specs.disk_gb, specs.traffic_tb, specs.port_mbps) == expected
+
+
+def test__parse_billmanager_export__streams_large_documents_without_dtd_check_false_positives() -> None:
+    """Тарифы за пределами первых 64 КБ тоже читаются; «<!ENTITY» в тексте описания — не DTD."""
+    source = provider_plans.BillmanagerSource(
+        "https://my.example.ru/billmgr", "https://example.ru", default_region="Россия", country="RU"
+    )
+    filler = "".join(_bm_pricelist(i, f"Скрытый {i}", "1.0000", "", hideinorder="on") for i in range(1, 400))
+    doc = BM_EXPORT.replace("<doc>", "<doc>" + filler).replace("Взлёт", "Взлёт &lt;!ENTITY&gt;")
+
+    plans = provider_plans.parse_billmanager_export("x", source, doc)
+
+    assert len(doc.encode()) > 65_536
+    assert len(plans) == 4
+
+
+# --- BinaryLane / Mammoth (одинаковый публичный API) -------------------------------------------
+
+BL_REGIONS = {"regions": [{"slug": "syd", "name": "Sydney"}, {"slug": "sin", "name": "Singapore"}]}
+BL_SIZES = {
+    "sizes": [
+        {"slug": "std-min", "size_type": {"slug": "vps", "name": "Standard"}, "available": True,
+         "regions": ["syd", "sin"], "regions_out_of_stock": ["sin"], "price_monthly": 4.9, "disk": 20,
+         "memory": 1024, "transfer": 1, "vcpus": 1},
+        {"slug": "ded-e2136-400gb", "size_type": {"slug": "ded", "name": "Dedicated"}, "available": True,
+         "regions": ["syd"], "regions_out_of_stock": [], "price_monthly": 200, "disk": 400, "memory": 32768,
+         "transfer": 10, "vcpus": 6},
+    ]
+}  # fmt: skip
+
+
+def test__parse_binarylane_sizes__expands_vps_by_region_and_skips_dedicated() -> None:
+    plans = provider_plans.parse_binarylane_sizes("binarylane", "https://bl.example/pricing", BL_SIZES, BL_REGIONS)
+
+    assert [(p["id"], p["region"], p["country"], p["available"]) for p in plans] == [
+        ("binarylane-sin-std-min", "Singapore, SG", "SG", False),
+        ("binarylane-syd-std-min", "Sydney, AU", "AU", True),
+    ]
+    syd = plans[1]
+    assert (syd["cpu"], syd["ramGb"], syd["diskGb"], syd["trafficTb"], syd["price"], syd["currency"]) == (
+        1,
+        1,
+        20,
+        1.0,
+        4.9,
+        "AUD",
+    )

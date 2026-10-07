@@ -8,10 +8,15 @@
 правки/добавления/удаления пользователя. Уже «сиженные» дефолтные id хранит sibling-маркер
 `<providers>.seeded.json`; для установок, поставленных ДО этой фичи (маркера нет), стартовый набор
 берётся из `_PRE_MERGE_DEFAULT_IDS`, чтобы удалённые пользователем дефолты не воскресали.
+
+Метаданные для поиска/фильтров каталога (`hq`, `countries`, `payments`, `blurbEn`) появились позже
+базовых полей: у дефолтных провайдеров, записанных старой версией без этих КЛЮЧЕЙ, sync доливает их
+из дефолта. Ключ, который уже есть в файле (даже пустой — значит, его очистил пользователь), не трогаем.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -27,6 +32,60 @@ _DEFAULT = Path(__file__).resolve().parent.parent / "data" / "providers.default.
 # установок без маркера считаем их уже сиженными: тогда доливаются только более новые дефолты, а
 # удалённые пользователем старые провайдеры не воскресают.
 _PRE_MERGE_DEFAULT_IDS = frozenset({"firstbyte", "ufo", "ishosting", "ahost", "serverspace"})
+
+
+# Способы оплаты, которые понимает UI каталога (фильтр и бейджи). Неизвестные значения отбрасываются.
+PAYMENT_METHODS = ("ru_card", "sbp", "ru_wallet", "crypto", "card", "paypal", "bank", "local")
+_META_FIELDS = ("hq", "countries", "payments", "blurbEn")
+_COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
+
+
+def _str_list(value: object) -> list[str]:
+    """Список строк из YAML-списка или строки через запятую (форма админки)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts = value.split(",")
+    elif isinstance(value, (list, tuple, set)):
+        parts = [str(v) for v in value]
+    else:
+        parts = [str(value)]
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _countries(value: object) -> list[str]:
+    # YAML 1.1 читает голый `NO` (Норвегия) в руками правленом файле как false — возвращаем код страны.
+    if isinstance(value, (list, tuple)):
+        value = ["NO" if v is False else v for v in value]
+    out: list[str] = []
+    for code in _str_list(value):
+        up = code.upper()
+        if _COUNTRY_RE.match(up) and up not in out:
+            out.append(up)
+    return out
+
+
+def _payments(value: object) -> list[str]:
+    wanted = {p.lower() for p in _str_list(value)}
+    return [m for m in PAYMENT_METHODS if m in wanted]
+
+
+# libyaml (C) разбирает каталог из сотен провайдеров в разы быстрее чистого Python; без него — fallback
+_Loader: type[yaml.SafeLoader] = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_Dumper: type[yaml.SafeDumper] = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
+# разобранный YAML по (путь, mtime, размер): каталог читается на каждый запрос, а меняется редко
+_PARSE_CACHE: dict[Path, tuple[tuple[int, int], object]] = {}
+
+
+def _load_yaml(path: Path) -> object:
+    st = path.stat()
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _PARSE_CACHE.get(path)
+    if cached is not None and cached[0] == stamp:
+        return copy.deepcopy(cached[1])
+    data = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)  # noqa: S506 — SafeLoader/CSafeLoader
+    _PARSE_CACHE[path] = (stamp, data)
+    return copy.deepcopy(data)
 
 
 def _slug(name: str) -> str:
@@ -48,10 +107,10 @@ class ProviderStore:
 
     def _default_items(self) -> list[dict]:
         try:
-            data = yaml.safe_load(_DEFAULT.read_text(encoding="utf-8")) or []
+            data = _load_yaml(_DEFAULT) or []
         except Exception:
             data = []
-        return [self._norm(p) for p in data if isinstance(p, dict)]
+        return [self._norm(p) for p in data if isinstance(p, dict)] if isinstance(data, list) else []
 
     def _read_seeded(self) -> set[str]:
         try:
@@ -76,35 +135,61 @@ class ProviderStore:
         # маркер есть → сиженные из него; маркера нет (установка до фичи) → берём базовый набор
         seeded = self._read_seeded() if self._seeded_path.exists() else set(_PRE_MERGE_DEFAULT_IDS)
         new_ids = all_ids - seeded
-        appended: list[dict] = []
-        if new_ids:
-            items = self._read()
-            have = {p["id"] for p in items}
-            appended = [d for d in defaults if d["id"] in new_ids and d["id"] not in have]
-            if appended:
-                self._write(items + appended)
+        items, backfilled = self._backfill_metadata(defaults)
+        have = {p["id"] for p in items}
+        appended = [d for d in defaults if d["id"] in new_ids and d["id"] not in have]
+        if appended or backfilled:
+            self._write(items + appended)
         self._write_seeded(all_ids | seeded)  # фиксируем маркер (в т.ч. первый раз)
         return len(appended)
 
+    def _backfill_metadata(self, defaults: list[dict]) -> tuple[list[dict], bool]:
+        """Долить метаданные дефолтов в записи, где этих КЛЮЧЕЙ ещё нет (файл от старой версии)."""
+        by_id = {d["id"]: d for d in defaults}
+        items: list[dict] = []
+        changed = False
+        for raw in self._read_raw():
+            item = self._norm(raw)
+            default = by_id.get(item["id"])
+            if default is not None:
+                for field in _META_FIELDS:
+                    if field not in raw and default[field]:
+                        item[field] = default[field]
+                        changed = True
+            items.append(item)
+        return items, changed
+
     @staticmethod
     def _norm(p: dict) -> dict:
+        hq = str(p.get("hq") or "").strip().upper()
         return {
             "id": str(p.get("id") or _slug(str(p.get("name", "")))),
             "name": str(p.get("name", "")),
             "url": str(p.get("url", "")),
             "blurb": str(p.get("blurb", "")),
+            "blurbEn": str(p.get("blurbEn") or ""),
             "tags": [str(t) for t in (p.get("tags") or [])],
+            "hq": hq if _COUNTRY_RE.match(hq) else "",
+            "countries": _countries(p.get("countries")),
+            "payments": _payments(p.get("payments")),
         }
 
-    def _read(self) -> list[dict]:
+    def _read_raw(self) -> list[dict]:
         try:
-            data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or []
+            data = _load_yaml(self.path) or []
         except Exception:
             data = []
-        return [self._norm(p) for p in data if isinstance(p, dict)]
+        return [p for p in data if isinstance(p, dict)] if isinstance(data, list) else []
+
+    def _read(self) -> list[dict]:
+        return [self._norm(p) for p in self._read_raw()]
 
     def _write(self, items: list[dict]) -> None:
-        self.path.write_text(yaml.safe_dump(items, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        text = yaml.dump(
+            items, Dumper=_Dumper, allow_unicode=True, sort_keys=False, default_flow_style=None, width=4096
+        )
+        self.path.write_text(text, encoding="utf-8")
+        _PARSE_CACHE.pop(self.path, None)  # mtime на некоторых ФС грубый — не доверяем ему сразу после записи
 
     def list(self) -> list[dict]:
         return self._read()

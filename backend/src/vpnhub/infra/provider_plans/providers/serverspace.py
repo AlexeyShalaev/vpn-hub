@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import re
 import ssl
@@ -19,7 +18,7 @@ import certifi
 import structlog
 
 from ..common import _int, _norm, _quantity_gb, _speed_mbps, _storage_type_from_text
-from ..http import _BROWSER_USER_AGENT, _NoRedirect
+from ..http import _BROWSER_USER_AGENT, _NoRedirect, run_io
 
 log = structlog.get_logger(__name__)
 
@@ -327,7 +326,7 @@ async def _fetch_serverspace_price_page(timeout: float) -> str:
         with opener.open(req, timeout=timeout) as resp:
             return _read_response(resp)
 
-    return await asyncio.to_thread(_get)
+    return await run_io(_get)
 
 
 def _serverspace_row_to_plan(
@@ -359,6 +358,7 @@ def _serverspace_row_to_plan(
         "diskType": disk_type,
         "portMbps": port,
         "trafficTb": None,
+        "trafficKnown": False,  # в таблице фиксированных тарифов квоты трафика нет
         "price": price,
         "currency": _serverspace_currency(source_url, row.currency),
         "period": "month",

@@ -222,6 +222,7 @@ def _ufo_card_to_plan(card: _UfoPlanCard, source_url: str) -> dict[str, Any] | N
         "diskType": _ufo_disk_type(disk_text),
         "portMbps": port,
         "trafficTb": None,
+        "trafficKnown": False,  # квота трафика в карточке не указана
         "price": card.price,
         "currency": "RUB",
         "period": "month",

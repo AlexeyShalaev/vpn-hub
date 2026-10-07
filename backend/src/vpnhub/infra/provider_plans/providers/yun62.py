@@ -103,7 +103,8 @@ def parse_yun62_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
                 "diskGb": int(disk),
                 "diskType": _storage_type_from_text(inner.group(3)),
                 "portMbps": 0,  # скорость порта не публикуется
-                "trafficTb": None,  # квота трафика на странице не указана
+                "trafficTb": None,
+                "trafficKnown": False,  # квота трафика на странице не указана
                 "price": float(price_m.group(1)),
                 "currency": "RUB",
                 "period": "month",

@@ -82,3 +82,65 @@ def plan_bandwidth_bytes(plan: dict) -> int | None:
     """Квота трафика плана в байтах (None = безлимит/не указано)."""
     tb = plan.get("trafficTb")
     return int(tb * TIB) if tb else None
+
+
+def make_plan(
+    *,
+    plan_id: str,
+    name: str,
+    region: str,
+    cpu: int,
+    ram_gb: float,
+    disk_gb: int,
+    disk_type: str,
+    port_mbps: int,
+    traffic_tb: float | None,
+    price: float,
+    currency: str,
+    source_url: str,
+    period: str = "month",
+    available: bool = True,
+    country: str = "",
+    traffic_known: bool = True,
+) -> dict[str, Any]:
+    """Тариф в общем формате каталога (см. ProviderPlan во фронтенде).
+
+    `country` — ISO-код страны, если провайдер отдаёт его явно (API облаков): тогда фильтр локаций не
+    угадывает страну по названию города. Пусто — фронтенд сводит `region` к стране сам.
+    `traffic_known=False` — провайдер квоту трафика не публикует: `trafficTb=None` тогда значит «не указано»,
+    а не «безлимит» (флаг уходит в план как `trafficKnown: false`).
+    """
+    plan = {
+        "id": plan_id,
+        "name": name,
+        "region": region,
+        "cpu": cpu,
+        "ramGb": int(ram_gb) if float(ram_gb).is_integer() else round(ram_gb, 2),
+        "diskGb": disk_gb,
+        "diskType": disk_type,
+        "portMbps": port_mbps,
+        "trafficTb": traffic_tb,
+        "price": price,
+        "currency": currency,
+        "period": period,
+        "available": available,
+        "sourceUrl": source_url,
+    }
+    if country:
+        plan["country"] = country.upper()
+    if traffic_tb is None and not traffic_known:
+        plan["trafficKnown"] = False
+    return plan
+
+
+def sort_plans(plans: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Дедуп по id и стабильный порядок: регион → цена → id (как у остальных каталогов)."""
+    by_id: dict[str, dict[str, Any]] = {}
+    for plan in plans:
+        by_id.setdefault(str(plan["id"]), plan)
+    return sorted(by_id.values(), key=lambda p: (str(p["region"]).lower(), float(p["price"]), str(p["id"])))
+
+
+def slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug or text.encode("utf-8").hex()

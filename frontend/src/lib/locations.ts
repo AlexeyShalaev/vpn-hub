@@ -155,6 +155,8 @@ const COUNTRIES: Record<string, Country> = {
     aliases: ["юар", "south africa", "южная африка", "йоханнесбург", "johannesburg"],
   },
   NG: { ru: "Нигерия", en: "Nigeria", aliases: ["нигерия", "nigeria", "лагос", "lagos"] },
+  // «georgia» без уточнения не ставим: это и штат США (Atlanta, Georgia) — только однозначные синонимы
+  GE: { ru: "Грузия", en: "Georgia", aliases: ["грузия", "тбилиси", "tbilisi"] },
   KR: {
     ru: "Южная Корея",
     en: "South Korea",
@@ -169,10 +171,69 @@ export function normLoc(s: string): string {
   return s.toLowerCase().replace(/ё/g, "е").replace(PUNCT_RE, " ").replace(/\s+/g, " ").trim();
 }
 
-// обратный индекс: нормализованный синоним → код страны
+// Остальные страны мира — из Intl.DisplayNames (ru + en): провайдеров сотни, все страны вручную не перечислить.
+// Ручные записи выше приоритетнее (у них города и синонимы). Не-страны (EU, UN…) отбрасываем, а однословные
+// имена, совпадающие с топонимами США (Jersey ↔ New Jersey, Georgia ↔ штат), в индекс не попадают.
+const NON_COUNTRY_CODES = new Set([
+  // не страны и псевдо-регионы
+  ...["EU", "EZ", "UN", "QO", "ZZ", "XA", "XB", "AC", "CP", "CQ", "DG", "EA", "IC", "TA"],
+  // устаревшие коды: иначе VD («Вьетнам») или YU («Сербия») перехватили бы имя у действующего кода
+  ...["AN", "BU", "CS", "DD", "DY", "FX", "HV", "NH", "NT", "RH", "SU", "TP", "VD", "YD", "YU", "ZR"],
+]);
+const AMBIGUOUS_CODES = new Set(["JE", "GE"]);
+
+function displayNames(lang: string): Intl.DisplayNames | null {
+  try {
+    return new Intl.DisplayNames([lang], { type: "region" });
+  } catch {
+    return null; // окружение без Intl.DisplayNames — обходимся ручным списком
+  }
+}
+const DN_RU = displayNames("ru");
+const DN_EN = displayNames("en");
+
+function intlName(dn: Intl.DisplayNames | null, code: string): string | null {
+  if (!dn) return null;
+  try {
+    const name = dn.of(code);
+    return name && name !== code ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+// все двухбуквенные коды, у которых Intl знает имя страны/территории (кроме ручных и не-стран)
+const INTL_COUNTRIES: Record<string, Country> = {};
+for (let a = 65; a <= 90; a++) {
+  for (let b = 65; b <= 90; b++) {
+    const code = String.fromCharCode(a, b);
+    if (COUNTRIES[code] || NON_COUNTRY_CODES.has(code)) continue;
+    const ruName = intlName(DN_RU, code);
+    const enName = intlName(DN_EN, code);
+    if (!ruName || !enName) continue;
+    const aliases = AMBIGUOUS_CODES.has(code) ? [] : [normLoc(ruName), normLoc(enName)];
+    INTL_COUNTRIES[code] = { ru: ruName, en: enName, aliases };
+  }
+}
+
+// обратный индекс: нормализованный синоним → код страны (ручные синонимы приоритетнее Intl)
 const ALIAS_TO_CODE = new Map<string, string>();
-for (const [code, c] of Object.entries(COUNTRIES)) {
-  for (const a of c.aliases) ALIAS_TO_CODE.set(a, code);
+for (const [code, c] of [...Object.entries(COUNTRIES), ...Object.entries(INTL_COUNTRIES)]) {
+  for (const a of c.aliases) if (!ALIAS_TO_CODE.has(a)) ALIAS_TO_CODE.set(a, code);
+}
+
+// Подпись страны по ISO-коду: «Германия / Germany» (один язык, если совпадают); неизвестный код — как есть.
+export function countryLabel(code: string): string {
+  const up = code.toUpperCase();
+  const c = COUNTRIES[up] ?? INTL_COUNTRIES[up];
+  if (!c) return up;
+  return c.ru === c.en ? c.ru : `${c.ru} / ${c.en}`;
+}
+
+// Флаг-эмодзи по ISO-коду (региональные индикаторы); на системах без флагов покажутся две буквы.
+export function flagEmoji(code: string): string {
+  if (!/^[A-Za-z]{2}$/.test(code)) return "";
+  return String.fromCodePoint(...[...code.toUpperCase()].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
 }
 
 // код страны для нормализованного региона: полная строка → пара соседних слов → отдельное слово.
@@ -200,9 +261,6 @@ export interface CanonLoc {
 export function canonicalLocation(region: string): CanonLoc {
   const norm = normLoc(region);
   const code = norm ? matchCode(norm) : null;
-  if (code) {
-    const c = COUNTRIES[code];
-    return { key: code, label: c.ru === c.en ? c.ru : `${c.ru} / ${c.en}` };
-  }
+  if (code) return { key: code, label: countryLabel(code) };
   return { key: `x:${norm}`, label: region.trim() || tg("common.none") };
 }

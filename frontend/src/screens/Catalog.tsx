@@ -3,20 +3,39 @@ import { type CSSProperties, useMemo, useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { useT } from "../lib/i18n";
-import { canonicalLocation } from "../lib/locations";
+import { countryLabel, flagEmoji } from "../lib/locations";
+import {
+  DEFAULT_PLAN_FILTER,
+  type FinderPlan,
+  type PlanFilter,
+  type PlanSort,
+  planLocation,
+  type RankedPlan,
+  rankPlans,
+} from "../lib/planFinder";
+import { PLAN_SOURCES } from "../lib/planSources";
+import {
+  type CatalogFilter,
+  type CatalogSort,
+  cardTags,
+  EMPTY_CATALOG_FILTER,
+  facetCounts,
+  filterProviders,
+  PAYMENT_METHODS,
+  providerBlurb,
+} from "../lib/providerCatalog";
 import {
   currencySymbol,
-  DYNAMIC_PLAN_PROVIDER_LABELS,
   dynamicPlanProviderId,
   fmtMoney,
   fmtPrice,
+  hasLivePlans,
   isDynamicPlanProviderId,
-  monthlyPriceIn,
   planProviderDisplayName,
   planSpecs,
 } from "../lib/providerPlans";
 import * as q from "../lib/queries";
-import type { Provider, ProviderPlan } from "../lib/types";
+import type { PaymentMethod, Provider } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
 
@@ -136,17 +155,6 @@ function PlansModal({
   );
 }
 
-// план + к какому провайдеру относится (для агрегированного подбора по всем провайдерам)
-type FinderPlan = ProviderPlan & { providerId: string; providerLabel: string };
-// плюс месячная цена, приведённая к выбранной валюте (null = пересчёт невозможен — нет курса)
-type RankedPlan = FinderPlan & { monthly: number | null };
-
-// число из инпута диапазона; пустое/некорректное → значение по умолчанию (граница «без ограничения»)
-function numOr(text: string, fallback: number): number {
-  const n = Number(text);
-  return text.trim() !== "" && Number.isFinite(n) ? n : fallback;
-}
-
 // честная подпись про актуальность курса, которым сводим цены к одной валюте
 const FX_SOURCE_NOTE_KEY: Record<string, "catalog.fxNoteCbr" | "catalog.fxNoteCbrStale" | "catalog.fxNoteFallback"> = {
   cbr: "catalog.fxNoteCbr",
@@ -154,9 +162,11 @@ const FX_SOURCE_NOTE_KEY: Record<string, "catalog.fxNoteCbr" | "catalog.fxNoteCb
   fallback: "catalog.fxNoteFallback",
 };
 
-// Подбор тарифа по всем провайдерам: агрегирует их тарифы и фильтрует по локациям, провайдерам, RAM и
-// бюджету. Валюты у провайдеров разные (RUB/USD/EUR) — все цены сводятся к одной валюте за месяц по
-// курсу ЦБ РФ (кэшируется на бэкенде), поэтому бюджет и сортировка работают через провайдеров разом.
+// сколько строк тарифов рисовать сразу: у облаков с десятками локаций тарифов тысячи
+const FINDER_PAGE_SIZE = 100;
+
+// Подбор тарифа по всем провайдерам с живыми тарифами: тянет их тарифы параллельно (по мере загрузки),
+// фильтрует и сортирует через rankPlans (lib/planFinder). Валюты сводятся к одной по курсу ЦБ РФ.
 function PlanFinderModal({
   onPick,
   onClose,
@@ -165,7 +175,7 @@ function PlanFinderModal({
   onClose: () => void;
 }) {
   const t = useT();
-  const providerIds = Object.keys(DYNAMIC_PLAN_PROVIDER_LABELS);
+  const providerIds = PLAN_SOURCES.map((s) => s.id);
   const results = useQueries({
     queries: providerIds.map((pid) => ({
       queryKey: ["providerPlans", pid],
@@ -186,32 +196,36 @@ function PlanFinderModal({
       ),
     [dataVersion],
   );
+  const doneCount = results.filter((r) => !r.isLoading).length;
+  const failed = results.flatMap((r, i) => (r.isError ? [planProviderDisplayName(providerIds[i])] : []));
 
   // курсы к RUB (кэш ЦБ РФ на бэкенде): держим свежими полдня — повторные фетчи ни к чему
   const fx = useQuery({ queryKey: ["fxRates"], queryFn: q.fxRates, staleTime: 6 * 60 * 60 * 1000, retry: 1 });
   const rates = fx.data?.rates ?? {};
 
-  const [regions, setRegions] = useState<string[]>([]);
-  const [providerSel, setProviderSel] = useState<string[]>([]);
-  const [ramMin, setRamMin] = useState("");
-  const [ramMax, setRamMax] = useState("");
-  const [priceMin, setPriceMin] = useState("");
-  const [priceMax, setPriceMax] = useState("");
-  const [priceCur, setPriceCur] = useState("RUB");
-  const [onlyAvailable, setOnlyAvailable] = useState(true);
+  const [filter, setFilter] = useState<PlanFilter>(DEFAULT_PLAN_FILTER);
+  const [limit, setLimit] = useState(FINDER_PAGE_SIZE);
+  const patch = (p: Partial<PlanFilter>) => {
+    setFilter((f) => ({ ...f, ...p }));
+    setLimit(FINDER_PAGE_SIZE);
+  };
 
-  // локации сводим к стране: ОАЭ/UAE/Дубай → одна опция «ОАЭ / UAE» (см. canonicalLocation)
+  // локации сводим к стране: ОАЭ/UAE/Дубай → одна опция «ОАЭ / UAE» (см. planLocation)
   const locationOpts = useMemo<[string, string][]>(() => {
     const byKey = new Map<string, string>();
     for (const p of all) {
-      const { key, label } = canonicalLocation(p.region);
-      if (!byKey.has(key)) byKey.set(key, label);
+      const { key, label } = planLocation(p);
+      if (!byKey.has(key)) byKey.set(key, key.startsWith("x:") ? label : `${flagEmoji(key)} ${label}`);
     }
-    return [...byKey].sort((a, b) => a[1].localeCompare(b[1], "ru"));
+    return [...byKey].sort((a, b) => a[1].replace(/^\S+ /, "").localeCompare(b[1].replace(/^\S+ /, ""), "ru"));
   }, [all]);
   const providerOpts = useMemo<[string, string][]>(
     () =>
       providerIds.filter((id) => all.some((p) => p.providerId === id)).map((id) => [id, planProviderDisplayName(id)]),
+    [all],
+  );
+  const diskTypeOpts = useMemo<[string, string][]>(
+    () => [...new Set(all.map((p) => p.diskType).filter(Boolean))].sort().map((d) => [d, d]),
     [all],
   );
   // валюты для бюджета: встречающиеся у тарифов + RUB (база), чтобы всегда было к чему сводить
@@ -220,26 +234,8 @@ function PlanFinderModal({
     [all],
   );
 
-  const rows = useMemo<RankedPlan[]>(() => {
-    const ramLo = numOr(ramMin, 0);
-    const ramHi = numOr(ramMax, Number.POSITIVE_INFINITY);
-    const priceLo = numOr(priceMin, 0);
-    const priceHi = numOr(priceMax, Number.POSITIVE_INFINITY);
-    const hasPriceBound = priceMin.trim() !== "" || priceMax.trim() !== "";
-    return all
-      .filter((p) => (onlyAvailable ? p.available !== false : true))
-      .filter((p) => (regions.length === 0 ? true : regions.includes(canonicalLocation(p.region).key)))
-      .filter((p) => (providerSel.length === 0 ? true : providerSel.includes(p.providerId)))
-      .filter((p) => p.ramGb >= ramLo && p.ramGb <= ramHi)
-      .map((p) => ({ ...p, monthly: monthlyPriceIn(p, priceCur, rates) }))
-      .filter((p) => (hasPriceBound ? p.monthly != null && p.monthly >= priceLo && p.monthly <= priceHi : true))
-      .sort((a, b) => {
-        // дешёвые сверху; тарифы без пересчёта (нет курса валюты) — в конец списка
-        if (a.monthly == null || b.monthly == null) return (a.monthly == null ? 1 : 0) - (b.monthly == null ? 1 : 0);
-        return a.monthly - b.monthly;
-      });
-    // rates берём по версии fx-запроса, чтобы не пересобирать на каждый рендер из-за нового {}-дефолта
-  }, [all, regions, providerSel, ramMin, ramMax, priceMin, priceMax, priceCur, onlyAvailable, fx.dataUpdatedAt]);
+  // rates берём по версии fx-запроса, чтобы не пересобирать на каждый рендер из-за нового {}-дефолта
+  const rows = useMemo<RankedPlan[]>(() => rankPlans(all, filter, rates), [all, filter, fx.dataUpdatedAt]);
 
   // спиннер — только пока данных совсем нет; дальше показываем результаты по мере подгрузки провайдеров
   const loading = all.length === 0 && results.some((r) => r.isLoading);
@@ -249,85 +245,120 @@ function PlanFinderModal({
   const groupLabel: CSSProperties = { fontSize: 12, marginBottom: 5 };
   const filterGrid: CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
     gap: 10,
   };
+  const numInput = (key: keyof PlanFilter, placeholder: string) => (
+    <input
+      className="input"
+      type="number"
+      min={0}
+      placeholder={placeholder}
+      value={filter[key] as string}
+      onChange={(e) => patch({ [key]: e.target.value })}
+      style={rangeInput}
+    />
+  );
   return (
-    <Modal title={t("catalog.finderTitle")} onClose={onClose} wide>
+    <Modal title={t("catalog.finderTitle")} onClose={onClose} xl>
       <div className="stack" style={{ gap: 12 }}>
-        {/* мультивыборы локаций/провайдеров (с поиском) + переключатель наличия */}
+        <input
+          className="input"
+          type="search"
+          placeholder={t("catalog.finderSearch")}
+          value={filter.query}
+          onChange={(e) => patch({ query: e.target.value })}
+        />
+        {/* мультивыборы локаций/провайдеров/типа диска (с поиском) + переключатели */}
         <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <MultiSelect label={t("catalog.locations")} options={locationOpts} selected={regions} onChange={setRegions} />
+          <MultiSelect
+            label={t("catalog.locations")}
+            options={locationOpts}
+            selected={filter.regions}
+            onChange={(regions) => patch({ regions })}
+          />
           <MultiSelect
             label={t("catalog.providers")}
             options={providerOpts}
-            selected={providerSel}
-            onChange={setProviderSel}
+            selected={filter.providers}
+            onChange={(providers) => patch({ providers })}
           />
-          <label
-            className="rowflex"
-            style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center", marginLeft: "auto" }}
-          >
-            <input type="checkbox" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
+          <MultiSelect
+            label={t("catalog.diskType")}
+            options={diskTypeOpts}
+            selected={filter.diskTypes}
+            onChange={(diskTypes) => patch({ diskTypes })}
+          />
+          <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={filter.unlimitedOnly}
+              onChange={(e) => patch({ unlimitedOnly: e.target.checked })}
+            />
+            {t("catalog.unlimitedOnly")}
+          </label>
+          <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={filter.onlyAvailable}
+              onChange={(e) => patch({ onlyAvailable: e.target.checked })}
+            />
             {t("catalog.onlyAvailable")}
           </label>
+          <select
+            className="input"
+            value={filter.sort}
+            onChange={(e) => patch({ sort: e.target.value as PlanSort })}
+            style={{ ...compactSelect, marginLeft: "auto" }}
+          >
+            <option value="price">{t("catalog.sortPrice")}</option>
+            <option value="pricePerGb">{t("catalog.sortPricePerGb")}</option>
+            <option value="ram">{t("catalog.sortRam")}</option>
+            <option value="cpu">{t("catalog.sortCpu")}</option>
+          </select>
         </div>
 
-        {/* числовые диапазоны: RAM и бюджет за месяц в выбранной валюте */}
+        {/* числовые диапазоны: RAM, CPU, диск, порт и бюджет за месяц в выбранной валюте */}
         <div style={filterGrid}>
           <div>
             <div className="muted-3" style={groupLabel}>
               {t("catalog.ramGb")}
             </div>
-            <div className="rowflex" style={{ gap: 6 }}>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeFrom")}
-                value={ramMin}
-                onChange={(e) => setRamMin(e.target.value)}
-                style={rangeInput}
-              />
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeTo")}
-                value={ramMax}
-                onChange={(e) => setRamMax(e.target.value)}
-                style={rangeInput}
-              />
+            <div style={pairRow}>
+              {numInput("ramMin", t("catalog.rangeFrom"))}
+              {numInput("ramMax", t("catalog.rangeTo"))}
             </div>
+          </div>
+          <div>
+            <div className="muted-3" style={groupLabel}>
+              {t("catalog.cpuMin")}
+            </div>
+            {numInput("cpuMin", t("catalog.rangeFrom"))}
+          </div>
+          <div>
+            <div className="muted-3" style={groupLabel}>
+              {t("catalog.diskMin")}
+            </div>
+            {numInput("diskMin", t("catalog.rangeFrom"))}
+          </div>
+          <div>
+            <div className="muted-3" style={groupLabel}>
+              {t("catalog.portMin")}
+            </div>
+            {numInput("portMin", t("catalog.rangeFrom"))}
           </div>
           <div style={{ gridColumn: "span 2" }}>
             <div className="muted-3" style={groupLabel}>
               {t("catalog.monthlyBudget")}
             </div>
-            <div className="rowflex" style={{ gap: 6 }}>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeFrom")}
-                value={priceMin}
-                onChange={(e) => setPriceMin(e.target.value)}
-                style={rangeInput}
-              />
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeTo")}
-                value={priceMax}
-                onChange={(e) => setPriceMax(e.target.value)}
-                style={rangeInput}
-              />
+            <div style={pairRow}>
+              {numInput("priceMin", t("catalog.rangeFrom"))}
+              {numInput("priceMax", t("catalog.rangeTo"))}
               <select
                 className="input"
-                value={priceCur}
-                onChange={(e) => setPriceCur(e.target.value)}
-                style={{ width: "auto", flex: "none" }}
+                value={filter.currency}
+                onChange={(e) => patch({ currency: e.target.value })}
+                style={{ width: "auto", flex: "none", padding: "11px 8px" }}
               >
                 {currencyOpts.map((c) => (
                   <option key={c} value={c}>
@@ -339,9 +370,14 @@ function PlanFinderModal({
           </div>
         </div>
 
-        <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div
+          className="rowflex"
+          style={{ justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}
+        >
           <span className="muted-3" style={{ fontSize: 12 }}>
-            {fxNote}
+            {t("catalog.loadedProviders", { done: doneCount, total: providerIds.length })}
+            {failed.length > 0 && ` · ${t("catalog.failedProviders", { names: failed.join(", ") })}`}
+            {fxNote && ` · ${fxNote}`}
           </span>
           <span className="muted-3" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
             {t("catalog.foundCount", { n: rows.length })}
@@ -356,7 +392,7 @@ function PlanFinderModal({
           <Empty title={t("catalog.finderEmptyTitle")} sub={t("catalog.finderEmptySub")} />
         ) : (
           <div className="stack" style={{ gap: 8, maxHeight: "56vh", overflowY: "auto" }}>
-            {rows.map((p) => (
+            {rows.slice(0, limit).map((p) => (
               <div
                 key={`${p.providerId}:${p.id}:${p.region}:${p.name}`}
                 className="rowflex"
@@ -383,9 +419,9 @@ function PlanFinderModal({
                 <div className="rowflex" style={{ gap: 10, alignItems: "center", marginLeft: "auto" }}>
                   <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <div style={{ fontWeight: 700, fontSize: 13.5 }}>{fmtPrice(p)}</div>
-                    {p.monthly != null && p.currency !== priceCur && (
+                    {p.monthly != null && (p.currency !== filter.currency || p.period !== "month") && (
                       <div className="muted-3" style={{ fontSize: 11.5 }}>
-                        {t("catalog.approxMonthly", { amount: fmtMoney(p.monthly, priceCur) })}
+                        {t("catalog.approxMonthly", { amount: fmtMoney(p.monthly, filter.currency) })}
                       </div>
                     )}
                   </div>
@@ -402,6 +438,13 @@ function PlanFinderModal({
                 </div>
               </div>
             ))}
+            {rows.length > limit && (
+              <div style={{ display: "flex", justifyContent: "center", padding: 4 }}>
+                <Btn variant="ghost" sm onClick={() => setLimit((n) => n + FINDER_PAGE_SIZE)}>
+                  {t("catalog.showMore", { n: rows.length - limit })}
+                </Btn>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -414,15 +457,64 @@ interface FormState {
   name: string;
   url: string;
   blurb: string;
+  blurbEn: string;
   tags: string;
+  hq: string;
+  countries: string;
+  payments: PaymentMethod[];
 }
 
-const EMPTY: FormState = { name: "", url: "", blurb: "", tags: "" };
+const EMPTY: FormState = {
+  name: "",
+  url: "",
+  blurb: "",
+  blurbEn: "",
+  tags: "",
+  hq: "",
+  countries: "",
+  payments: [],
+};
+
+// сколько карточек рисовать сразу (дальше — «Показать ещё») и сколько флагов локаций на карточке
+const PAGE_SIZE = 48;
+const MAX_FLAGS = 10;
+
+// опции мультивыбора стран: «🇩🇪 Германия / Germany · 12» (12 — сколько провайдеров там есть)
+function countryOptions(lists: string[][]): [string, string][] {
+  return facetCounts(lists).map(([code, n]) => [code, `${flagEmoji(code)} ${countryLabel(code)} · ${n}`]);
+}
+
+// селект в ряду фильтров — по высоте как кнопки-мультивыборы, а не как поле формы
+const compactSelect: CSSProperties = { width: "auto", padding: "6px 10px", fontSize: 13 };
+// пара полей «от/до» в одну строку (общий .rowflex переносит их в столбик на узких ячейках)
+const pairRow: CSSProperties = { display: "flex", gap: 6, alignItems: "center" };
+
+const chipStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  padding: "4px 9px",
+  borderRadius: 999,
+  background: "var(--surface-2)",
+  color: "var(--text-2)",
+};
+const outlineChipStyle: CSSProperties = {
+  ...chipStyle,
+  background: "transparent",
+  border: "1px solid var(--border-strong)",
+};
+
+// строка «a, b, c» из формы → список без пустых
+const splitList = (text: string) =>
+  text
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 export function CatalogScreen() {
   const t = useT();
   const go = useNav((s) => s.go);
   const isAdmin = useStore((s) => s.me?.isAdmin ?? false);
+  const lang = useStore((s) => s.lang);
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
 
@@ -432,10 +524,34 @@ export function CatalogScreen() {
   });
 
   const [form, setForm] = useState<FormState | null>(null);
+  const [filter, setFilter] = useState<CatalogFilter>(EMPTY_CATALOG_FILTER);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  // любое изменение фильтра — снова с первой «страницы», чтобы не держать сотни карточек в DOM
+  const patchFilter = (patch: Partial<CatalogFilter>) => {
+    setFilter((f) => ({ ...f, ...patch }));
+    setLimit(PAGE_SIZE);
+  };
+  const all = providers ?? [];
+  const shown = useMemo(() => filterProviders(all, filter, hasLivePlans), [all, filter]);
+  const countryOpts = useMemo(() => countryOptions(all.map((p) => p.countries)), [all]);
+  const hqOpts = useMemo(() => countryOptions(all.map((p) => (p.hq ? [p.hq] : []))), [all]);
+  const paymentOpts: [string, string][] = PAYMENT_METHODS.filter((m) => all.some((p) => p.payments.includes(m))).map(
+    (m) => [m, t(`pay.${m}`)],
+  );
+  const filtered =
+    filter.query.trim() !== "" ||
+    filter.countries.length > 0 ||
+    filter.payments.length > 0 ||
+    filter.hq.length > 0 ||
+    filter.liveOnly;
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [plansFor, setPlansFor] = useState<{ pid: string; provider: Provider } | null>(null);
   const [showFinder, setShowFinder] = useState(false);
-  const set = (k: keyof FormState, v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  const set = (k: Exclude<keyof FormState, "payments">, v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  const togglePayment = (m: PaymentMethod) =>
+    setForm((f) =>
+      f ? { ...f, payments: f.payments.includes(m) ? f.payments.filter((x) => x !== m) : [...f.payments, m] } : f,
+    );
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["providers"] });
 
@@ -445,10 +561,11 @@ export function CatalogScreen() {
         name: f.name,
         url: f.url,
         blurb: f.blurb,
-        tags: f.tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
+        blurbEn: f.blurbEn,
+        tags: splitList(f.tags),
+        hq: f.hq.trim().toUpperCase(),
+        countries: splitList(f.countries).map((c) => c.toUpperCase()),
+        payments: f.payments,
       };
       return f.id ? q.adminUpdateProvider(f.id, body) : q.adminCreateProvider(body);
     },
@@ -472,7 +589,17 @@ export function CatalogScreen() {
 
   const openCreate = () => setForm({ ...EMPTY });
   const openEdit = (p: Provider) =>
-    setForm({ id: p.id, name: p.name, url: p.url, blurb: p.blurb, tags: p.tags.join(", ") });
+    setForm({
+      id: p.id,
+      name: p.name,
+      url: p.url,
+      blurb: p.blurb,
+      blurbEn: p.blurbEn,
+      tags: p.tags.join(", "),
+      hq: p.hq,
+      countries: p.countries.join(", "),
+      payments: p.payments,
+    });
 
   return (
     <div className="stack">
@@ -500,7 +627,7 @@ export function CatalogScreen() {
         <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
           <Spinner />
         </div>
-      ) : !providers || providers.length === 0 ? (
+      ) : all.length === 0 ? (
         <Empty
           title={t("catalog.emptyTitle")}
           sub={t("catalog.emptySub")}
@@ -513,89 +640,203 @@ export function CatalogScreen() {
           }
         />
       ) : (
-        <div className="grid">
-          {providers.map((p) => (
-            <div key={p.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    background: "var(--surface-2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 800,
-                    fontSize: 17,
-                    color: "var(--text-2)",
-                    flex: "none",
-                  }}
-                >
-                  {(p.name || "?").trim().slice(0, 2).toUpperCase()}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-.01em" }}>{p.name}</div>
-                </div>
-                {isAdmin && (
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <Btn variant="ghost" sm onClick={() => openEdit(p)}>
-                      <Icon name="edit" size={16} />
-                    </Btn>
-                    <Btn variant="ghost" sm onClick={() => setConfirmId(p.id)}>
-                      <Icon name="trash" size={16} />
-                    </Btn>
-                  </div>
-                )}
-              </div>
-
-              <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.45, minHeight: 38, margin: 0 }}>
-                {p.blurb}
-              </p>
-
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 24 }}>
-                {p.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      padding: "4px 9px",
-                      borderRadius: 999,
-                      background: "var(--surface-2)",
-                      color: "var(--text-2)",
-                    }}
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-
-              {/* действия: основная — «Перейти и купить» на всю ширину; ниже — второй ряд */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: "auto" }}>
-                <a href={p.url} target="_blank" rel="noopener" style={primaryAction}>
-                  {t("catalog.goAndBuy")}
-                  <Icon name="external" size={15} />
-                </a>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name)) && (
-                    <button
-                      type="button"
-                      onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
-                      title={t("catalog.currentTariffsTitle")}
-                      style={secondaryAction}
-                    >
-                      {t("catalog.tariffs")}
-                    </button>
-                  )}
-                  <button type="button" onClick={() => go("serverForm", { provider: p.name })} style={secondaryAction}>
-                    {t("catalog.alreadyHave")}
-                  </button>
-                </div>
-              </div>
+        <>
+          <div className="stack" style={{ gap: 10 }}>
+            <div style={{ position: "relative" }}>
+              <span
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", display: "flex" }}
+                className="muted-3"
+              >
+                <Icon name="search" size={16} />
+              </span>
+              <input
+                className="input"
+                type="search"
+                placeholder={t("catalog.searchPlaceholder")}
+                value={filter.query}
+                onChange={(e) => patchFilter({ query: e.target.value })}
+                style={{ paddingLeft: 36, width: "100%", boxSizing: "border-box" }}
+              />
             </div>
-          ))}
-        </div>
+            <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <MultiSelect
+                label={t("catalog.locations")}
+                options={countryOpts}
+                selected={filter.countries}
+                onChange={(countries) => patchFilter({ countries })}
+              />
+              <MultiSelect
+                label={t("catalog.payments")}
+                options={paymentOpts}
+                selected={filter.payments}
+                onChange={(payments) => patchFilter({ payments: payments as PaymentMethod[] })}
+              />
+              <MultiSelect
+                label={t("catalog.hq")}
+                options={hqOpts}
+                selected={filter.hq}
+                onChange={(hq) => patchFilter({ hq })}
+              />
+              <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={filter.liveOnly}
+                  onChange={(e) => patchFilter({ liveOnly: e.target.checked })}
+                />
+                {t("catalog.liveOnly")}
+              </label>
+              <select
+                className="input"
+                value={filter.sort}
+                onChange={(e) => patchFilter({ sort: e.target.value as CatalogSort })}
+                style={{ ...compactSelect, marginLeft: "auto" }}
+              >
+                <option value="catalog">{t("catalog.sortCatalog")}</option>
+                <option value="name">{t("catalog.sortName")}</option>
+                <option value="locations">{t("catalog.sortLocations")}</option>
+              </select>
+            </div>
+            <div className="rowflex" style={{ gap: 10, alignItems: "center" }}>
+              <span className="muted-3" style={{ fontSize: 12 }}>
+                {t("catalog.shownOf", { n: shown.length, total: all.length })}
+              </span>
+              {filtered && (
+                <Btn variant="ghost" sm onClick={() => patchFilter({ ...EMPTY_CATALOG_FILTER, sort: filter.sort })}>
+                  {t("catalog.resetFilters")}
+                </Btn>
+              )}
+            </div>
+          </div>
+
+          {shown.length === 0 ? (
+            <Empty title={t("catalog.nothingFoundTitle")} sub={t("catalog.nothingFoundSub")} />
+          ) : (
+            <div className="grid">
+              {shown.slice(0, limit).map((p) => (
+                <div key={p.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        background: "var(--surface-2)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 800,
+                        fontSize: 17,
+                        color: "var(--text-2)",
+                        flex: "none",
+                      }}
+                    >
+                      {(p.name || "?").trim().slice(0, 2).toUpperCase()}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-.01em" }}>{p.name}</div>
+                    </div>
+                    {isAdmin && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Btn variant="ghost" sm onClick={() => openEdit(p)}>
+                          <Icon name="edit" size={16} />
+                        </Btn>
+                        <Btn variant="ghost" sm onClick={() => setConfirmId(p.id)}>
+                          <Icon name="trash" size={16} />
+                        </Btn>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.45, minHeight: 38, margin: 0 }}>
+                    {providerBlurb(p, lang)}
+                  </p>
+
+                  {p.countries.length > 0 && (
+                    <div
+                      title={p.countries.map(countryLabel).join(", ")}
+                      style={{
+                        fontSize: 16,
+                        lineHeight: 1.3,
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 4,
+                        alignItems: "center",
+                      }}
+                    >
+                      {p.countries.slice(0, MAX_FLAGS).map((c) => (
+                        <span key={c}>{flagEmoji(c)}</span>
+                      ))}
+                      {p.countries.length > MAX_FLAGS && (
+                        <span className="muted-3" style={{ fontSize: 12, fontWeight: 600 }}>
+                          +{p.countries.length - MAX_FLAGS}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 24 }}>
+                    {hasLivePlans(p) && (
+                      <span
+                        style={{
+                          ...chipStyle,
+                          background: "var(--ok-soft)",
+                          color: "var(--ok)",
+                        }}
+                      >
+                        {t("catalog.liveBadge")}
+                      </span>
+                    )}
+                    {p.payments.map((m) => (
+                      <span key={m} style={outlineChipStyle}>
+                        {t(`pay.${m}`)}
+                      </span>
+                    ))}
+                    {cardTags(p, lang).map((tag) => (
+                      <span key={tag} style={chipStyle}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* действия: основная — «Перейти и купить» на всю ширину; ниже — второй ряд */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: "auto" }}>
+                    <a href={p.url} target="_blank" rel="noopener" style={primaryAction}>
+                      {t("catalog.goAndBuy")}
+                      <Icon name="external" size={15} />
+                    </a>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name)) && (
+                        <button
+                          type="button"
+                          onClick={() => setPlansFor({ pid: dynamicPlanProviderId(p, p.name), provider: p })}
+                          title={t("catalog.currentTariffsTitle")}
+                          style={secondaryAction}
+                        >
+                          {t("catalog.tariffs")}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => go("serverForm", { provider: p.name })}
+                        style={secondaryAction}
+                      >
+                        {t("catalog.alreadyHave")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {shown.length > limit && (
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Btn variant="ghost" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+                {t("catalog.showMore", { n: shown.length - limit })}
+              </Btn>
+            </div>
+          )}
+        </>
       )}
 
       {showFinder && (
@@ -661,6 +902,48 @@ export function CatalogScreen() {
               value={form.blurb}
               onChange={(e) => set("blurb", e.target.value)}
             />
+          </Field>
+          <Field label={t("catalog.blurbEnLabel")}>
+            <textarea
+              className="input"
+              rows={3}
+              style={{ resize: "vertical", lineHeight: 1.5, minHeight: 78 }}
+              value={form.blurbEn}
+              onChange={(e) => set("blurbEn", e.target.value)}
+            />
+          </Field>
+          <Field label={t("catalog.countriesLabel")}>
+            <input
+              className="input"
+              placeholder={t("catalog.countriesPlaceholder")}
+              value={form.countries}
+              onChange={(e) => set("countries", e.target.value)}
+            />
+          </Field>
+          <Field label={t("catalog.hqLabel")}>
+            <input
+              className="input"
+              maxLength={2}
+              placeholder="RU"
+              value={form.hq}
+              onChange={(e) => set("hq", e.target.value)}
+              style={{ width: 90 }}
+            />
+          </Field>
+          <Field label={t("catalog.paymentsLabel")}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`chip${form.payments.includes(m) ? " selected" : ""}`}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => togglePayment(m)}
+                >
+                  {t(`pay.${m}`)}
+                </button>
+              ))}
+            </div>
           </Field>
           <Field label={t("catalog.tagsLabel")}>
             <input

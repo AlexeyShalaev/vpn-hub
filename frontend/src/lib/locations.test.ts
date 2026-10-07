@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalLocation, normLoc } from "./locations";
+import { canonicalLocation, countryLabel, flagEmoji, normLoc } from "./locations";
 
 describe("location canonicalization", () => {
   it("normalizes case, ё, brackets and punctuation", () => {
@@ -95,6 +95,34 @@ describe("location canonicalization", () => {
   });
 
   it("does not merge a generic 'Republic' into Czech Republic", () => {
-    expect(canonicalLocation("Dominican Republic").key.startsWith("x:")).toBe(true);
+    expect(canonicalLocation("Dominican Republic").key).toBe("DO");
+    expect(canonicalLocation("Republic").key.startsWith("x:")).toBe(true);
+  });
+});
+
+describe("world-wide country coverage", () => {
+  it.each([
+    ["Lisbon, Portugal", "PT"],
+    ["Португалия", "PT"],
+    ["Hanoi, Vietnam", "VN"],
+    ["Manila, Philippines", "PH"],
+    ["Tbilisi", "GE"],
+    ["Грузия", "GE"],
+    ["Atlanta, Georgia, USA", "US"], // штат Джорджия не путаем со страной
+    ["Нью-Джерси", "US"], // и Нью-Джерси — с островом Джерси
+    ["New Jersey", "US"],
+  ])("maps %s to %s", (region, code) => {
+    expect(canonicalLocation(region).key).toBe(code);
+  });
+
+  it("labels any ISO code bilingually and keeps manual labels", () => {
+    expect(countryLabel("pt")).toBe("Португалия / Portugal");
+    expect(countryLabel("AE")).toBe("ОАЭ / UAE");
+    expect(countryLabel("XX")).toBe("XX");
+  });
+
+  it("builds flag emoji from a country code", () => {
+    expect(flagEmoji("de")).toBe("🇩🇪");
+    expect(flagEmoji("nope")).toBe("");
   });
 });

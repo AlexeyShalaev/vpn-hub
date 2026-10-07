@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PLAN_SOURCES } from "./planSources";
 import {
   convertAmount,
   currencySymbol,
@@ -28,15 +29,12 @@ const basePlan: ProviderPlan = {
   period: "month",
 };
 
-const providers: Provider[] = [
-  { id: "firstbyte", name: "FirstByte", url: "", blurb: "", tags: [] },
-  { id: "ufo", name: "UFO Hosting", url: "", blurb: "", tags: [] },
-  { id: "ishosting", name: "ISHOSTING", url: "", blurb: "", tags: [] },
-  { id: "ahost", name: "AHost", url: "", blurb: "", tags: [] },
-  { id: "serverspace", name: "Serverspace", url: "", blurb: "", tags: [] },
-  { id: "ultahost", name: "UltaHost", url: "", blurb: "", tags: [] },
-  { id: "62yun", name: "62YUN", url: "", blurb: "", tags: [] },
-];
+function provider(id: string, name: string): Provider {
+  return { id, name, url: "", blurb: "", blurbEn: "", tags: [], hq: "", countries: [], payments: [] };
+}
+
+// каталог «как у пользователя»: по провайдеру на каждый источник живых тарифов
+const providers: Provider[] = PLAN_SOURCES.map((s) => provider(s.id, s.label));
 
 describe("provider plan helpers", () => {
   it.each([
