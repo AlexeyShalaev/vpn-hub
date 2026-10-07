@@ -13,30 +13,32 @@ BILLmanager — это только адрес его биллинга (`Billman
 
 from __future__ import annotations
 
-import asyncio
+import contextlib
 import html as html_lib
+import io
 import re
 import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, BinaryIO, Protocol, cast
 
 import certifi
 import structlog
 
 from .common import _speed_mbps, _storage_type_from_text, make_plan, sort_plans
-from .http import _USER_AGENT
+from .http import _USER_AGENT, run_io
 from .whmcs import _parse_specs, _segments, _spec_lines
 
 log = structlog.get_logger(__name__)
 
-# выгрузка бывает на десятки мегабайт и собирается биллингом секундами — ждём дольше обычного
-_TIMEOUT = 45.0
+# выгрузка бывает на десятки мегабайт и собирается биллингом десятками секунд — ждём дольше обычного
+_TIMEOUT = 60.0
 _MAX_BYTES = 40_000_000
+_HEAD_BYTES = 65_536
 _TAG_RE = re.compile(r"<[^>]+>")
 _DTD_RE = re.compile(r"<!DOCTYPE", re.I)
 
@@ -196,80 +198,123 @@ def _datacenters(pricelist: ET.Element, default_region: str) -> list[tuple[str, 
     return out or ([("", default_region)] if default_region else [])
 
 
-def parse_billmanager_export(provider_id: str, source: BillmanagerSource, xml_text: str) -> list[dict[str, Any]]:
-    """Тарифы VDS из XML-выгрузки прайс-листа BILLmanager."""
-    # Выгрузка приходит со стороннего сервера. DTD в ней не бывает, а через DTD/сущности идут XML-атаки
-    # (billion laughs, внешние сущности) — такие документы просто не разбираем.
-    if _DTD_RE.search(xml_text[:4096]) or "<!ENTITY" in xml_text:
+class _Readable(Protocol):
+    def read(self, size: int = -1, /) -> bytes: ...
+
+
+class _CappedStream:
+    """Поток ответа «голова + остаток» с потолком размера: выгрузку читаем потоково, не держа её целиком."""
+
+    def __init__(self, head: bytes, rest: BinaryIO, cap: int) -> None:
+        self._head = head
+        self._rest = rest
+        self._left = cap - len(head)
+
+    def read(self, size: int = -1) -> bytes:
+        if self._head:
+            chunk, self._head = self._head, b""
+            return chunk
+        if self._left <= 0:
+            return b""
+        chunk = self._rest.read(self._left if size < 0 else min(size, self._left))
+        self._left -= len(chunk)
+        return chunk
+
+
+def _iter_pricelists(stream: _Readable) -> Iterator[ET.Element]:
+    """Тарифы верхнего уровня потоком: выгрузка бывает на 10+ МБ, целиком в дерево её не строим —
+    каждый обработанный `<pricelist>` очищается, и память держит только текущий тариф."""
+    depth = 0
+    for event, elem in ET.iterparse(stream, events=("start", "end")):  # noqa: S314 — DTD отсечён заранее
+        if event == "start":
+            depth += 1
+            continue
+        depth -= 1
+        if depth == 1 and elem.tag == "pricelist":
+            yield elem
+            elem.clear()
+
+
+def _pricelist_plans(provider_id: str, source: BillmanagerSource, pl: ET.Element) -> list[dict[str, Any]]:
+    if _text(pl, "active") != "on" or "on" in {_text(pl, "hideinorder"), _text(pl, "archived")}:
+        return []
+    intname = _text(pl.find("itemtype_info"), "intname")
+    if intname and intname != source.itemtype:
+        return []
+    price_el = pl.find("price")
+    cost = _monthly_cost(price_el)
+    currency = (price_el.get("currency") if price_el is not None else "") or ""
+    name = _text(pl, "name_ru") or _text(pl, "name")
+    description = _text(pl, "description_ru") or _text(pl, "description")
+    specs = _addon_specs(pl.findall("addon"))
+    if not (specs.cpu and specs.ram_gb and specs.disk_gb):
+        specs = _description_specs(f"{name}<br>{description}", specs)
+    if not name or not cost or cost <= 0 or not currency or not specs.cpu or not specs.ram_gb or not specs.disk_gb:
+        return []
+    about = _plain(f"{name} {description}")
+    disk_type = _storage_type_from_text(about) or specs.disk_hint or source.disk_type
+    return [
+        make_plan(
+            plan_id=f"{provider_id}-{_text(pl, 'id')}" + (f"-{dc_id}" if dc_id else ""),
+            name=f"{name} · {region}",
+            region=region,
+            country=_dc_country(source, region),
+            cpu=specs.cpu,
+            ram_gb=round(specs.ram_gb, 2),
+            disk_gb=round(specs.disk_gb),
+            disk_type=disk_type,
+            port_mbps=specs.port_mbps,
+            traffic_tb=specs.traffic_tb,
+            traffic_known=specs.traffic_known,
+            price=cost,
+            currency=currency.upper(),
+            source_url=source.site_url,
+        )
+        for dc_id, region in _datacenters(pl, source.default_region)
+    ]
+
+
+def _parse_stream(provider_id: str, source: BillmanagerSource, stream: BinaryIO) -> list[dict[str, Any]]:
+    # Выгрузка приходит со стороннего сервера. DTD в ней не бывает, а через DTD (внутренние сущности)
+    # идут XML-атаки вроде billion laughs. DTD допустим только в прологе, до корневого элемента, —
+    # поэтому достаточно проверить начало документа; DTD дальше — уже не well-formed XML.
+    head = stream.read(_HEAD_BYTES)
+    if _DTD_RE.search(head.decode("utf-8", "replace")):
         log.warning("provider_plans_billmanager_dtd_rejected", provider=provider_id)
         return []
+    plans: list[dict[str, Any]] = []
     try:
-        root = ET.fromstring(xml_text)  # noqa: S314 — DTD/ENTITY отсечены выше
+        for pl in _iter_pricelists(_CappedStream(head, stream, _MAX_BYTES)):
+            plans.extend(_pricelist_plans(provider_id, source, pl))
     except ET.ParseError:
         return []
-    plans: list[dict[str, Any]] = []
-    for pl in root.findall("pricelist"):
-        if _text(pl, "active") != "on" or "on" in {_text(pl, "hideinorder"), _text(pl, "archived")}:
-            continue
-        intname = _text(pl.find("itemtype_info"), "intname")
-        if intname and intname != source.itemtype:
-            continue
-        price_el = pl.find("price")
-        cost = _monthly_cost(price_el)
-        currency = (price_el.get("currency") if price_el is not None else "") or ""
-        name = _text(pl, "name_ru") or _text(pl, "name")
-        description = _text(pl, "description_ru") or _text(pl, "description")
-        specs = _addon_specs(pl.findall("addon"))
-        if not (specs.cpu and specs.ram_gb and specs.disk_gb):
-            specs = _description_specs(f"{name}<br>{description}", specs)
-        if not name or not cost or cost <= 0 or not currency or not specs.cpu or not specs.ram_gb or not specs.disk_gb:
-            continue
-        about = _plain(f"{name} {description}")
-        disk_type = _storage_type_from_text(about) or specs.disk_hint or source.disk_type
-        for dc_id, region in _datacenters(pl, source.default_region):
-            plans.append(
-                make_plan(
-                    plan_id=f"{provider_id}-{_text(pl, 'id')}" + (f"-{dc_id}" if dc_id else ""),
-                    name=f"{name} · {region}",
-                    region=region,
-                    country=_dc_country(source, region),
-                    cpu=specs.cpu,
-                    ram_gb=round(specs.ram_gb, 2),
-                    disk_gb=round(specs.disk_gb),
-                    disk_type=disk_type,
-                    port_mbps=specs.port_mbps,
-                    traffic_tb=specs.traffic_tb,
-                    traffic_known=specs.traffic_known,
-                    price=cost,
-                    currency=currency.upper(),
-                    source_url=source.site_url,
-                )
-            )
     return sort_plans(plans)
 
 
-def _download(url: str, timeout: float) -> str:
+def parse_billmanager_export(provider_id: str, source: BillmanagerSource, xml_text: str) -> list[dict[str, Any]]:
+    """Тарифы VDS из XML-выгрузки прайс-листа BILLmanager."""
+    return _parse_stream(provider_id, source, io.BytesIO(xml_text.encode("utf-8")))
+
+
+def _open_export(url: str, timeout: float) -> BinaryIO:
     req = urllib.request.Request(  # noqa: S310 — адрес биллинга из конфига провайдеров
         url, headers={"User-Agent": _USER_AGENT, "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8"}
     )
     ctx = ssl.create_default_context(cafile=certifi.where())
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:  # noqa: S310
-        body: bytes = resp.read(_MAX_BYTES)
-        return body.decode(resp.headers.get_content_charset() or "utf-8", "replace")
+    return cast(BinaryIO, urllib.request.urlopen(req, timeout=timeout, context=ctx))  # noqa: S310
 
 
-async def _fetch_export(url: str, timeout: float) -> str:
-    return await asyncio.to_thread(_download, url, timeout)
+def _download_plans(provider_id: str, source: BillmanagerSource, timeout: float) -> list[dict[str, Any]]:
+    with contextlib.closing(_open_export(export_url(source), timeout)) as resp:
+        return _parse_stream(provider_id, source, resp)
 
 
 async def fetch_billmanager_plans(
     provider_id: str, source: BillmanagerSource, timeout: float = _TIMEOUT
 ) -> list[dict[str, Any]]:
-    """Скачать публичный прайс BILLmanager провайдера и вернуть VDS-тарифы."""
-    url = export_url(source)
+    """Скачать (потоково) публичный прайс BILLmanager провайдера и вернуть VDS-тарифы."""
     try:
-        xml_text = await _fetch_export(url, timeout)
+        return await run_io(_download_plans, provider_id, source, timeout)
     except (TimeoutError, OSError, UnicodeDecodeError, urllib.error.URLError) as exc:
-        log.warning("provider_plans_fetch_failed", provider=provider_id, url=url, error=str(exc))
+        log.warning("provider_plans_fetch_failed", provider=provider_id, url=export_url(source), error=str(exc))
         return []
-    return await asyncio.to_thread(parse_billmanager_export, provider_id, source, xml_text)

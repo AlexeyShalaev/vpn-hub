@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import re
 from pathlib import Path
@@ -1569,13 +1570,13 @@ def test__billmanager_export_url__asks_for_available_vds_only() -> None:
 async def test__fetch_billmanager_plans__downloads_and_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
 
-    async def fake_fetch_export(url: str, timeout: float) -> str:
+    def fake_open_export(url: str, timeout: float) -> io.BytesIO:
         calls.append(url)
         if "down" in url:
             raise TimeoutError
-        return BM_EXPORT
+        return io.BytesIO(BM_EXPORT.encode())
 
-    monkeypatch.setattr(provider_plans.billmanager, "_fetch_export", fake_fetch_export)
+    monkeypatch.setattr(provider_plans.billmanager, "_open_export", fake_open_export)
     ok = provider_plans.BillmanagerSource("https://up.example/billmgr", "https://up.example", default_region="Россия")
     down = provider_plans.BillmanagerSource("https://down.example/billmgr", "https://down.example")
 
@@ -1665,3 +1666,17 @@ def test__whmcs_parse_specs__multilingual_and_odd_layouts(
     specs = _parse_specs(lines)
 
     assert (specs.cpu, specs.ram_gb, specs.disk_gb, specs.traffic_tb, specs.port_mbps) == expected
+
+
+def test__parse_billmanager_export__streams_large_documents_without_dtd_check_false_positives() -> None:
+    """Тарифы за пределами первых 64 КБ тоже читаются; «<!ENTITY» в тексте описания — не DTD."""
+    source = provider_plans.BillmanagerSource(
+        "https://my.example.ru/billmgr", "https://example.ru", default_region="Россия", country="RU"
+    )
+    filler = "".join(_bm_pricelist(i, f"Скрытый {i}", "1.0000", "", hideinorder="on") for i in range(1, 400))
+    doc = BM_EXPORT.replace("<doc>", "<doc>" + filler).replace("Взлёт", "Взлёт &lt;!ENTITY&gt;")
+
+    plans = provider_plans.parse_billmanager_export("x", source, doc)
+
+    assert len(doc.encode()) > 65_536
+    assert len(plans) == 4
