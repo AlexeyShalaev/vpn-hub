@@ -1586,3 +1586,51 @@ def test__parse_billmanager_export__rejects_documents_with_dtd() -> None:
     bomb = '<?xml version="1.0"?><!DOCTYPE doc [<!ENTITY a "aaaa">]>' + BM_EXPORT
 
     assert provider_plans.parse_billmanager_export("x", source, bomb) == []
+
+
+# --- 4VPS (публичный POST getTariffs) -----------------------------------------------------------
+
+FOURVPS_HOME = """
+<div class="grid__block selectCountry" data-country="Нидерланды" data-panel-id="1" data-cluster="5">NL</div>
+<div class="grid__block selectCountry" data-country="Германия" data-panel-id="1" data-cluster="8">DE</div>
+<div class="grid__block selectCountry" data-country="Нидерланды" data-panel-id="1" data-cluster="5">дубль</div>
+"""
+FOURVPS_TARIFFS = {
+    "error": False,
+    "data": [
+        {"id": 13, "name": "NL-cx01", "cpu_number": 1, "ram_mib": 1, "rom": 10, "eth": "2Gbit/s", "price": 472,
+         "sold_out": False},
+        {"id": 14, "name": "NL-cx11", "cpu_number": 1, "ram_mib": 2048, "rom": 20, "eth": "1Gbit/s", "price": 616,
+         "sold_out": True},
+    ],
+}  # fmt: skip
+
+
+def test__discover_fourvps_clusters__reads_country_buttons_once() -> None:
+    clusters = provider_plans.discover_fourvps_clusters(FOURVPS_HOME)
+
+    assert [(c.country, c.panel_id, c.cluster) for c in clusters] == [("Нидерланды", "1", "5"), ("Германия", "1", "8")]
+
+
+async def test__fetch_fourvps_plans__posts_month_period_per_cluster(monkeypatch: pytest.MonkeyPatch) -> None:
+    forms: list[dict[str, str]] = []
+
+    async def fake_home(url: str, timeout: float) -> str:
+        return FOURVPS_HOME
+
+    async def fake_post(url: str, form: dict[str, str], timeout: float) -> str:
+        forms.append(dict(form))
+        return json.dumps(FOURVPS_TARIFFS)
+
+    monkeypatch.setattr(provider_plans.fourvps, "_fetch_browser_url", fake_home)
+    monkeypatch.setattr(provider_plans.fourvps, "_post_form_url", fake_post)
+
+    plans = await provider_plans.fetch_fourvps_plans()
+
+    assert sorted(f["cluster"] for f in forms) == ["5", "8"]
+    assert all(f["period"] == "720" and f["panelId"] == "1" for f in forms)
+    nl = {p["id"]: p for p in plans if p["region"] == "Нидерланды"}
+    cheap, sold = nl["4vps-5-nl-cx01"], nl["4vps-5-nl-cx11"]
+    assert (cheap["cpu"], cheap["ramGb"], cheap["diskGb"], cheap["portMbps"], cheap["price"]) == (1, 1, 10, 2000, 472.0)
+    assert (cheap["currency"], cheap["available"]) == ("RUB", True)
+    assert (sold["ramGb"], sold["available"]) == (2, False)  # МиБ → ГБ, распродан

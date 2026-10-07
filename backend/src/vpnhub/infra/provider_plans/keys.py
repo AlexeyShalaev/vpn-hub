@@ -32,6 +32,7 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("vultr", "Vultr", ("vultr.com",)),
     PlanSource("linode", "Akamai (Linode)", ("linode", "linode.com", "akamai", "akamai cloud")),
     PlanSource("cherry-servers", "Cherry Servers", ("cherry", "cherryservers.com")),
+    PlanSource("4vps", "4VPS", ("4vps.su", "fourvps")),
     # WHMCS-витрины (providers/whmcs_stores.py)
     PlanSource("edis-global", "EDIS Global", ("edis", "edisglobal.com")),
     PlanSource("flokinet", "FlokiNET", ("flokinet.is",)),

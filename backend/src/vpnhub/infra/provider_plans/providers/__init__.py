@@ -23,6 +23,7 @@ __all__ = [
     "beget",
     "cherry",
     "firstbyte",
+    "fourvps",
     "hetzner",
     "ishosting",
     "linode",
