@@ -5,6 +5,7 @@ import { ApiError } from "../lib/api";
 import type { ParsedServerInfo } from "../lib/credentialParse";
 import { parseServerInfo } from "../lib/credentialParse";
 import { type TKey, useT } from "../lib/i18n";
+import { providerBlurb } from "../lib/providerCatalog";
 import {
   dynamicPlanProviderId,
   dynamicPlanProviderIdByName,
@@ -193,6 +194,7 @@ export function ServerFormScreen() {
   const params = useNav((s) => s.params);
   const go = useNav((s) => s.go);
   const toast = useStore((s) => s.toast);
+  const lang = useStore((s) => s.lang);
   const qc = useQueryClient();
 
   const serverId = params.serverId;
@@ -628,7 +630,9 @@ export function ServerFormScreen() {
                   <div style={{ fontWeight: 700, fontSize: 15.5 }}>{selProvider.name}</div>
                 </div>
               </div>
-              <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.45, margin: 0 }}>{selProvider.blurb}</p>
+              <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.45, margin: 0 }}>
+                {providerBlurb(selProvider, lang)}
+              </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {selProvider.tags.map((t) => (
                   <span

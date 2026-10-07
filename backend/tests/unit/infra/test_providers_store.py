@@ -168,7 +168,19 @@ def test__create__persists_fields_to_file(empty_store: ProviderStore, providers_
     empty_store.create({"name": "Acme", "url": "https://acme.example", "blurb": "хостинг", "tags": ["A"]})
     # Assert
     on_disk = yaml.safe_load(providers_path.read_text(encoding="utf-8"))
-    assert on_disk == [{"id": "acme", "name": "Acme", "url": "https://acme.example", "blurb": "хостинг", "tags": ["A"]}]
+    assert on_disk == [
+        {
+            "id": "acme",
+            "name": "Acme",
+            "url": "https://acme.example",
+            "blurb": "хостинг",
+            "blurbEn": "",
+            "tags": ["A"],
+            "hq": "",
+            "countries": [],
+            "payments": [],
+        }
+    ]
 
 
 # --- list -----------------------------------------------------------------
@@ -313,6 +325,35 @@ def test__norm__missing_optional_fields__defaults_to_empty_strings(empty_store: 
     assert item["blurb"] == ""
 
 
+@pytest.mark.parametrize(
+    ("countries", "expected"),
+    [
+        (["de", "NL", "de", "Germany", "U"], ["DE", "NL"]),
+        ([False, "se"], ["NO", "SE"]),  # голый NO в YAML 1.1 = false
+        ("us, fi ,xx1", ["US", "FI"]),
+        (None, []),
+    ],
+)
+def test__norm__countries__uppercased_deduped_and_validated(
+    empty_store: ProviderStore, countries: object, expected: list[str]
+) -> None:
+    """Локации — ISO-коды стран: из списка или строки через запятую, мусор отбрасывается."""
+    item = empty_store.create({"name": "T", "countries": countries})
+    assert item["countries"] == expected
+
+
+def test__norm__payments__known_methods_in_canonical_order(empty_store: ProviderStore) -> None:
+    """Способы оплаты фильтруются по известному набору и идут в каноническом порядке."""
+    item = empty_store.create({"name": "T", "payments": "crypto, SBP, gold, ru_card"})
+    assert item["payments"] == ["ru_card", "sbp", "crypto"]
+
+
+def test__norm__hq__must_be_country_code(empty_store: ProviderStore) -> None:
+    """Страна компании — двухбуквенный код; иначе пусто."""
+    assert empty_store.create({"name": "A", "hq": "ru"})["hq"] == "RU"
+    assert empty_store.create({"name": "B", "hq": "Russia"})["hq"] == ""
+
+
 # --- sync_default_providers (домердж новых дефолтов при обновлении версии) --------------------
 
 
@@ -400,3 +441,64 @@ def test__sync__idempotent(local_settings: Settings, providers_path: Path) -> No
 
     assert first > 0
     assert second == 0
+
+
+def _default_by_id(pid: str) -> dict:
+    return next(p for p in yaml.safe_load(_DEFAULT.read_text(encoding="utf-8")) if p.get("id") == pid)
+
+
+def test__sync__backfills_missing_metadata_keys_of_defaults(local_settings: Settings, providers_path: Path) -> None:
+    """Файл от старой версии (без ключей метаданных): у дефолтных провайдеров они доливаются из дефолта,
+    а правки базовых полей и кастомные провайдеры не трогаются."""
+    providers_path.write_text(
+        yaml.safe_dump(
+            [
+                {"id": "firstbyte", "name": "My FB", "url": "https://custom", "blurb": "мой", "tags": []},
+                {"id": "mine", "name": "Mine", "url": "", "blurb": "", "tags": []},
+            ],
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    _seeded_file(providers_path).write_text(json.dumps(_default_ids()), encoding="utf-8")
+    store = ProviderStore(local_settings)
+
+    store.sync_default_providers()
+
+    items = {p["id"]: p for p in store.list()}
+    default = _default_by_id("firstbyte")
+    assert items["firstbyte"]["name"] == "My FB" and items["firstbyte"]["blurb"] == "мой"
+    assert items["firstbyte"]["countries"] == default["countries"]
+    assert items["firstbyte"]["payments"] == default["payments"]
+    assert items["firstbyte"]["hq"] == default.get("hq", "")
+    assert items["mine"]["countries"] == [] and items["mine"]["payments"] == []
+
+
+def test__sync__keeps_metadata_cleared_by_user(local_settings: Settings, providers_path: Path) -> None:
+    """Ключ есть, но пуст — пользователь очистил его сам: sync не доливает дефолт обратно."""
+    providers_path.write_text(
+        yaml.safe_dump([{"id": "firstbyte", "name": "FB", "countries": [], "payments": []}], allow_unicode=True),
+        encoding="utf-8",
+    )
+    _seeded_file(providers_path).write_text(json.dumps(_default_ids()), encoding="utf-8")
+    store = ProviderStore(local_settings)
+
+    store.sync_default_providers()
+
+    fb = next(p for p in store.list() if p["id"] == "firstbyte")
+    assert fb["countries"] == [] and fb["payments"] == []
+
+
+def test__default_catalog__every_entry_is_complete_and_unique() -> None:
+    """Дефолтный каталог: уникальные id, https-ссылка, оба описания и локации; коды/оплата валидны."""
+    raw = yaml.safe_load(_DEFAULT.read_text(encoding="utf-8"))
+    ids = [p["id"] for p in raw]
+    assert len(ids) == len(set(ids))
+    for p in raw:
+        norm = ProviderStore._norm(p)
+        assert norm["url"].startswith("https://"), p["id"]
+        assert norm["blurb"] and norm["blurbEn"], p["id"]
+        assert norm["countries"], p["id"]
+        assert norm["countries"] == p["countries"], p["id"]  # в дефолте только валидные коды
+        assert norm["payments"] == p["payments"], p["id"]  # и только известные способы оплаты
+        assert norm["hq"] == p.get("hq", ""), p["id"]

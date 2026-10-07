@@ -1,38 +1,66 @@
 # Каталог VPS-провайдеров (дефолт). При первом старте копируется в VPNHUB_PROVIDERS_FILE,
 # дальше редактируется руками или из админки в запущенном инстансе.
-# Цены намеренно не храним — они слишком часто меняются.
+# Цены намеренно не храним — они слишком часто меняются (живые тарифы — в provider_plans).
+#
+# Поля: id, name, url (страница заказа), blurb (RU) / blurbEn (EN) — текст карточки, tags — бейджи,
+# hq — страна компании (ISO-код, может быть пустой), countries — где можно арендовать VPS (ISO-коды),
+# payments — способы оплаты: ru_card (карты РФ/МИР), sbp, ru_wallet (ЮMoney/WebMoney), crypto,
+# card (зарубежные Visa/Mastercard), paypal, bank (счёт/перевод), local (местные: Alipay, PIX, UPI…).
 - id: firstbyte
   name: FirstByte
   url: https://billing.firstbyte.ru/
   blurb: "Российский провайдер VDS с дата-центрами в Москве и Европе. Оплата картой МИР и криптой, поддержка на русском."
+  blurbEn: "Russian VDS provider with data centers in Moscow and Europe. Pay with a MIR card or crypto; Russian-language support."
   tags: [Карта РФ, Крипта]
+  hq: RU
+  countries: [RU, BG, DE, ES, NL, AE, FR, US, FI, JP, SG]
+  payments: [ru_card, crypto]
 - id: ufo
   name: UFO Hosting
   url: https://bill.ufo.hosting
   blurb: "KVM-VDS в десятках стран мира. Оплата картами МИР, СБП и криптовалютой — без зарубежной карты."
+  blurbEn: "KVM VDS in many countries. Pay with MIR cards, SBP or crypto — no foreign card needed."
   tags: [Карта РФ, Много локаций]
+  countries: [RU, AM, HK, IL, IN, KZ, FI, FR]
+  payments: [ru_card, sbp, crypto]
 - id: ishosting
   name: ISHOSTING
   url: https://my.ishosting.com/
   blurb: "Международный хостинг: серверы в 40+ странах, KVM и NVMe. Принимает карты МИР, СБП и крипту — удобно платить из России."
+  blurbEn: "International host with servers in 40+ countries, KVM and NVMe. Accepts MIR cards, SBP and crypto — easy to pay from Russia."
   tags: [40+ стран, Крипта]
+  countries: [AR, AU, AT, BE, BR, BG, CA, CL, CO, CZ, DK, EE, FI, FR, DE, HK, HU, ID, IE, IT, JP, KZ, MY, MX, NL, "NO", PE, PL, RO, RS, SG, ES, SE, CH, TH, TR, AE, US, UA, GB]
+  payments: [ru_card, sbp, crypto]
 - id: ahost
   name: AHost
   url: https://billing.ahost.host/
   blurb: "VDS в 35 странах мира с оплатой российскими картами МИР и кошельками (ЮMoney, WebMoney, Сбербанк)."
+  blurbEn: "VDS in 35+ countries, paid with Russian MIR cards and wallets (YooMoney, WebMoney, Sberbank)."
   tags: [Карта РФ, 35 стран]
+  countries: [MK, AU, AT, AE, BE, BG, GB, HU, DE, HK, GR, DK, IL, IS, ES, IT, CA, LV, LT, MD, NL, "NO", PL, RU, RO, US, RS, SG, SI, FI, FR, HR, CZ, CH, SE, JP]
+  payments: [ru_card, ru_wallet]
 - id: serverspace
   name: Serverspace
   url: https://my.serverspace.ru/
-  blurb: "Облачные VPS в 9 локациях — Москва, Минск, Амстердам, Дубай и др. Оплата картой МИР и по СБП прямо из России, почасовая тарификация."
+  blurb: "Облачные VPS в Москве, Алматы, Ташкенте, Дубае, Торонто, Нью-Джерси и Сан-Паулу. Оплата картой МИР и по СБП прямо из России, почасовая тарификация."
+  blurbEn: "Cloud VPS in Moscow, Almaty, Tashkent, Dubai, Toronto, New Jersey and São Paulo. Pay with a MIR card or SBP from Russia; hourly billing."
   tags: [Карта РФ, СБП]
+  hq: RU
+  countries: [RU, KZ, UZ, AE, CA, US, BR]
+  payments: [ru_card, sbp]
 - id: ultahost
   name: UltaHost
   url: https://ultahost.com/vps-hosting
   blurb: "Международный провайдер: NVMe-VPS с безлимитным трафиком в 30+ локациях по миру (США, ЕС, Азия). Чистая Ubuntu и другие ОС, оплата зарубежной картой, PayPal или криптой."
+  blurbEn: "International provider: NVMe VPS with unmetered traffic in 30+ locations worldwide (US, EU, Asia). Clean Ubuntu and other OSes; pay with a foreign card, PayPal or crypto."
   tags: [30+ локаций, NVMe]
+  countries: [GB, NL, DE, FR, ES, IT, CH, "NO", SE, PL, US, CA, MX, BR, CO, AE, SA, ZA, NG, TR, IN, SG, MY, HK, KR, JP, AU]
+  payments: [crypto, card, paypal]
 - id: 62yun
   name: 62YUN
   url: https://62yun.ru/servers/order
-  blurb: "VPS/VDS в 6 локациях: Германия, Нидерланды, Финляндия, Испания (Мадрид), США и Гонконг. Быстрые NVMe и ёмкие HDD-тарифы, чистая Ubuntu; оплата российской картой и через СБП."
+  blurb: "VPS/VDS в Германии, Нидерландах, Финляндии, Испании, США, Канаде и Гонконге. Быстрые NVMe и ёмкие HDD-тарифы, чистая Ubuntu; оплата российской картой и через СБП."
+  blurbEn: "VPS/VDS in Germany, the Netherlands, Finland, Spain, the US, Canada and Hong Kong. Fast NVMe and large HDD plans, clean Ubuntu; pay with a Russian card or SBP."
   tags: [Карта РФ, NVMe и HDD]
+  countries: [DE, NL, FI, ES, US, CA, HK]
+  payments: [ru_card, sbp]

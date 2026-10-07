@@ -4,6 +4,7 @@ import { Btn, Empty, Field, Icon, Modal, MultiSelect, ScreenHeader, Spinner } fr
 import { ApiError } from "../lib/api";
 import { useT } from "../lib/i18n";
 import { canonicalLocation } from "../lib/locations";
+import { PAYMENT_METHODS, providerBlurb } from "../lib/providerCatalog";
 import {
   currencySymbol,
   DYNAMIC_PLAN_PROVIDER_LABELS,
@@ -16,7 +17,7 @@ import {
   planSpecs,
 } from "../lib/providerPlans";
 import * as q from "../lib/queries";
-import type { Provider, ProviderPlan } from "../lib/types";
+import type { PaymentMethod, Provider, ProviderPlan } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
 
@@ -414,15 +415,36 @@ interface FormState {
   name: string;
   url: string;
   blurb: string;
+  blurbEn: string;
   tags: string;
+  hq: string;
+  countries: string;
+  payments: PaymentMethod[];
 }
 
-const EMPTY: FormState = { name: "", url: "", blurb: "", tags: "" };
+const EMPTY: FormState = {
+  name: "",
+  url: "",
+  blurb: "",
+  blurbEn: "",
+  tags: "",
+  hq: "",
+  countries: "",
+  payments: [],
+};
+
+// строка «a, b, c» из формы → список без пустых
+const splitList = (text: string) =>
+  text
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 export function CatalogScreen() {
   const t = useT();
   const go = useNav((s) => s.go);
   const isAdmin = useStore((s) => s.me?.isAdmin ?? false);
+  const lang = useStore((s) => s.lang);
   const toast = useStore((s) => s.toast);
   const qc = useQueryClient();
 
@@ -435,7 +457,11 @@ export function CatalogScreen() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [plansFor, setPlansFor] = useState<{ pid: string; provider: Provider } | null>(null);
   const [showFinder, setShowFinder] = useState(false);
-  const set = (k: keyof FormState, v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  const set = (k: Exclude<keyof FormState, "payments">, v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  const togglePayment = (m: PaymentMethod) =>
+    setForm((f) =>
+      f ? { ...f, payments: f.payments.includes(m) ? f.payments.filter((x) => x !== m) : [...f.payments, m] } : f,
+    );
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["providers"] });
 
@@ -445,10 +471,11 @@ export function CatalogScreen() {
         name: f.name,
         url: f.url,
         blurb: f.blurb,
-        tags: f.tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
+        blurbEn: f.blurbEn,
+        tags: splitList(f.tags),
+        hq: f.hq.trim().toUpperCase(),
+        countries: splitList(f.countries).map((c) => c.toUpperCase()),
+        payments: f.payments,
       };
       return f.id ? q.adminUpdateProvider(f.id, body) : q.adminCreateProvider(body);
     },
@@ -472,7 +499,17 @@ export function CatalogScreen() {
 
   const openCreate = () => setForm({ ...EMPTY });
   const openEdit = (p: Provider) =>
-    setForm({ id: p.id, name: p.name, url: p.url, blurb: p.blurb, tags: p.tags.join(", ") });
+    setForm({
+      id: p.id,
+      name: p.name,
+      url: p.url,
+      blurb: p.blurb,
+      blurbEn: p.blurbEn,
+      tags: p.tags.join(", "),
+      hq: p.hq,
+      countries: p.countries.join(", "),
+      payments: p.payments,
+    });
 
   return (
     <div className="stack">
@@ -550,7 +587,7 @@ export function CatalogScreen() {
               </div>
 
               <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.45, minHeight: 38, margin: 0 }}>
-                {p.blurb}
+                {providerBlurb(p, lang)}
               </p>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 24 }}>
@@ -661,6 +698,48 @@ export function CatalogScreen() {
               value={form.blurb}
               onChange={(e) => set("blurb", e.target.value)}
             />
+          </Field>
+          <Field label={t("catalog.blurbEnLabel")}>
+            <textarea
+              className="input"
+              rows={3}
+              style={{ resize: "vertical", lineHeight: 1.5, minHeight: 78 }}
+              value={form.blurbEn}
+              onChange={(e) => set("blurbEn", e.target.value)}
+            />
+          </Field>
+          <Field label={t("catalog.countriesLabel")}>
+            <input
+              className="input"
+              placeholder={t("catalog.countriesPlaceholder")}
+              value={form.countries}
+              onChange={(e) => set("countries", e.target.value)}
+            />
+          </Field>
+          <Field label={t("catalog.hqLabel")}>
+            <input
+              className="input"
+              maxLength={2}
+              placeholder="RU"
+              value={form.hq}
+              onChange={(e) => set("hq", e.target.value)}
+              style={{ width: 90 }}
+            />
+          </Field>
+          <Field label={t("catalog.paymentsLabel")}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`chip${form.payments.includes(m) ? " selected" : ""}`}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => togglePayment(m)}
+                >
+                  {t(`pay.${m}`)}
+                </button>
+              ))}
+            </div>
           </Field>
           <Field label={t("catalog.tagsLabel")}>
             <input

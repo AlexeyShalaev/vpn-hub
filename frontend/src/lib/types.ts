@@ -300,12 +300,19 @@ export interface AvailableServer {
   vpns: VpnType[];
 }
 
+// способы оплаты провайдера (бэкенд отбрасывает неизвестные значения, порядок — канонический)
+export type PaymentMethod = "ru_card" | "sbp" | "ru_wallet" | "crypto" | "card" | "paypal" | "bank" | "local";
+
 export interface Provider {
   id: string;
   name: string;
   url: string;
-  blurb: string;
+  blurb: string; // описание на русском
+  blurbEn: string; // описание на английском ("" → показываем русское)
   tags: string[];
+  hq: string; // ISO-код страны компании ("" = неизвестно)
+  countries: string[]; // ISO-коды стран, где можно арендовать VPS
+  payments: PaymentMethod[];
 }
 
 export interface AuditEvent {
