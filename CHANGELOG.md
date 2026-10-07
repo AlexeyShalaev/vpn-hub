@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.12.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.11.0...v0.12.0) - 2026-10-08
+
+- The provider catalog grows from 7 to 600+ VPS hosts in Russia and worldwide, each with locations, payment methods (Russian card, SBP, crypto…), company country and a bilingual description
+- Catalog search and filters: by name and country, locations, payment methods, company country and live plans; cards show location flags and payment methods
+- Live plans now come from 51 providers instead of 7: Timeweb Cloud, Beget, Hetzner, Vultr, Akamai (Linode), 4VPS, FirstVDS, ProfitServer, EDIS, FlokiNET and more
+- Plan finder: search by plan, city and provider, filters for vCPU, disk, disk type, port speed and unmetered traffic, sorting by price per GB of RAM, and per-provider load progress
+- The server form can search the whole catalog for a provider
+- Plans whose provider doesn't publish a traffic quota now say "traffic not specified" instead of "unlimited"
+- The catalog and plans load faster and use less memory, and catalog responses are compressed
+- Security: anyio and cryptography updated with vulnerability fixes (including a critical one); the unneeded pip is removed from the image
+
 ## [0.11.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.10.1...v0.11.0) - 2026-07-12
 
 - Site favicon in the browser tab — previously missing
