@@ -5,6 +5,15 @@ import { ApiError } from "../lib/api";
 import { useT } from "../lib/i18n";
 import { canonicalLocation, countryLabel, flagEmoji } from "../lib/locations";
 import {
+  DEFAULT_PLAN_FILTER,
+  type FinderPlan,
+  type PlanFilter,
+  type PlanSort,
+  type RankedPlan,
+  rankPlans,
+} from "../lib/planFinder";
+import { PLAN_SOURCES } from "../lib/planSources";
+import {
   type CatalogFilter,
   type CatalogSort,
   EMPTY_CATALOG_FILTER,
@@ -15,18 +24,16 @@ import {
 } from "../lib/providerCatalog";
 import {
   currencySymbol,
-  DYNAMIC_PLAN_PROVIDER_LABELS,
   dynamicPlanProviderId,
   fmtMoney,
   fmtPrice,
   hasLivePlans,
   isDynamicPlanProviderId,
-  monthlyPriceIn,
   planProviderDisplayName,
   planSpecs,
 } from "../lib/providerPlans";
 import * as q from "../lib/queries";
-import type { PaymentMethod, Provider, ProviderPlan } from "../lib/types";
+import type { PaymentMethod, Provider } from "../lib/types";
 import { useNav } from "../nav";
 import { useStore } from "../store";
 
@@ -146,17 +153,6 @@ function PlansModal({
   );
 }
 
-// план + к какому провайдеру относится (для агрегированного подбора по всем провайдерам)
-type FinderPlan = ProviderPlan & { providerId: string; providerLabel: string };
-// плюс месячная цена, приведённая к выбранной валюте (null = пересчёт невозможен — нет курса)
-type RankedPlan = FinderPlan & { monthly: number | null };
-
-// число из инпута диапазона; пустое/некорректное → значение по умолчанию (граница «без ограничения»)
-function numOr(text: string, fallback: number): number {
-  const n = Number(text);
-  return text.trim() !== "" && Number.isFinite(n) ? n : fallback;
-}
-
 // честная подпись про актуальность курса, которым сводим цены к одной валюте
 const FX_SOURCE_NOTE_KEY: Record<string, "catalog.fxNoteCbr" | "catalog.fxNoteCbrStale" | "catalog.fxNoteFallback"> = {
   cbr: "catalog.fxNoteCbr",
@@ -164,9 +160,11 @@ const FX_SOURCE_NOTE_KEY: Record<string, "catalog.fxNoteCbr" | "catalog.fxNoteCb
   fallback: "catalog.fxNoteFallback",
 };
 
-// Подбор тарифа по всем провайдерам: агрегирует их тарифы и фильтрует по локациям, провайдерам, RAM и
-// бюджету. Валюты у провайдеров разные (RUB/USD/EUR) — все цены сводятся к одной валюте за месяц по
-// курсу ЦБ РФ (кэшируется на бэкенде), поэтому бюджет и сортировка работают через провайдеров разом.
+// сколько строк тарифов рисовать сразу: у облаков с десятками локаций тарифов тысячи
+const FINDER_PAGE_SIZE = 100;
+
+// Подбор тарифа по всем провайдерам с живыми тарифами: тянет их тарифы параллельно (по мере загрузки),
+// фильтрует и сортирует через rankPlans (lib/planFinder). Валюты сводятся к одной по курсу ЦБ РФ.
 function PlanFinderModal({
   onPick,
   onClose,
@@ -175,7 +173,7 @@ function PlanFinderModal({
   onClose: () => void;
 }) {
   const t = useT();
-  const providerIds = Object.keys(DYNAMIC_PLAN_PROVIDER_LABELS);
+  const providerIds = PLAN_SOURCES.map((s) => s.id);
   const results = useQueries({
     queries: providerIds.map((pid) => ({
       queryKey: ["providerPlans", pid],
@@ -196,32 +194,36 @@ function PlanFinderModal({
       ),
     [dataVersion],
   );
+  const doneCount = results.filter((r) => !r.isLoading).length;
+  const failed = results.flatMap((r, i) => (r.isError ? [planProviderDisplayName(providerIds[i])] : []));
 
   // курсы к RUB (кэш ЦБ РФ на бэкенде): держим свежими полдня — повторные фетчи ни к чему
   const fx = useQuery({ queryKey: ["fxRates"], queryFn: q.fxRates, staleTime: 6 * 60 * 60 * 1000, retry: 1 });
   const rates = fx.data?.rates ?? {};
 
-  const [regions, setRegions] = useState<string[]>([]);
-  const [providerSel, setProviderSel] = useState<string[]>([]);
-  const [ramMin, setRamMin] = useState("");
-  const [ramMax, setRamMax] = useState("");
-  const [priceMin, setPriceMin] = useState("");
-  const [priceMax, setPriceMax] = useState("");
-  const [priceCur, setPriceCur] = useState("RUB");
-  const [onlyAvailable, setOnlyAvailable] = useState(true);
+  const [filter, setFilter] = useState<PlanFilter>(DEFAULT_PLAN_FILTER);
+  const [limit, setLimit] = useState(FINDER_PAGE_SIZE);
+  const patch = (p: Partial<PlanFilter>) => {
+    setFilter((f) => ({ ...f, ...p }));
+    setLimit(FINDER_PAGE_SIZE);
+  };
 
   // локации сводим к стране: ОАЭ/UAE/Дубай → одна опция «ОАЭ / UAE» (см. canonicalLocation)
   const locationOpts = useMemo<[string, string][]>(() => {
     const byKey = new Map<string, string>();
     for (const p of all) {
       const { key, label } = canonicalLocation(p.region);
-      if (!byKey.has(key)) byKey.set(key, label);
+      if (!byKey.has(key)) byKey.set(key, key.startsWith("x:") ? label : `${flagEmoji(key)} ${label}`);
     }
-    return [...byKey].sort((a, b) => a[1].localeCompare(b[1], "ru"));
+    return [...byKey].sort((a, b) => a[1].replace(/^\S+ /, "").localeCompare(b[1].replace(/^\S+ /, ""), "ru"));
   }, [all]);
   const providerOpts = useMemo<[string, string][]>(
     () =>
       providerIds.filter((id) => all.some((p) => p.providerId === id)).map((id) => [id, planProviderDisplayName(id)]),
+    [all],
+  );
+  const diskTypeOpts = useMemo<[string, string][]>(
+    () => [...new Set(all.map((p) => p.diskType).filter(Boolean))].sort().map((d) => [d, d]),
     [all],
   );
   // валюты для бюджета: встречающиеся у тарифов + RUB (база), чтобы всегда было к чему сводить
@@ -230,26 +232,8 @@ function PlanFinderModal({
     [all],
   );
 
-  const rows = useMemo<RankedPlan[]>(() => {
-    const ramLo = numOr(ramMin, 0);
-    const ramHi = numOr(ramMax, Number.POSITIVE_INFINITY);
-    const priceLo = numOr(priceMin, 0);
-    const priceHi = numOr(priceMax, Number.POSITIVE_INFINITY);
-    const hasPriceBound = priceMin.trim() !== "" || priceMax.trim() !== "";
-    return all
-      .filter((p) => (onlyAvailable ? p.available !== false : true))
-      .filter((p) => (regions.length === 0 ? true : regions.includes(canonicalLocation(p.region).key)))
-      .filter((p) => (providerSel.length === 0 ? true : providerSel.includes(p.providerId)))
-      .filter((p) => p.ramGb >= ramLo && p.ramGb <= ramHi)
-      .map((p) => ({ ...p, monthly: monthlyPriceIn(p, priceCur, rates) }))
-      .filter((p) => (hasPriceBound ? p.monthly != null && p.monthly >= priceLo && p.monthly <= priceHi : true))
-      .sort((a, b) => {
-        // дешёвые сверху; тарифы без пересчёта (нет курса валюты) — в конец списка
-        if (a.monthly == null || b.monthly == null) return (a.monthly == null ? 1 : 0) - (b.monthly == null ? 1 : 0);
-        return a.monthly - b.monthly;
-      });
-    // rates берём по версии fx-запроса, чтобы не пересобирать на каждый рендер из-за нового {}-дефолта
-  }, [all, regions, providerSel, ramMin, ramMax, priceMin, priceMax, priceCur, onlyAvailable, fx.dataUpdatedAt]);
+  // rates берём по версии fx-запроса, чтобы не пересобирать на каждый рендер из-за нового {}-дефолта
+  const rows = useMemo<RankedPlan[]>(() => rankPlans(all, filter, rates), [all, filter, fx.dataUpdatedAt]);
 
   // спиннер — только пока данных совсем нет; дальше показываем результаты по мере подгрузки провайдеров
   const loading = all.length === 0 && results.some((r) => r.isLoading);
@@ -259,84 +243,119 @@ function PlanFinderModal({
   const groupLabel: CSSProperties = { fontSize: 12, marginBottom: 5 };
   const filterGrid: CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
     gap: 10,
   };
+  const numInput = (key: keyof PlanFilter, placeholder: string) => (
+    <input
+      className="input"
+      type="number"
+      min={0}
+      placeholder={placeholder}
+      value={filter[key] as string}
+      onChange={(e) => patch({ [key]: e.target.value })}
+      style={rangeInput}
+    />
+  );
   return (
     <Modal title={t("catalog.finderTitle")} onClose={onClose} wide>
       <div className="stack" style={{ gap: 12 }}>
-        {/* мультивыборы локаций/провайдеров (с поиском) + переключатель наличия */}
+        <input
+          className="input"
+          type="search"
+          placeholder={t("catalog.finderSearch")}
+          value={filter.query}
+          onChange={(e) => patch({ query: e.target.value })}
+        />
+        {/* мультивыборы локаций/провайдеров/типа диска (с поиском) + переключатели */}
         <div className="rowflex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <MultiSelect label={t("catalog.locations")} options={locationOpts} selected={regions} onChange={setRegions} />
+          <MultiSelect
+            label={t("catalog.locations")}
+            options={locationOpts}
+            selected={filter.regions}
+            onChange={(regions) => patch({ regions })}
+          />
           <MultiSelect
             label={t("catalog.providers")}
             options={providerOpts}
-            selected={providerSel}
-            onChange={setProviderSel}
+            selected={filter.providers}
+            onChange={(providers) => patch({ providers })}
           />
-          <label
-            className="rowflex"
-            style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center", marginLeft: "auto" }}
-          >
-            <input type="checkbox" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
+          <MultiSelect
+            label={t("catalog.diskType")}
+            options={diskTypeOpts}
+            selected={filter.diskTypes}
+            onChange={(diskTypes) => patch({ diskTypes })}
+          />
+          <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={filter.unlimitedOnly}
+              onChange={(e) => patch({ unlimitedOnly: e.target.checked })}
+            />
+            {t("catalog.unlimitedOnly")}
+          </label>
+          <label className="rowflex" style={{ gap: 6, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={filter.onlyAvailable}
+              onChange={(e) => patch({ onlyAvailable: e.target.checked })}
+            />
             {t("catalog.onlyAvailable")}
           </label>
+          <select
+            className="input"
+            value={filter.sort}
+            onChange={(e) => patch({ sort: e.target.value as PlanSort })}
+            style={{ width: "auto", marginLeft: "auto" }}
+          >
+            <option value="price">{t("catalog.sortPrice")}</option>
+            <option value="pricePerGb">{t("catalog.sortPricePerGb")}</option>
+            <option value="ram">{t("catalog.sortRam")}</option>
+            <option value="cpu">{t("catalog.sortCpu")}</option>
+          </select>
         </div>
 
-        {/* числовые диапазоны: RAM и бюджет за месяц в выбранной валюте */}
+        {/* числовые диапазоны: RAM, CPU, диск, порт и бюджет за месяц в выбранной валюте */}
         <div style={filterGrid}>
           <div>
             <div className="muted-3" style={groupLabel}>
               {t("catalog.ramGb")}
             </div>
             <div className="rowflex" style={{ gap: 6 }}>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeFrom")}
-                value={ramMin}
-                onChange={(e) => setRamMin(e.target.value)}
-                style={rangeInput}
-              />
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeTo")}
-                value={ramMax}
-                onChange={(e) => setRamMax(e.target.value)}
-                style={rangeInput}
-              />
+              {numInput("ramMin", t("catalog.rangeFrom"))}
+              {numInput("ramMax", t("catalog.rangeTo"))}
             </div>
+          </div>
+          <div>
+            <div className="muted-3" style={groupLabel}>
+              {t("catalog.cpuMin")}
+            </div>
+            {numInput("cpuMin", t("catalog.rangeFrom"))}
+          </div>
+          <div>
+            <div className="muted-3" style={groupLabel}>
+              {t("catalog.diskMin")}
+            </div>
+            {numInput("diskMin", t("catalog.rangeFrom"))}
+          </div>
+          <div>
+            <div className="muted-3" style={groupLabel}>
+              {t("catalog.portMin")}
+            </div>
+            {numInput("portMin", t("catalog.rangeFrom"))}
           </div>
           <div style={{ gridColumn: "span 2" }}>
             <div className="muted-3" style={groupLabel}>
               {t("catalog.monthlyBudget")}
             </div>
             <div className="rowflex" style={{ gap: 6 }}>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeFrom")}
-                value={priceMin}
-                onChange={(e) => setPriceMin(e.target.value)}
-                style={rangeInput}
-              />
-              <input
-                className="input"
-                type="number"
-                min={0}
-                placeholder={t("catalog.rangeTo")}
-                value={priceMax}
-                onChange={(e) => setPriceMax(e.target.value)}
-                style={rangeInput}
-              />
+              {numInput("priceMin", t("catalog.rangeFrom"))}
+              {numInput("priceMax", t("catalog.rangeTo"))}
               <select
                 className="input"
-                value={priceCur}
-                onChange={(e) => setPriceCur(e.target.value)}
+                value={filter.currency}
+                onChange={(e) => patch({ currency: e.target.value })}
                 style={{ width: "auto", flex: "none" }}
               >
                 {currencyOpts.map((c) => (
@@ -349,9 +368,14 @@ function PlanFinderModal({
           </div>
         </div>
 
-        <div className="rowflex" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div
+          className="rowflex"
+          style={{ justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}
+        >
           <span className="muted-3" style={{ fontSize: 12 }}>
-            {fxNote}
+            {t("catalog.loadedProviders", { done: doneCount, total: providerIds.length })}
+            {failed.length > 0 && ` · ${t("catalog.failedProviders", { names: failed.join(", ") })}`}
+            {fxNote && ` · ${fxNote}`}
           </span>
           <span className="muted-3" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
             {t("catalog.foundCount", { n: rows.length })}
@@ -366,7 +390,7 @@ function PlanFinderModal({
           <Empty title={t("catalog.finderEmptyTitle")} sub={t("catalog.finderEmptySub")} />
         ) : (
           <div className="stack" style={{ gap: 8, maxHeight: "56vh", overflowY: "auto" }}>
-            {rows.map((p) => (
+            {rows.slice(0, limit).map((p) => (
               <div
                 key={`${p.providerId}:${p.id}:${p.region}:${p.name}`}
                 className="rowflex"
@@ -393,9 +417,9 @@ function PlanFinderModal({
                 <div className="rowflex" style={{ gap: 10, alignItems: "center", marginLeft: "auto" }}>
                   <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <div style={{ fontWeight: 700, fontSize: 13.5 }}>{fmtPrice(p)}</div>
-                    {p.monthly != null && p.currency !== priceCur && (
+                    {p.monthly != null && (p.currency !== filter.currency || p.period !== "month") && (
                       <div className="muted-3" style={{ fontSize: 11.5 }}>
-                        {t("catalog.approxMonthly", { amount: fmtMoney(p.monthly, priceCur) })}
+                        {t("catalog.approxMonthly", { amount: fmtMoney(p.monthly, filter.currency) })}
                       </div>
                     )}
                   </div>
@@ -412,6 +436,13 @@ function PlanFinderModal({
                 </div>
               </div>
             ))}
+            {rows.length > limit && (
+              <div style={{ display: "flex", justifyContent: "center", padding: 4 }}>
+                <Btn variant="ghost" sm onClick={() => setLimit((n) => n + FINDER_PAGE_SIZE)}>
+                  {t("catalog.showMore", { n: rows.length - limit })}
+                </Btn>
+              </div>
+            )}
           </div>
         )}
       </div>
