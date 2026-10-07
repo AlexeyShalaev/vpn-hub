@@ -244,7 +244,7 @@ function PlanFinderModal({
   const groupLabel: CSSProperties = { fontSize: 12, marginBottom: 5 };
   const filterGrid: CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
     gap: 10,
   };
   const numInput = (key: keyof PlanFilter, placeholder: string) => (
@@ -259,7 +259,7 @@ function PlanFinderModal({
     />
   );
   return (
-    <Modal title={t("catalog.finderTitle")} onClose={onClose} wide>
+    <Modal title={t("catalog.finderTitle")} onClose={onClose} xl>
       <div className="stack" style={{ gap: 12 }}>
         <input
           className="input"
@@ -308,7 +308,7 @@ function PlanFinderModal({
             className="input"
             value={filter.sort}
             onChange={(e) => patch({ sort: e.target.value as PlanSort })}
-            style={{ width: "auto", marginLeft: "auto" }}
+            style={{ ...compactSelect, marginLeft: "auto" }}
           >
             <option value="price">{t("catalog.sortPrice")}</option>
             <option value="pricePerGb">{t("catalog.sortPricePerGb")}</option>
@@ -323,7 +323,7 @@ function PlanFinderModal({
             <div className="muted-3" style={groupLabel}>
               {t("catalog.ramGb")}
             </div>
-            <div className="rowflex" style={{ gap: 6 }}>
+            <div style={pairRow}>
               {numInput("ramMin", t("catalog.rangeFrom"))}
               {numInput("ramMax", t("catalog.rangeTo"))}
             </div>
@@ -350,14 +350,14 @@ function PlanFinderModal({
             <div className="muted-3" style={groupLabel}>
               {t("catalog.monthlyBudget")}
             </div>
-            <div className="rowflex" style={{ gap: 6 }}>
+            <div style={pairRow}>
               {numInput("priceMin", t("catalog.rangeFrom"))}
               {numInput("priceMax", t("catalog.rangeTo"))}
               <select
                 className="input"
                 value={filter.currency}
                 onChange={(e) => patch({ currency: e.target.value })}
-                style={{ width: "auto", flex: "none" }}
+                style={{ width: "auto", flex: "none", padding: "11px 8px" }}
               >
                 {currencyOpts.map((c) => (
                   <option key={c} value={c}>
@@ -482,6 +482,11 @@ const MAX_FLAGS = 10;
 function countryOptions(lists: string[][]): [string, string][] {
   return facetCounts(lists).map(([code, n]) => [code, `${flagEmoji(code)} ${countryLabel(code)} · ${n}`]);
 }
+
+// селект в ряду фильтров — по высоте как кнопки-мультивыборы, а не как поле формы
+const compactSelect: CSSProperties = { width: "auto", padding: "6px 10px", fontSize: 13 };
+// пара полей «от/до» в одну строку (общий .rowflex переносит их в столбик на узких ячейках)
+const pairRow: CSSProperties = { display: "flex", gap: 6, alignItems: "center" };
 
 const chipStyle: CSSProperties = {
   fontSize: 11,
@@ -683,7 +688,7 @@ export function CatalogScreen() {
                 className="input"
                 value={filter.sort}
                 onChange={(e) => patchFilter({ sort: e.target.value as CatalogSort })}
-                style={{ width: "auto", marginLeft: "auto" }}
+                style={{ ...compactSelect, marginLeft: "auto" }}
               >
                 <option value="catalog">{t("catalog.sortCatalog")}</option>
                 <option value="name">{t("catalog.sortName")}</option>
