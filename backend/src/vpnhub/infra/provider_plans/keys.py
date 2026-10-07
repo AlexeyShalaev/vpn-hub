@@ -26,6 +26,8 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("serverspace", "Serverspace", ("serverspace.ru", "serverspace.io")),
     PlanSource("ultahost", "UltaHost", ("ulta", "ultahost.com")),
     PlanSource("62yun", "62YUN", ("yun62", "62yun.ru")),
+    PlanSource("timeweb", "Timeweb Cloud", ("timeweb.cloud", "timeweb.com", "timeweb.ru")),
+    PlanSource("beget", "Beget", ("beget.com", "beget.ru")),
 )
 
 _COMPACT_RE = re.compile(r"[\s._-]+")

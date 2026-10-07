@@ -16,4 +16,6 @@ export const PLAN_SOURCES: readonly PlanSource[] = [
   { id: "serverspace", label: "Serverspace", aliases: ["serverspace.ru", "serverspace.io"] },
   { id: "ultahost", label: "UltaHost", aliases: ["ulta", "ultahost.com"] },
   { id: "62yun", label: "62YUN", aliases: ["yun62", "62yun.ru"] },
+  { id: "timeweb", label: "Timeweb Cloud", aliases: ["timeweb.cloud", "timeweb.com", "timeweb.ru"] },
+  { id: "beget", label: "Beget", aliases: ["beget.com", "beget.ru"] },
 ];

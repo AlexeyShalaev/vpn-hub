@@ -877,3 +877,183 @@ def test__plan_sources__frontend_mirror_matches_backend_registry() -> None:
     text = _FRONTEND_PLAN_SOURCES.read_text(encoding="utf-8")
     frontend = dict(re.findall(r'\{ id: "([^"]+)", label: "([^"]+)"', text))
     assert frontend == {src.id: src.label for src in provider_plans.PLAN_SOURCES}
+
+
+# --- Nuxt payload (Timeweb, Beget) --------------------------------------------------------------
+
+
+def _nuxt_html(state: Any) -> str:
+    """Страница с payload `__NUXT_DATA__` в формате devalue (плоский массив индексов), как отдаёт Nuxt 3."""
+    values: list[Any] = []
+
+    def add(value: Any) -> int:
+        index = len(values)
+        values.append(None)
+        if isinstance(value, dict):
+            values[index] = {k: add(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            values[index] = [add(v) for v in value]
+        else:
+            values[index] = value
+        return index
+
+    add(state)
+    payload = json.dumps(values, ensure_ascii=False)
+    return f'<html><script type="application/json" data-ssr="true" id="__NUXT_DATA__">{payload}</script></html>'
+
+
+def test__parse_nuxt_payload__resolves_devalue_tags_and_shared_refs() -> None:
+    from vpnhub.infra.provider_plans.nuxt import parse_nuxt_payload
+
+    values = [
+        ["ShallowReactive", 1],
+        {"data": 2, "when": 6, "tags": 7, "none": -1, "map": 8},
+        ["Reactive", 3],
+        [4, 4],  # один и тот же объект дважды (общая ссылка)
+        {"name": 5},
+        "Cloud-15",
+        ["Date", "2026-10-07T00:00:00.000Z"],
+        ["Set", 5],
+        ["Map", 5, 4],
+    ]
+    html = f'<script id="__NUXT_DATA__" type="application/json">{json.dumps(values)}</script>'
+
+    state = parse_nuxt_payload(html)
+
+    assert state["data"] == [{"name": "Cloud-15"}, {"name": "Cloud-15"}]
+    assert state["data"][0] is state["data"][1]
+    assert state["when"] == "2026-10-07T00:00:00.000Z"
+    assert state["tags"] == ["Cloud-15"]
+    assert state["none"] is None
+    assert state["map"] == {"Cloud-15": {"name": "Cloud-15"}}
+
+
+@pytest.mark.parametrize("html", ["<html></html>", '<script id="__NUXT_DATA__">{broken</script>'])
+def test__parse_nuxt_payload__missing_or_broken_payload_is_none(html: str) -> None:
+    from vpnhub.infra.provider_plans.nuxt import parse_nuxt_payload
+
+    assert parse_nuxt_payload(html) is None
+
+
+TIMEWEB_STATE = {
+    "data": {
+        "vds/fetchTariffs": [
+            {
+                "id": 2573,
+                "name": "SSD-15",
+                "cpu": "1 x 2.8 ГГц",
+                "memory": "1 ГБ",
+                "storage": [{"size": "15 ГБ", "type": "SSD"}],
+                "bandwidth": 100,
+                "price": 149,
+                "tags": ["site", "cp", "ssd_2022"],
+            },
+            {
+                "id": 6767,
+                "name": "Cloud NL-30",
+                "cpu": "1 x 3.3 ГГц",
+                "memory": "2 ГБ",
+                "storage": [{"size": "30 ГБ", "type": "NVME"}],
+                "bandwidth": 1000,
+                "price": 810,
+                "tags": ["site", "cp", "nl_base"],
+            },
+            {
+                "id": 7000,
+                "name": "Cloud XX",
+                "cpu": "1 x 3 ГГц",
+                "memory": "1 ГБ",
+                "storage": [{"size": "15 ГБ", "type": "NVME"}],
+                "bandwidth": 100,
+                "price": 300,
+                "tags": ["site", "cp", "unknown_tag"],  # локация не сопоставлена — тариф пропускаем
+            },
+        ],
+        "configurator/servers": [
+            {"location": "ru-1", "tags": ["ssd_2022"], "requirements": {}},
+            {"location": "nl-1", "tags": ["nl_base"], "requirements": {}},
+        ],
+    }
+}
+
+
+def test__parse_timeweb_plans__maps_tariff_tags_to_locations_via_configurator() -> None:
+    plans = provider_plans.parse_timeweb_plans({"https://timeweb.cloud/services/vds-vps": _nuxt_html(TIMEWEB_STATE)})
+
+    assert [(p["id"], p["region"]) for p in plans] == [
+        ("timeweb-6767", "Амстердам, Нидерланды"),
+        ("timeweb-2573", "Санкт-Петербург, Россия"),
+    ]
+    nl = plans[0]
+    assert nl["name"] == "Cloud NL-30 · Амстердам"
+    assert (nl["cpu"], nl["ramGb"], nl["diskGb"], nl["diskType"], nl["portMbps"]) == (1, 2, 30, "NVMe", 1000)
+    assert (nl["price"], nl["currency"], nl["period"], nl["trafficTb"]) == (810.0, "RUB", "month", None)
+
+
+BEGET_STATE = {
+    "pinia": {
+        "services": {
+            "planList": {
+                "hostingPlans": [{"name": "blog", "specs": {"disk_size": 1}, "prices": {}, "type": "X"}],
+                "vpsPlans": [
+                    {
+                        "name": "ru1_prime_v5",
+                        "display_name": "Prime",
+                        "specs": {"disk_size": 30720, "memory_size": 2048, "cpu_cores": 2, "bandwidth_public": 1000},
+                        "prices": {"no_discount": {"month_amount": 810, "day_amount": 27}},
+                        "region": "ru1",
+                    },
+                    {
+                        "name": "kz1_prime_v5",
+                        "display_name": "Prime",
+                        "specs": {"disk_size": 30720, "memory_size": 2048, "cpu_cores": 2, "bandwidth_public": 150},
+                        "prices": {"no_discount": {"month_amount": 900}},
+                        "region": "kz1",
+                    },
+                ],
+            }
+        }
+    }
+}
+
+
+def test__parse_beget_plans__extracts_vps_plans_from_pinia_state() -> None:
+    plans = provider_plans.parse_beget_plans({"https://beget.com/ru/vps": _nuxt_html(BEGET_STATE)})
+
+    assert [(p["id"], p["region"], p["price"]) for p in plans] == [
+        ("beget-kz1_prime_v5", "Казахстан", 900.0),
+        ("beget-ru1_prime_v5", "Санкт-Петербург, Россия", 810.0),
+    ]
+    spb = plans[1]
+    assert (spb["cpu"], spb["ramGb"], spb["diskGb"], spb["diskType"], spb["portMbps"]) == (2, 2, 30, "NVMe", 1000)
+
+
+@pytest.mark.parametrize(
+    ("provider", "module", "fetch_name"),
+    [("timeweb", "timeweb", "fetch_timeweb_plans"), ("beget", "beget", "fetch_beget_plans")],
+)
+async def test__fetch_nuxt_providers__parse_the_downloaded_page(
+    monkeypatch: pytest.MonkeyPatch, provider: str, module: str, fetch_name: str
+) -> None:
+    state = TIMEWEB_STATE if provider == "timeweb" else BEGET_STATE
+    calls: list[str] = []
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        calls.append(url)
+        return _nuxt_html(state)
+
+    monkeypatch.setattr(getattr(provider_plans, module), "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await getattr(provider_plans, fetch_name)()
+
+    assert len(calls) == 1
+    assert len(plans) == 2
+
+
+async def test__fetch_timeweb_plans__network_error_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def boom(url: str, timeout: float) -> str:
+        raise TimeoutError
+
+    monkeypatch.setattr(provider_plans.timeweb, "_fetch_browser_url", boom)
+
+    assert await provider_plans.fetch_timeweb_plans() == []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import ssl
 import urllib.parse
 import urllib.request
@@ -93,3 +94,21 @@ async def _post_form_url(url: str, form: Mapping[str, str], timeout: float) -> s
             return body.decode(charset, "replace")
 
     return await asyncio.to_thread(_post)
+
+
+async def _fetch_json(url: str, timeout: float) -> Any:
+    """GET публичного JSON API провайдера (без авторизации) → разобранный JSON."""
+
+    def _get() -> Any:
+        req = urllib.request.Request(  # noqa: S310 — URL берётся из provider-констант/whitelist
+            url,
+            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+        )
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(  # noqa: S310 — URL whitelist выше/в константах
+            req, timeout=timeout, context=ctx
+        ) as resp:
+            body: bytes = resp.read(20_000_000)
+            return json.loads(body.decode(resp.headers.get_content_charset() or "utf-8", "replace"))
+
+    return await asyncio.to_thread(_get)

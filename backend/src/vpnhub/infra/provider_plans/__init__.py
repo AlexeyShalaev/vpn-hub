@@ -16,20 +16,24 @@ from .cache import _cached_provider_plans, clear_provider_plan_cache
 from .catalog import plans_for as _plans_for
 from .common import TIB, plan_bandwidth_bytes
 from .keys import PLAN_SOURCES, PlanSource, _provider_key
-from .providers import ahost, firstbyte, ishosting, serverspace, ufo, ultahost, yun62
+from .providers import ahost, beget, firstbyte, ishosting, serverspace, timeweb, ufo, ultahost, yun62
 from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
+from .providers.beget import fetch_beget_plans, parse_beget_plans
 from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
 from .providers.ishosting import discover_ishosting_plan_urls, fetch_ishosting_plans, parse_ishosting_plans
 from .providers.serverspace import fetch_serverspace_plans, parse_serverspace_plans
+from .providers.timeweb import fetch_timeweb_plans, parse_timeweb_plans
 from .providers.ufo import discover_ufo_countries, fetch_ufo_plans, parse_ufo_plans
 from .providers.ultahost import fetch_ultahost_plans, parse_ultahost_plans
 from .providers.yun62 import fetch_yun62_plans, parse_yun62_plans
 
 _COMPAT_MODULES = {
     "ahost": ahost,
+    "beget": beget,
     "firstbyte": firstbyte,
     "ishosting": ishosting,
     "serverspace": serverspace,
+    "timeweb": timeweb,
     "ufo": ufo,
     "ultahost": ultahost,
     "yun62": yun62,
@@ -48,6 +52,8 @@ _FETCHER_NAMES: dict[str, str] = {
     "serverspace": "fetch_serverspace_plans",
     "ultahost": "fetch_ultahost_plans",
     "62yun": "fetch_yun62_plans",
+    "timeweb": "fetch_timeweb_plans",
+    "beget": "fetch_beget_plans",
 }
 
 
@@ -66,6 +72,7 @@ __all__ = [
     "_cached_provider_plans",
     "_provider_key",
     "ahost",
+    "beget",
     "cache",
     "clear_provider_plan_cache",
     "discover_ahost_plan_urls",
@@ -73,24 +80,29 @@ __all__ = [
     "discover_ishosting_plan_urls",
     "discover_ufo_countries",
     "fetch_ahost_plans",
+    "fetch_beget_plans",
     "fetch_firstbyte_plans",
     "fetch_ishosting_plans",
     "fetch_serverspace_plans",
+    "fetch_timeweb_plans",
     "fetch_ufo_plans",
     "fetch_ultahost_plans",
     "fetch_yun62_plans",
     "firstbyte",
     "ishosting",
     "parse_ahost_plans",
+    "parse_beget_plans",
     "parse_firstbyte_plans",
     "parse_ishosting_plans",
     "parse_serverspace_plans",
+    "parse_timeweb_plans",
     "parse_ufo_plans",
     "parse_ultahost_plans",
     "parse_yun62_plans",
     "plan_bandwidth_bytes",
     "plans_for",
     "serverspace",
+    "timeweb",
     "ufo",
     "ultahost",
     "yun62",
