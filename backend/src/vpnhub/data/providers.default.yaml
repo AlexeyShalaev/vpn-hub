@@ -549,15 +549,6 @@
   hq: RU
   countries: [RU, NL, DE, PL]
   payments: [ru_card, sbp, ru_wallet, card, paypal, bank]
-- id: hostkey-ru
-  name: HOSTKEY
-  url: https://hostkey.ru/vps/
-  blurb: 'VPS и GPU-серверы HOSTKEY: Москва и дата-центры в Нидерландах, Великобритании, Испании, Франции, Германии, США, Финляндии, Исландии, Турции, Италии, Польше. Оплата картами Visa/MC/МИР через ЮMoney, по счёту.'
-  blurbEn: 'HOSTKEY VPS and GPU servers: Moscow plus DCs in NL, UK, ES, FR, DE, US, FI, Iceland, TR, IT, PL. Pay by Visa/MC/MIR via YooMoney or invoice.'
-  tags: [10+ стран]
-  hq: RU
-  countries: [RU, NL, GB, ES, FR, DE, US, FI, IS, TR, IT, PL]
-  payments: [ru_card, ru_wallet, bank]
 - id: ihc
   name: IHC (ИХЦ)
   url: https://www.ihc.ru/kvmvds.html
@@ -1323,15 +1314,6 @@
   hq: CA
   countries: [US, CA, GB, FR, DE, NL, SG, HK]
   payments: [crypto, card, local]
-- id: shinjiru
-  name: Shinjiru
-  url: https://www.shinjiru.com/offshore-web-hosting/offshore-vps-openvz-linux/
-  blurb: 'Малайзийский офшорный хостинг (с 1998 года): VPS OpenVZ/KVM в Малайзии, Болгарии, Нидерландах, Германии, Гонконге, Литве, России, Сингапуре. Оплата Bitcoin, ETH/USDT, PayPal, картой.'
-  blurbEn: 'Malaysian offshore host: OpenVZ/KVM VPS in Malaysia, Bulgaria, Netherlands, Germany, Hong Kong, Lithuania, Russia and Singapore. Pays with Bitcoin, ETH/USDT (ERC-20), PayPal or card.'
-  tags: [Безлимитный трафик]
-  hq: MY
-  countries: [MY, BG, NL, DE, HK, LT, RU, SG]
-  payments: [crypto, card, paypal, bank, local]
 - id: snowcore
   name: SnowCore
   url: https://snowcore.io/vps
@@ -1358,8 +1340,8 @@
   hq: SG
   countries: [US, VN, TH, PH, DE, IN, GB, KR, JP, BR, TW, ID, HK, SG, AE, NG]
   payments: [crypto, card, paypal, local]
-- id: vdsina-2
-  name: VDSina
+- id: vdsina-com
+  name: VDSina.com
   url: https://www.vdsina.com/pricing/standard
   blurb: 'Облачные VPS с посуточной тарификацией: международный сайт vdsina.com (SERVERS TECH FZCO, ОАЭ) — сервера в Амстердаме, российский vdsina.ru — Москва и Амстердам. Самый дешёвый тариф включает 1 ТБ трафика.'
   blurbEn: 'Cloud VPS billed per day: the international site vdsina.com (SERVERS TECH FZCO, UAE) offers Amsterdam, the Russian site vdsina.ru adds Moscow. The cheapest plan includes 1 TB traffic.'
@@ -2242,15 +2224,15 @@
   hq: 'NO'
   countries: ['NO']
   payments: [card, paypal, bank]
-- id: shinjiru-2
+- id: shinjiru
   name: Shinjiru
   url: https://www.shinjiru.com.my/enterprise/ssd-virtual-private-server-linux-kvm/
-  blurb: 'Малайзийский хостер Shinjiru: KVM VPS на NVMe в ЦОД в Малайзии, при оплате на 36 месяцев действует скидка.'
-  blurbEn: 'Malaysian host Shinjiru: NVMe KVM VPS in a Malaysian data centre, with a discount on a 36-month term.'
+  blurb: 'Малайзийский офшорный хостинг (с 1998 года): VPS OpenVZ/KVM в Малайзии, Болгарии, Нидерландах, Германии, Гонконге, Литве, России, Сингапуре. Оплата Bitcoin, ETH/USDT, PayPal, картой.'
+  blurbEn: 'Malaysian offshore host: OpenVZ/KVM VPS in Malaysia, Bulgaria, Netherlands, Germany, Hong Kong, Lithuania, Russia and Singapore. Pays with Bitcoin, ETH/USDT (ERC-20), PayPal or card.'
   tags: []
   hq: MY
-  countries: [MY]
-  payments: []
+  countries: [MY, BG, NL, DE, HK, LT, RU, SG]
+  payments: [crypto, card, paypal, bank, local]
 - id: skhron
   name: Skhron
   url: https://skhron.eu/services
@@ -4662,8 +4644,8 @@
   hq: PL
   countries: [PL]
   payments: []
-- id: elitehost-2
-  name: EliteHost
+- id: elitehost-br
+  name: EliteHost Brasil
   url: https://elitehost.com.br/vps
   blurb: Бразильский провайдер VPS и выделенных серверов; KVM (Proxmox VE) на Intel Xeon с NVMe RAID-10 и защитой от DDoS в Бразилии, мгновенная активация после оплаты PIX.
   blurbEn: Brazilian VPS and dedicated server provider; KVM (Proxmox VE) on Intel Xeon with NVMe RAID-10 and DDoS protection in Brazil, instant activation after PIX payment.
