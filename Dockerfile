@@ -22,6 +22,10 @@ FROM python:3.14-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
+# pip в рантайме не нужен (зависимости ставит uv в стадии pydeps), а вендоренные в нём пакеты
+# (urllib3, msgpack, setuptools) отстают от исправлений и краснят скан образа — убираем pip целиком.
+RUN rm -rf /usr/local/lib/python3.*/site-packages/pip /usr/local/lib/python3.*/site-packages/pip-*.dist-info \
+        /usr/local/lib/python3.*/ensurepip /usr/local/bin/pip /usr/local/bin/pip3*
 RUN addgroup --system --gid 1000 app \
     && adduser --system --uid 1000 --ingroup app --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
