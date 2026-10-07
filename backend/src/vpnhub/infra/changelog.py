@@ -27,6 +27,44 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.12.0",
+        "date": "2026-10-08",
+        "notes": [
+            {
+                "ru": "Каталог провайдеров вырос с 7 до 600 с лишним VPS-хостингов в России и по всему миру: у каждого — локации, способы оплаты (карта РФ, СБП, крипта…), страна компании и описание на двух языках",  # noqa: E501
+                "en": "The provider catalog grows from 7 to 600+ VPS hosts in Russia and worldwide, each with locations, payment methods (Russian card, SBP, crypto…), company country and a bilingual description",  # noqa: E501
+            },
+            {
+                "ru": "Поиск и фильтры в каталоге: по названию и странам, локациям, способам оплаты, стране компании и наличию живых тарифов; на карточках — флаги локаций и способы оплаты",  # noqa: E501
+                "en": "Catalog search and filters: by name and country, locations, payment methods, company country and live plans; cards show location flags and payment methods",  # noqa: E501
+            },
+            {
+                "ru": "Живые тарифы теперь у 51 провайдера вместо 7: Timeweb Cloud, Beget, Hetzner, Vultr, Akamai (Linode), 4VPS, FirstVDS, ProfitServer, EDIS, FlokiNET и другие",  # noqa: E501
+                "en": "Live plans now come from 51 providers instead of 7: Timeweb Cloud, Beget, Hetzner, Vultr, Akamai (Linode), 4VPS, FirstVDS, ProfitServer, EDIS, FlokiNET and more",  # noqa: E501
+            },
+            {
+                "ru": "Подбор тарифа: поиск по тарифу, городу и провайдеру, фильтры по vCPU, диску, типу диска, порту и безлимитному трафику, сортировка по цене за 1 ГБ RAM и прогресс загрузки по провайдерам",  # noqa: E501
+                "en": "Plan finder: search by plan, city and provider, filters for vCPU, disk, disk type, port speed and unmetered traffic, sorting by price per GB of RAM, and per-provider load progress",  # noqa: E501
+            },
+            {
+                "ru": "В форме сервера провайдера можно найти поиском по всему каталогу",
+                "en": "The server form can search the whole catalog for a provider",
+            },
+            {
+                "ru": "Если провайдер не публикует квоту трафика, тариф помечен «трафик не указан», а не «безлимит»",
+                "en": 'Plans whose provider doesn\'t publish a traffic quota now say "traffic not specified" instead of "unlimited"',  # noqa: E501
+            },
+            {
+                "ru": "Каталог и тарифы грузятся быстрее и расходуют меньше памяти, ответы каталога сжимаются",
+                "en": "The catalog and plans load faster and use less memory, and catalog responses are compressed",
+            },
+            {
+                "ru": "Безопасность: обновлены anyio и cryptography с исправлениями уязвимостей (в т.ч. критической), из образа убран ненужный pip",  # noqa: E501
+                "en": "Security: anyio and cryptography updated with vulnerability fixes (including a critical one); the unneeded pip is removed from the image",  # noqa: E501
+            },
+        ],
+    },
+    {
         "v": "0.11.0",
         "date": "2026-07-12",
         "notes": [
