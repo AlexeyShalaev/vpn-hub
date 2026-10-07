@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PLAN_FILTER, type FinderPlan, rankPlans } from "./planFinder";
+import { DEFAULT_PLAN_FILTER, type FinderPlan, planLocation, rankPlans } from "./planFinder";
 
 function plan(id: string, over: Partial<FinderPlan> = {}): FinderPlan {
   return {
@@ -64,5 +64,13 @@ describe("plan finder", () => {
     expect(ids(rankPlans(all, { ...f, sort: "pricePerGb" }, rates)).slice(0, 2)).toEqual(["big", "hdd"]);
     expect(ids(rankPlans(all, { ...f, sort: "ram" }, rates))[0]).toBe("big");
     expect(ids(rankPlans(all, { ...f, sort: "cpu" }, rates))[0]).toBe("big");
+  });
+});
+
+describe("plan location", () => {
+  it("prefers the explicit country from the provider API over parsing the city", () => {
+    expect(planLocation(plan("a", { region: "Silicon Valley, US", country: "us" })).key).toBe("US");
+    expect(planLocation(plan("b", { region: "Delhi NCR, IN", country: "IN" })).label).toBe("Индия / India");
+    expect(planLocation(plan("c", { region: "Франкфурт(Германия)" })).key).toBe("DE");
   });
 });

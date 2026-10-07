@@ -83,6 +83,7 @@ export interface ProviderPlan {
   period: string; // minute | day | month
   available?: boolean; // false = на сайте помечен как распродан/ожидается
   sourceUrl?: string; // страница провайдера, с которой распарсен тариф
+  country?: string; // ISO-код страны, если провайдер отдаёт его явно (API облаков); иначе — по region
 }
 
 export interface FxRates {

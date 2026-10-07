@@ -2,7 +2,7 @@
 // Цены у провайдеров в разных валютах и периодах — всё сводится к месячной цене в выбранной валюте по
 // курсу ЦБ (monthlyPriceIn), поэтому бюджет и сортировка по цене работают через провайдеров разом.
 
-import { canonicalLocation } from "./locations";
+import { type CanonLoc, canonicalLocation, countryLabel } from "./locations";
 import { monthlyPriceIn } from "./providerPlans";
 import type { ProviderPlan } from "./types";
 
@@ -12,6 +12,13 @@ export type FinderPlan = ProviderPlan & { providerId: string; providerLabel: str
 export type RankedPlan = FinderPlan & { monthly: number | null };
 
 export type PlanSort = "price" | "pricePerGb" | "ram" | "cpu";
+
+// локация тарифа для группировки: явная страна из API провайдера точнее, чем разбор названия города
+export function planLocation(p: ProviderPlan): CanonLoc {
+  const code = p.country?.trim().toUpperCase();
+  if (code && /^[A-Z]{2}$/.test(code)) return { key: code, label: countryLabel(code) };
+  return canonicalLocation(p.region);
+}
 
 export interface PlanFilter {
   query: string; // слова в названии тарифа, локации или провайдере
@@ -85,7 +92,7 @@ export function rankPlans(all: readonly FinderPlan[], f: PlanFilter, rates: Reco
   const words = norm(f.query).split(/\s+/).filter(Boolean);
   return all
     .filter((p) => (f.onlyAvailable ? p.available !== false : true))
-    .filter((p) => f.regions.length === 0 || f.regions.includes(canonicalLocation(p.region).key))
+    .filter((p) => f.regions.length === 0 || f.regions.includes(planLocation(p).key))
     .filter((p) => f.providers.length === 0 || f.providers.includes(p.providerId))
     .filter((p) => p.ramGb >= ramLo && p.ramGb <= ramHi && p.cpu >= cpuLo && p.diskGb >= diskLo)
     .filter((p) => portLo <= 0 || p.portMbps >= portLo)

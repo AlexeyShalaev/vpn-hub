@@ -100,9 +100,14 @@ def make_plan(
     source_url: str,
     period: str = "month",
     available: bool = True,
+    country: str = "",
 ) -> dict[str, Any]:
-    """Тариф в общем формате каталога (см. ProviderPlan во фронтенде)."""
-    return {
+    """Тариф в общем формате каталога (см. ProviderPlan во фронтенде).
+
+    `country` — ISO-код страны, если провайдер отдаёт его явно (API облаков): тогда фильтр локаций не
+    угадывает страну по названию города. Пусто — фронтенд сводит `region` к стране сам.
+    """
+    plan = {
         "id": plan_id,
         "name": name,
         "region": region,
@@ -118,6 +123,9 @@ def make_plan(
         "available": available,
         "sourceUrl": source_url,
     }
+    if country:
+        plan["country"] = country.upper()
+    return plan
 
 
 def sort_plans(plans: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:

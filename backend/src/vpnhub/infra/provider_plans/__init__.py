@@ -16,15 +16,17 @@ from .cache import _cached_provider_plans, clear_provider_plan_cache
 from .catalog import plans_for as _plans_for
 from .common import TIB, plan_bandwidth_bytes
 from .keys import PLAN_SOURCES, PlanSource, _provider_key
-from .providers import ahost, beget, firstbyte, ishosting, serverspace, timeweb, ufo, ultahost, yun62
+from .providers import ahost, beget, firstbyte, ishosting, linode, serverspace, timeweb, ufo, ultahost, vultr, yun62
 from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
 from .providers.beget import fetch_beget_plans, parse_beget_plans
 from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
 from .providers.ishosting import discover_ishosting_plan_urls, fetch_ishosting_plans, parse_ishosting_plans
+from .providers.linode import fetch_linode_plans, parse_linode_plans
 from .providers.serverspace import fetch_serverspace_plans, parse_serverspace_plans
 from .providers.timeweb import fetch_timeweb_plans, parse_timeweb_plans
 from .providers.ufo import discover_ufo_countries, fetch_ufo_plans, parse_ufo_plans
 from .providers.ultahost import fetch_ultahost_plans, parse_ultahost_plans
+from .providers.vultr import fetch_vultr_plans, parse_vultr_plans
 from .providers.yun62 import fetch_yun62_plans, parse_yun62_plans
 
 _COMPAT_MODULES = {
@@ -32,10 +34,12 @@ _COMPAT_MODULES = {
     "beget": beget,
     "firstbyte": firstbyte,
     "ishosting": ishosting,
+    "linode": linode,
     "serverspace": serverspace,
     "timeweb": timeweb,
     "ufo": ufo,
     "ultahost": ultahost,
+    "vultr": vultr,
     "yun62": yun62,
 }
 for _name, _module in _COMPAT_MODULES.items():
@@ -54,6 +58,8 @@ _FETCHER_NAMES: dict[str, str] = {
     "62yun": "fetch_yun62_plans",
     "timeweb": "fetch_timeweb_plans",
     "beget": "fetch_beget_plans",
+    "vultr": "fetch_vultr_plans",
+    "linode": "fetch_linode_plans",
 }
 
 
@@ -83,21 +89,26 @@ __all__ = [
     "fetch_beget_plans",
     "fetch_firstbyte_plans",
     "fetch_ishosting_plans",
+    "fetch_linode_plans",
     "fetch_serverspace_plans",
     "fetch_timeweb_plans",
     "fetch_ufo_plans",
     "fetch_ultahost_plans",
+    "fetch_vultr_plans",
     "fetch_yun62_plans",
     "firstbyte",
     "ishosting",
+    "linode",
     "parse_ahost_plans",
     "parse_beget_plans",
     "parse_firstbyte_plans",
     "parse_ishosting_plans",
+    "parse_linode_plans",
     "parse_serverspace_plans",
     "parse_timeweb_plans",
     "parse_ufo_plans",
     "parse_ultahost_plans",
+    "parse_vultr_plans",
     "parse_yun62_plans",
     "plan_bandwidth_bytes",
     "plans_for",
@@ -105,5 +116,6 @@ __all__ = [
     "timeweb",
     "ufo",
     "ultahost",
+    "vultr",
     "yun62",
 ]

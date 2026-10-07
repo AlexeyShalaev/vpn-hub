@@ -1057,3 +1057,140 @@ async def test__fetch_timeweb_plans__network_error_is_empty(monkeypatch: pytest.
     monkeypatch.setattr(provider_plans.timeweb, "_fetch_browser_url", boom)
 
     assert await provider_plans.fetch_timeweb_plans() == []
+
+
+# --- публичные API облаков (Vultr, Linode) ------------------------------------------------------
+
+VULTR_REGIONS = {
+    "regions": [
+        {"id": "ams", "city": "Amsterdam", "country": "NL"},
+        {"id": "sao", "city": "São Paulo", "country": "BR"},
+    ]
+}
+VULTR_PLANS = {
+    "plans": [
+        {"id": "vc2-1c-0.5gb-free", "type": "vc2", "vcpu_count": 1, "ram": 512, "disk": 10, "bandwidth": 0,
+         "monthly_cost": 0, "locations": ["ams"]},
+        {"id": "vc2-1c-0.5gb-v6", "type": "vc2", "vcpu_count": 1, "ram": 512, "disk": 10, "bandwidth": 512,
+         "monthly_cost": 2.5, "locations": ["ams"]},
+        {"id": "vc2-1c-1gb", "type": "vc2", "vcpu_count": 1, "ram": 1024, "disk": 25, "bandwidth": 1024,
+         "monthly_cost": 5, "locations": ["ams", "sao", "unknown"],
+         "location_cost": {"sao": {"monthly_cost": 7.5}}},
+        {"id": "vhp-1c-1gb-amd", "type": "vhp", "vcpu_count": 1, "ram": 1024, "disk": 25, "bandwidth": 2048,
+         "monthly_cost": 6, "locations": ["ams"]},
+        {"id": "vcg-a16-2c-8g-2vram", "type": "vcg", "vcpu_count": 2, "ram": 8192, "disk": 50, "bandwidth": 1024,
+         "monthly_cost": 43, "locations": ["ams"]},
+    ]
+}  # fmt: skip
+
+
+def test__parse_vultr_plans__expands_vps_plans_by_location_with_location_prices() -> None:
+    plans = provider_plans.parse_vultr_plans(VULTR_PLANS, VULTR_REGIONS)
+
+    assert [(p["id"], p["price"], p["country"]) for p in plans] == [
+        ("vultr-ams-vc2-1c-1gb", 5.0, "NL"),
+        ("vultr-ams-vhp-1c-1gb-amd", 6.0, "NL"),
+        ("vultr-sao-vc2-1c-1gb", 7.5, "BR"),  # поправка цены для Сан-Паулу
+    ]
+    amd = plans[1]
+    assert amd["name"] == "High Performance AMD 1C/1GB · Amsterdam"
+    assert (amd["region"], amd["diskType"], amd["trafficTb"], amd["currency"]) == ("Amsterdam, NL", "NVMe", 2.0, "USD")
+
+
+LINODE_REGIONS = {
+    "data": [
+        {
+            "id": "nl-ams",
+            "label": "Amsterdam, NL",
+            "country": "nl",
+            "site_type": "core",
+            "status": "ok",
+            "capabilities": ["Linodes", "Block Storage"],
+        },
+        {
+            "id": "br-gru",
+            "label": "Sao Paulo, BR",
+            "country": "br",
+            "site_type": "core",
+            "status": "ok",
+            "capabilities": ["Linodes"],
+        },
+        {
+            "id": "us-edge",
+            "label": "Edge, US",
+            "country": "us",
+            "site_type": "distributed",
+            "status": "ok",
+            "capabilities": ["Linodes"],
+        },
+        {
+            "id": "xx-obj",
+            "label": "Storage only",
+            "country": "us",
+            "site_type": "core",
+            "status": "ok",
+            "capabilities": ["Object Storage"],
+        },
+    ]
+}
+LINODE_TYPES = {
+    "data": [
+        {"id": "g6-nanode-1", "label": "Nanode 1GB", "class": "nanode", "vcpus": 1, "memory": 1024, "disk": 25600,
+         "transfer": 1000, "network_out": 1000, "price": {"monthly": 5.0},
+         "region_prices": [{"id": "br-gru", "monthly": 7.0}]},
+        {"id": "g1-gpu-rtx6000-1", "label": "GPU", "class": "gpu", "vcpus": 8, "memory": 32768, "disk": 655360,
+         "transfer": 16000, "network_out": 10000, "price": {"monthly": 1000.0}, "region_prices": []},
+        {"id": "g8-dedicated-4-2", "label": "G8 Dedicated 4x2", "class": "dedicated", "vcpus": 2, "memory": 4096,
+         "disk": 41984, "transfer": 0, "network_out": 4000, "price": {"monthly": None}, "region_prices": []},
+    ]
+}  # fmt: skip
+
+
+def test__parse_linode_plans__expands_types_over_core_linode_regions() -> None:
+    plans = provider_plans.parse_linode_plans(LINODE_TYPES, LINODE_REGIONS)
+
+    assert [(p["id"], p["price"], p["country"]) for p in plans] == [
+        ("linode-nl-ams-g6-nanode-1", 5.0, "NL"),
+        ("linode-br-gru-g6-nanode-1", 7.0, "BR"),  # региональная цена
+    ]
+    nl = plans[0]
+    assert (nl["name"], nl["cpu"], nl["ramGb"], nl["diskGb"], nl["portMbps"], nl["trafficTb"]) == (
+        "Nanode 1GB · Amsterdam",
+        1,
+        1,
+        25,
+        1000,
+        1.0,
+    )
+
+
+async def test__fetch_vultr_plans__follows_cursor_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = {
+        "https://api.vultr.com/v2/plans?per_page=500": {
+            "plans": VULTR_PLANS["plans"][:3],
+            "meta": {"links": {"next": "abc"}},
+        },
+        "https://api.vultr.com/v2/plans?per_page=500&cursor=abc": {
+            "plans": VULTR_PLANS["plans"][3:],
+            "meta": {"links": {"next": ""}},
+        },
+        "https://api.vultr.com/v2/regions?per_page=500": VULTR_REGIONS,
+    }
+
+    async def fake_fetch_json(url: str, timeout: float) -> Any:
+        return pages[url]
+
+    monkeypatch.setattr(provider_plans.vultr, "_fetch_json", fake_fetch_json)
+
+    plans = await provider_plans.fetch_vultr_plans()
+
+    assert len(plans) == 3
+
+
+async def test__fetch_linode_plans__api_error_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def boom(url: str, timeout: float) -> Any:
+        raise OSError("down")
+
+    monkeypatch.setattr(provider_plans.linode, "_fetch_json", boom)
+
+    assert await provider_plans.fetch_linode_plans() == []

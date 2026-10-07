@@ -28,6 +28,8 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("62yun", "62YUN", ("yun62", "62yun.ru")),
     PlanSource("timeweb", "Timeweb Cloud", ("timeweb.cloud", "timeweb.com", "timeweb.ru")),
     PlanSource("beget", "Beget", ("beget.com", "beget.ru")),
+    PlanSource("vultr", "Vultr", ("vultr.com",)),
+    PlanSource("linode", "Akamai (Linode)", ("linode", "linode.com", "akamai", "akamai cloud")),
 )
 
 _COMPACT_RE = re.compile(r"[\s._-]+")

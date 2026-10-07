@@ -3,12 +3,13 @@ import { type CSSProperties, useMemo, useState } from "react";
 import { Btn, Empty, Field, Icon, Modal, MultiSelect, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { useT } from "../lib/i18n";
-import { canonicalLocation, countryLabel, flagEmoji } from "../lib/locations";
+import { countryLabel, flagEmoji } from "../lib/locations";
 import {
   DEFAULT_PLAN_FILTER,
   type FinderPlan,
   type PlanFilter,
   type PlanSort,
+  planLocation,
   type RankedPlan,
   rankPlans,
 } from "../lib/planFinder";
@@ -208,11 +209,11 @@ function PlanFinderModal({
     setLimit(FINDER_PAGE_SIZE);
   };
 
-  // локации сводим к стране: ОАЭ/UAE/Дубай → одна опция «ОАЭ / UAE» (см. canonicalLocation)
+  // локации сводим к стране: ОАЭ/UAE/Дубай → одна опция «ОАЭ / UAE» (см. planLocation)
   const locationOpts = useMemo<[string, string][]>(() => {
     const byKey = new Map<string, string>();
     for (const p of all) {
-      const { key, label } = canonicalLocation(p.region);
+      const { key, label } = planLocation(p);
       if (!byKey.has(key)) byKey.set(key, key.startsWith("x:") ? label : `${flagEmoji(key)} ${label}`);
     }
     return [...byKey].sort((a, b) => a[1].replace(/^\S+ /, "").localeCompare(b[1].replace(/^\S+ /, ""), "ru"));
