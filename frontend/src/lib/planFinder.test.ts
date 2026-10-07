@@ -30,12 +30,20 @@ const all: FinderPlan[] = [
   plan("hdd", { price: 400, ramGb: 2, diskType: "HDD", portMbps: 0, diskGb: 1000 }),
   plan("sold-out", { price: 10, available: false }),
   plan("no-rate", { price: 1, currency: "XYZ" }),
+  plan("unknown-traffic", { price: 5000, trafficKnown: false }),
 ];
 const ids = (ps: { id: string }[]) => ps.map((p) => p.id);
 
 describe("plan finder", () => {
   it("sorts by monthly price in one currency, unconvertible plans last, sold-out hidden", () => {
-    expect(ids(rankPlans(all, DEFAULT_PLAN_FILTER, rates))).toEqual(["cheap-rub", "hdd", "usd", "big", "no-rate"]);
+    expect(ids(rankPlans(all, DEFAULT_PLAN_FILTER, rates))).toEqual([
+      "cheap-rub",
+      "hdd",
+      "usd",
+      "big",
+      "unknown-traffic",
+      "no-rate",
+    ]);
   });
 
   it("filters by CPU, disk size, disk type, port speed and unlimited traffic", () => {
@@ -45,6 +53,7 @@ describe("plan finder", () => {
     expect(ids(rankPlans(all, { ...f, diskTypes: ["SSD", "HDD"] }, rates))).toEqual(["hdd", "big"]);
     expect(ids(rankPlans(all, { ...f, portMin: "100" }, rates))).not.toContain("hdd");
     expect(ids(rankPlans(all, { ...f, unlimitedOnly: true }, rates))).not.toContain("big");
+    expect(ids(rankPlans(all, { ...f, unlimitedOnly: true }, rates))).not.toContain("unknown-traffic");
   });
 
   it("matches query words against plan, location and provider names", () => {

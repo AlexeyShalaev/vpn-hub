@@ -74,7 +74,8 @@ def parse_fourvps_tariffs(cluster: _Cluster, payload: Mapping[str, Any]) -> list
                 disk_gb=int(disk),
                 disk_type="NVMe",
                 port_mbps=_speed_mbps(str(t.get("eth") or "")) or 0,
-                traffic_tb=None,  # квота трафика в ответе не указана
+                traffic_tb=None,
+                traffic_known=False,  # квота трафика в ответе не указана
                 price=float(price),
                 currency="RUB",
                 source_url=_FOURVPS_URL,

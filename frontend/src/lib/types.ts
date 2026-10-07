@@ -77,7 +77,8 @@ export interface ProviderPlan {
   diskGb: number;
   diskType: string;
   portMbps: number;
-  trafficTb: number | null; // квота трафика, null = безлимит
+  trafficTb: number | null; // квота трафика, null = безлимит (или «не указано», если trafficKnown === false)
+  trafficKnown?: boolean; // false — провайдер квоту не публикует
   price: number;
   currency: string;
   period: string; // minute | day | month

@@ -84,6 +84,7 @@ def _monthly_cost(price: ET.Element | None) -> float | None:
     return None
 
 
+_UNMETERED_RE = re.compile(r"unmet+ered|unlimited|безлимит", re.I)
 _SPEED_UNITS = ("mbps", "mbit", "мбит", "gbps", "gbit", "гбит")
 _VOLUME_UNITS = ("mb", "mib", "мб", "gb", "gib", "гб", "tb", "tib", "тб")
 _UNLIMITED = 99_999  # 999999 в addonlimit — «без ограничения»
@@ -114,6 +115,7 @@ class _Specs:
     traffic_tb: float | None = None
     disk_hint: str = ""
     inbound_mbps: int = 0  # входящий канал — только если исходящий не указан
+    traffic_known: bool = False  # квота указана или явно безлимитная
 
 
 def _addon_specs(addons: Iterable[ET.Element]) -> _Specs:
@@ -144,6 +146,9 @@ def _addon_specs(addons: Iterable[ET.Element]) -> _Specs:
                     specs.port_mbps = max(specs.port_mbps, mbps)
             elif unit.startswith(_VOLUME_UNITS) and 0 < limit < _UNLIMITED and specs.traffic_tb is None:
                 specs.traffic_tb = round(_to_gb(limit, unit) / 1024, 3)
+                specs.traffic_known = True
+            if _UNMETERED_RE.search(name):  # «Unmetred traffic 100 Mbit/s», «Безлимитный трафик»
+                specs.traffic_known = True
             # скорость порта часто только в названии аддона: «Port 1 Gbit/s, 32 Tb included»
             if (
                 not specs.port_mbps
@@ -165,6 +170,7 @@ def _description_specs(about: str, specs: _Specs) -> _Specs:
     specs.port_mbps = specs.port_mbps or parsed.port_mbps or 0
     if specs.traffic_tb is None:
         specs.traffic_tb = parsed.traffic_tb
+    specs.traffic_known = specs.traffic_known or parsed.traffic_seen
     return specs
 
 
@@ -233,6 +239,7 @@ def parse_billmanager_export(provider_id: str, source: BillmanagerSource, xml_te
                     disk_type=disk_type,
                     port_mbps=specs.port_mbps,
                     traffic_tb=specs.traffic_tb,
+                    traffic_known=specs.traffic_known,
                     price=cost,
                     currency=currency.upper(),
                     source_url=source.site_url,

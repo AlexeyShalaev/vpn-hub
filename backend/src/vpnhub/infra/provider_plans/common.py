@@ -101,11 +101,14 @@ def make_plan(
     period: str = "month",
     available: bool = True,
     country: str = "",
+    traffic_known: bool = True,
 ) -> dict[str, Any]:
     """Тариф в общем формате каталога (см. ProviderPlan во фронтенде).
 
     `country` — ISO-код страны, если провайдер отдаёт его явно (API облаков): тогда фильтр локаций не
     угадывает страну по названию города. Пусто — фронтенд сводит `region` к стране сам.
+    `traffic_known=False` — провайдер квоту трафика не публикует: `trafficTb=None` тогда значит «не указано»,
+    а не «безлимит» (флаг уходит в план как `trafficKnown: false`).
     """
     plan = {
         "id": plan_id,
@@ -125,6 +128,8 @@ def make_plan(
     }
     if country:
         plan["country"] = country.upper()
+    if traffic_tb is None and not traffic_known:
+        plan["trafficKnown"] = False
     return plan
 
 

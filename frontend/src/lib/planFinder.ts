@@ -33,7 +33,7 @@ export interface PlanFilter {
   priceMax: string;
   currency: string;
   diskTypes: string[]; // NVMe / SSD / HDD …; пусто = любые
-  unlimitedOnly: boolean; // только безлимитный трафик
+  unlimitedOnly: boolean; // только явно безлимитный трафик (тарифы без опубликованной квоты отсекаются)
   onlyAvailable: boolean;
   sort: PlanSort;
 }
@@ -97,7 +97,7 @@ export function rankPlans(all: readonly FinderPlan[], f: PlanFilter, rates: Reco
     .filter((p) => p.ramGb >= ramLo && p.ramGb <= ramHi && p.cpu >= cpuLo && p.diskGb >= diskLo)
     .filter((p) => portLo <= 0 || p.portMbps >= portLo)
     .filter((p) => f.diskTypes.length === 0 || f.diskTypes.includes(p.diskType))
-    .filter((p) => !f.unlimitedOnly || p.trafficTb == null)
+    .filter((p) => !f.unlimitedOnly || (p.trafficTb == null && p.trafficKnown !== false))
     .filter((p) => {
       if (words.length === 0) return true;
       const text = norm(`${p.name} ${p.region} ${p.providerLabel}`);

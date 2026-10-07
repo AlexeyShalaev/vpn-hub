@@ -421,6 +421,7 @@ def test__parse_ufo_plans__extracts_cards_from_landing_and_ajax_fragments() -> N
         "diskType": "NVMe",
         "portMbps": 10000,
         "trafficTb": None,
+        "trafficKnown": False,
         "price": 577,
         "currency": "RUB",
         "period": "month",
@@ -516,6 +517,7 @@ def test__parse_serverspace_plans__extracts_fixed_plans_for_all_dcs() -> None:
         "diskType": "SSD",
         "portMbps": 50,
         "trafficTb": None,
+        "trafficKnown": False,
         "price": 438.21,
         "currency": "RUB",
         "period": "month",
@@ -602,6 +604,7 @@ def test__parse_yun62_plans__extracts_per_location_tariffs_from_onclick() -> Non
         "diskType": "NVMe",
         "portMbps": 0,
         "trafficTb": None,
+        "trafficKnown": False,  # квота не опубликована
         "price": 219.0,
         "currency": "RUB",
         "period": "month",
@@ -994,6 +997,7 @@ def test__parse_timeweb_plans__maps_tariff_tags_to_locations_via_configurator() 
     assert nl["name"] == "Cloud NL-30 · Амстердам"
     assert (nl["cpu"], nl["ramGb"], nl["diskGb"], nl["diskType"], nl["portMbps"]) == (1, 2, 30, "NVMe", 1000)
     assert (nl["price"], nl["currency"], nl["period"], nl["trafficTb"]) == (810.0, "RUB", "month", None)
+    assert "trafficKnown" not in nl  # у Timeweb трафик явно безлимитный
 
 
 BEGET_STATE = {
@@ -1032,6 +1036,7 @@ def test__parse_beget_plans__extracts_vps_plans_from_pinia_state() -> None:
     ]
     spb = plans[1]
     assert (spb["cpu"], spb["ramGb"], spb["diskGb"], spb["diskType"], spb["portMbps"]) == (2, 2, 30, "NVMe", 1000)
+    assert (spb["trafficTb"], spb["trafficKnown"]) == (None, False)  # квота не опубликована — не «безлимит»
 
 
 @pytest.mark.parametrize(
@@ -1355,6 +1360,8 @@ def test__parse_whmcs_page__reads_standard_cart_products_in_any_layout() -> None
     kz = plans["Қайнар · Vienna"]
     assert (kz["cpu"], kz["ramGb"], kz["diskGb"], kz["trafficTb"], kz["price"]) == (1, 2, 15, None, 2383.0)
     assert kz["currency"] == "KZT"
+    assert "trafficKnown" not in kz  # «Трафик безлимитный» — квота известна
+    assert "trafficKnown" not in smart
 
 
 @pytest.mark.parametrize(
@@ -1547,6 +1554,8 @@ def test__parse_billmanager_export__reads_addons_datacenters_and_description_fal
     )
     described = plans["vds-sh-1800"]  # характеристики только в описании
     assert (described["cpu"], described["ramGb"], described["diskGb"], described["diskType"]) == (1, 2, 20, "HDD")
+    assert msk["trafficKnown"] is False  # ни квоты, ни «безлимита» в прайсе
+    assert "trafficKnown" not in ssd  # 32 ТБ указаны
 
 
 def test__billmanager_export_url__asks_for_available_vds_only() -> None:

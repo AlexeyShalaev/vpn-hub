@@ -240,6 +240,7 @@ def parse_whmcs_page(provider_id: str, page: WhmcsPage, html: str) -> list[dict[
                 disk_type=specs.disk_type or page.disk_type,
                 port_mbps=specs.port_mbps or 0,
                 traffic_tb=specs.traffic_tb,
+                traffic_known=specs.traffic_seen,
                 price=monthly,
                 currency=currency,
                 source_url=page.url,

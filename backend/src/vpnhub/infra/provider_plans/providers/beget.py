@@ -71,7 +71,8 @@ def parse_beget_plans(pages: Mapping[str, str]) -> list[dict[str, Any]]:
                     disk_gb=int(disk_mb // 1024),
                     disk_type="NVMe",
                     port_mbps=int(port) if isinstance(port, (int, float)) else 0,
-                    traffic_tb=None,  # квота трафика на странице не указана
+                    traffic_tb=None,
+                    traffic_known=False,  # квота трафика на странице не указана
                     price=price,
                     currency="RUB",
                     source_url=url,

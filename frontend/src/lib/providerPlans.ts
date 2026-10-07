@@ -12,8 +12,9 @@ export function pricePeriodLabel(period: string): string {
   return labels[period] ?? period;
 }
 
-export function fmtTraffic(tb: number | null): string {
-  return tb == null ? tg("plan.trafficUnlimited") : tg("plan.trafficTb", { tb });
+export function fmtTraffic(tb: number | null, known = true): string {
+  if (tb != null) return tg("plan.trafficTb", { tb });
+  return known ? tg("plan.trafficUnlimited") : tg("plan.trafficUnknown");
 }
 
 export function fmtPrice(p: ProviderPlan): string {
@@ -25,7 +26,7 @@ export function fmtPort(p: ProviderPlan): string {
 }
 
 export function planSpecs(p: ProviderPlan): string {
-  return `${tg("plan.specsCpuRam", { cpu: p.cpu, ram: p.ramGb })} · ${tg("plan.specsDisk", { disk: p.diskGb, type: p.diskType })} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb)}`;
+  return `${tg("plan.specsCpuRam", { cpu: p.cpu, ram: p.ramGb })} · ${tg("plan.specsDisk", { disk: p.diskGb, type: p.diskType })} · ${fmtPort(p)} · ${fmtTraffic(p.trafficTb, p.trafficKnown !== false)}`;
 }
 
 // --- приведение цен тарифов к одной валюте за месяц (для подбора по всем провайдерам) ---

@@ -359,6 +359,7 @@ def _serverspace_row_to_plan(
         "diskType": disk_type,
         "portMbps": port,
         "trafficTb": None,
+        "trafficKnown": False,  # в таблице фиксированных тарифов квоты трафика нет
         "price": price,
         "currency": _serverspace_currency(source_url, row.currency),
         "period": "month",
