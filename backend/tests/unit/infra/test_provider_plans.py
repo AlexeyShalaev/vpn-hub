@@ -1194,3 +1194,97 @@ async def test__fetch_linode_plans__api_error_is_empty(monkeypatch: pytest.Monke
     monkeypatch.setattr(provider_plans.linode, "_fetch_json", boom)
 
     assert await provider_plans.fetch_linode_plans() == []
+
+
+# --- Hetzner (HTML линеек + фид цен) ------------------------------------------------------------
+
+HETZNER_ROW = """
+<div class="cloud-matrix-product {extra}" style="order: 1;">
+  <div class="cell name-cell"><div class="no-wrap ">{name}</div></div>
+  <div class="cell cpu-cell"><svg><path d="M1"/></svg> {cpu} <div class="arch-type-badge">AMD</div></div>
+  <div class="cell ram-cell"><svg></svg> {ram} GB</div>
+  <div class="cell drive-cell"><svg></svg> {disk} GB <span class="product-cloud-drive-label">NVMe</span></div>
+  <div class="cell month-price-cell">
+    <ho-price-container country="fi,de" product-key="{key}" ></ho-price-container>
+  </div>
+  <div class="product-details-container">
+    <div class="location-box text-caption-2 box-1">
+      <span class="location-label">eu-central</span>
+      <span class="traffic-info-amount">20
+          TB</span>
+      <ho-price-container class="text-price" product-key="CLOUD_66" price-type="hourly" location=ALL>
+      </ho-price-container>
+      <ho-price-container location="NBG1,HEL1" product-key="{key}" ></ho-price-container>
+    </div>
+    <div class="location-box text-caption-2 box-2">
+      <span class="traffic-info-amount">1 TB</span>
+      <ho-price-container location="SIN1" product-key="{key}" ></ho-price-container>
+    </div>
+  </div>
+</div>
+"""
+HETZNER_PAGE = (
+    "<html>"
+    + HETZNER_ROW.format(extra="", name="CPX22", cpu=2, ram=4, disk=80, key="CLOUD_124+CLOUD_21")
+    + HETZNER_ROW.format(extra="not-available", name="CX23", cpu=2, ram=4, disk=40, key="CLOUD_132+CLOUD_21")
+    + '<div class="cloud-matrix-product-fold"></div></html>'
+)
+HETZNER_PRICES = {
+    "products": {
+        "CLOUD_124": {
+            "locations": [
+                {"countryCode": "de", "datacenter": "NBG1", "active": True, "prices": {"monthly": {"EUR": "19.49"}}},
+                {"countryCode": "fi", "datacenter": "HEL1", "active": True, "prices": {"monthly": {"EUR": "19.49"}}},
+                {"countryCode": "sg", "datacenter": "SIN1", "active": True, "prices": {"monthly": {"EUR": "26.49"}}},
+            ]
+        },
+        "CLOUD_132": {
+            "locations": [
+                {"countryCode": "de", "datacenter": "NBG1", "active": True, "prices": {"monthly": {"EUR": "5.49"}}},
+            ]
+        },
+        "CLOUD_21": {"locations": [{"datacenter": "ALL", "prices": {"monthly": {"EUR": "0.50"}}}]},
+    }
+}
+
+
+def test__parse_hetzner_plans__joins_html_specs_with_per_dc_prices_and_ipv4() -> None:
+    url = "https://www.hetzner.com/cloud/regular-performance/"
+    plans = provider_plans.parse_hetzner_plans({url: HETZNER_PAGE}, HETZNER_PRICES)
+
+    assert [(p["id"], p["price"], p["trafficTb"], p["available"]) for p in plans] == [
+        ("hetzner-hel1-cpx22", 19.99, 20.0, True),
+        ("hetzner-nbg1-cx23", 5.99, 20.0, False),  # «not available» на сайте; в HEL1/SIN1 цены нет — пропуск
+        ("hetzner-nbg1-cpx22", 19.99, 20.0, True),
+        ("hetzner-sin1-cpx22", 26.99, 1.0, True),
+    ]
+    hel = plans[0]
+    assert (hel["name"], hel["region"], hel["country"], hel["currency"]) == (
+        "CPX22 · Helsinki",
+        "Helsinki, FI",
+        "FI",
+        "EUR",
+    )
+    assert (hel["cpu"], hel["ramGb"], hel["diskGb"], hel["diskType"]) == (2, 4, 80, "NVMe")
+
+
+async def test__fetch_hetzner_plans__loads_prices_and_every_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages: list[str] = []
+
+    async def fake_fetch_json(url: str, timeout: float) -> Any:
+        return HETZNER_PRICES
+
+    async def fake_fetch_browser_url(url: str, timeout: float) -> str:
+        pages.append(url)
+        if url.endswith("general-purpose/"):
+            raise TimeoutError  # одна линейка недоступна — остальные всё равно разбираются
+        return HETZNER_PAGE if url.endswith("cost-optimized/") else "<html></html>"
+
+    monkeypatch.setattr(provider_plans.hetzner, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(provider_plans.hetzner, "_fetch_browser_url", fake_fetch_browser_url)
+
+    plans = await provider_plans.fetch_hetzner_plans()
+
+    assert len(pages) == 3
+    assert len(plans) == 4
+    assert {p["sourceUrl"] for p in plans} == {"https://www.hetzner.com/cloud/cost-optimized/"}

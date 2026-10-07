@@ -28,6 +28,7 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("62yun", "62YUN", ("yun62", "62yun.ru")),
     PlanSource("timeweb", "Timeweb Cloud", ("timeweb.cloud", "timeweb.com", "timeweb.ru")),
     PlanSource("beget", "Beget", ("beget.com", "beget.ru")),
+    PlanSource("hetzner", "Hetzner", ("hetzner.com", "hetzner cloud")),
     PlanSource("vultr", "Vultr", ("vultr.com",)),
     PlanSource("linode", "Akamai (Linode)", ("linode", "linode.com", "akamai", "akamai cloud")),
 )

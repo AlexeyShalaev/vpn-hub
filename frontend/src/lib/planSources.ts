@@ -18,6 +18,7 @@ export const PLAN_SOURCES: readonly PlanSource[] = [
   { id: "62yun", label: "62YUN", aliases: ["yun62", "62yun.ru"] },
   { id: "timeweb", label: "Timeweb Cloud", aliases: ["timeweb.cloud", "timeweb.com", "timeweb.ru"] },
   { id: "beget", label: "Beget", aliases: ["beget.com", "beget.ru"] },
+  { id: "hetzner", label: "Hetzner", aliases: ["hetzner.com", "hetzner cloud"] },
   { id: "vultr", label: "Vultr", aliases: ["vultr.com"] },
   { id: "linode", label: "Akamai (Linode)", aliases: ["linode", "linode.com", "akamai", "akamai cloud"] },
 ];

@@ -16,10 +16,24 @@ from .cache import _cached_provider_plans, clear_provider_plan_cache
 from .catalog import plans_for as _plans_for
 from .common import TIB, plan_bandwidth_bytes
 from .keys import PLAN_SOURCES, PlanSource, _provider_key
-from .providers import ahost, beget, firstbyte, ishosting, linode, serverspace, timeweb, ufo, ultahost, vultr, yun62
+from .providers import (
+    ahost,
+    beget,
+    firstbyte,
+    hetzner,
+    ishosting,
+    linode,
+    serverspace,
+    timeweb,
+    ufo,
+    ultahost,
+    vultr,
+    yun62,
+)
 from .providers.ahost import discover_ahost_plan_urls, fetch_ahost_plans, parse_ahost_plans
 from .providers.beget import fetch_beget_plans, parse_beget_plans
 from .providers.firstbyte import discover_firstbyte_plan_urls, fetch_firstbyte_plans, parse_firstbyte_plans
+from .providers.hetzner import fetch_hetzner_plans, parse_hetzner_plans
 from .providers.ishosting import discover_ishosting_plan_urls, fetch_ishosting_plans, parse_ishosting_plans
 from .providers.linode import fetch_linode_plans, parse_linode_plans
 from .providers.serverspace import fetch_serverspace_plans, parse_serverspace_plans
@@ -33,6 +47,7 @@ _COMPAT_MODULES = {
     "ahost": ahost,
     "beget": beget,
     "firstbyte": firstbyte,
+    "hetzner": hetzner,
     "ishosting": ishosting,
     "linode": linode,
     "serverspace": serverspace,
@@ -58,6 +73,7 @@ _FETCHER_NAMES: dict[str, str] = {
     "62yun": "fetch_yun62_plans",
     "timeweb": "fetch_timeweb_plans",
     "beget": "fetch_beget_plans",
+    "hetzner": "fetch_hetzner_plans",
     "vultr": "fetch_vultr_plans",
     "linode": "fetch_linode_plans",
 }
@@ -88,6 +104,7 @@ __all__ = [
     "fetch_ahost_plans",
     "fetch_beget_plans",
     "fetch_firstbyte_plans",
+    "fetch_hetzner_plans",
     "fetch_ishosting_plans",
     "fetch_linode_plans",
     "fetch_serverspace_plans",
@@ -97,11 +114,13 @@ __all__ = [
     "fetch_vultr_plans",
     "fetch_yun62_plans",
     "firstbyte",
+    "hetzner",
     "ishosting",
     "linode",
     "parse_ahost_plans",
     "parse_beget_plans",
     "parse_firstbyte_plans",
+    "parse_hetzner_plans",
     "parse_ishosting_plans",
     "parse_linode_plans",
     "parse_serverspace_plans",
