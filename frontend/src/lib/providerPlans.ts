@@ -127,6 +127,11 @@ export function dynamicPlanProviderId(provider: Provider | null, providerName: s
   return dynamicPlanProviderIdByName(providerName);
 }
 
+// умеет ли панель загружать живые тарифы этого провайдера каталога (по id или узнаваемому имени)
+export function hasLivePlans(p: Provider): boolean {
+  return isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name));
+}
+
 export function planProviderDisplayName(providerId: string): string {
   return DYNAMIC_PLAN_PROVIDER_LABELS[providerId] ?? providerId;
 }

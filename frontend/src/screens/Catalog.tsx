@@ -19,6 +19,7 @@ import {
   dynamicPlanProviderId,
   fmtMoney,
   fmtPrice,
+  hasLivePlans,
   isDynamicPlanProviderId,
   monthlyPriceIn,
   planProviderDisplayName,
@@ -444,8 +445,6 @@ const EMPTY: FormState = {
 // сколько карточек рисовать сразу (дальше — «Показать ещё») и сколько флагов локаций на карточке
 const PAGE_SIZE = 48;
 const MAX_FLAGS = 10;
-
-const hasLivePlans = (p: Provider) => isDynamicPlanProviderId(dynamicPlanProviderId(p, p.name));
 
 // опции мультивыбора стран: «🇩🇪 Германия / Germany · 12» (12 — сколько провайдеров там есть)
 function countryOptions(lists: string[][]): [string, string][] {

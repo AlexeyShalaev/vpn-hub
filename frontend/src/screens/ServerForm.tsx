@@ -5,12 +5,13 @@ import { ApiError } from "../lib/api";
 import type { ParsedServerInfo } from "../lib/credentialParse";
 import { parseServerInfo } from "../lib/credentialParse";
 import { type TKey, useT } from "../lib/i18n";
-import { providerBlurb } from "../lib/providerCatalog";
+import { EMPTY_CATALOG_FILTER, filterProviders, providerBlurb } from "../lib/providerCatalog";
 import {
   dynamicPlanProviderId,
   dynamicPlanProviderIdByName,
   findDynamicPlanProvider,
   fmtPrice,
+  hasLivePlans,
   isDynamicPlanProviderId,
   planProviderDisplayName,
   planSpecs,
@@ -50,6 +51,10 @@ interface BillingState {
   trafficQuotaUnit: TrafficUnit;
   trafficBillingDay: string;
 }
+
+// сколько провайдеров каталога показывать чипами целиком и сколько результатов поиска
+const PROVIDER_CHIPS_LIMIT = 16;
+const PROVIDER_SEARCH_LIMIT = 12;
 
 const EMPTY: FormState = {
   name: "",
@@ -213,6 +218,20 @@ export function ServerFormScreen() {
   });
 
   const providers: Provider[] = providersQ.data ?? [];
+  // Небольшой каталог — все провайдеры чипами. Большой (сотни записей) — чипами только провайдеры с живыми
+  // тарифами и выбранный, остальные находятся поиском по каталогу (имя, описание, страны).
+  const [providerQuery, setProviderQuery] = useState("");
+  const searchableProviders = providers.length > PROVIDER_CHIPS_LIMIT;
+  const providerMatches = useMemo(
+    () =>
+      providerQuery.trim()
+        ? filterProviders(providers, { ...EMPTY_CATALOG_FILTER, query: providerQuery }, hasLivePlans).slice(
+            0,
+            PROVIDER_SEARCH_LIMIT,
+          )
+        : [],
+    [providers, providerQuery],
+  );
   const known = useMemo(() => (name: string) => providers.some((p) => p.name === name), [providers]);
 
   const [form, setForm] = useState<FormState>(() => {
@@ -283,6 +302,13 @@ export function ServerFormScreen() {
     setNameTouched(val.trim() !== "");
   }
 
+  const providerChips = useMemo(() => {
+    if (providerQuery.trim()) return providerMatches;
+    if (!searchableProviders) return providers;
+    const chosen = form.providerCustom ? undefined : providers.find((p) => p.name === form.provider);
+    const live = providers.filter(hasLivePlans);
+    return chosen && !live.includes(chosen) ? [chosen, ...live] : live;
+  }, [providers, providerQuery, providerMatches, searchableProviders, form.provider, form.providerCustom]);
   const selProvider = useMemo(() => {
     if (form.providerCustom) return findDynamicPlanProvider(providers, form.provider);
     return providers.find((p) => p.name === form.provider) ?? null;
@@ -553,8 +579,24 @@ export function ServerFormScreen() {
       <div className="card stack" style={{ gap: 18 }}>
         {/* Провайдер */}
         <Field label={t("srvForm.labelProvider")}>
+          {searchableProviders && (
+            <div style={{ marginBottom: 10 }}>
+              <input
+                className="input"
+                type="search"
+                value={providerQuery}
+                onChange={(e) => setProviderQuery(e.target.value)}
+                placeholder={t("srvForm.searchProvider", { n: providers.length })}
+              />
+              {providerQuery.trim() !== "" && providerMatches.length === 0 && (
+                <div className="muted-3" style={{ fontSize: 12, marginTop: 6 }}>
+                  {t("srvForm.searchProviderEmpty")}
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {providers.map((p) => {
+            {providerChips.map((p) => {
               const on = !form.providerCustom && form.provider === p.name;
               return (
                 <button
@@ -562,7 +604,10 @@ export function ServerFormScreen() {
                   type="button"
                   className={`chip${on ? " selected" : ""}`}
                   style={{ cursor: "pointer", height: 38, padding: "0 14px", fontSize: 13 }}
-                  onClick={() => setForm((f) => ({ ...f, provider: p.name, providerCustom: false }))}
+                  onClick={() => {
+                    setForm((f) => ({ ...f, provider: p.name, providerCustom: false }));
+                    setProviderQuery("");
+                  }}
                 >
                   {p.name}
                 </button>
