@@ -5,6 +5,14 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.13.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.12.0...v0.13.0) - 2026-10-08
+
+- The provider catalog now lists 762 VPS hosts in 115 countries: local hosts from the Philippines, Sri Lanka, Nepal, Cambodia, Mongolia, Ghana, Georgia, Azerbaijan and Kyrgyzstan are in, and payment methods for customers from Russia were checked against the providers' sites
+- Providers that refuse customers from Russia (AWS, Hetzner, OVH, Oracle, Azure and others) carry a "Refuses customers from Russia" tag; hosts whose terms ban VPN or proxy use are gone from the catalog
+- On a running panel the new providers are added to the catalog automatically; entries already in it stay as they are
+- Live plans now come from 80 providers instead of 51: GreenCloud, AdminVPS, ITLDC, Rusonyx, SmokyHosts, WORLDBUS, iON Cloud by Krypt, Mynymbox and more
+- When a provider sells plans from several datacenters in one line (GreenCloud, SmokyHosts, ITLDC), each plan shows its own city
+
 ## [0.12.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.11.0...v0.12.0) - 2026-10-08
 
 - The provider catalog grows from 7 to 600+ VPS hosts in Russia and worldwide, each with locations, payment methods (Russian card, SBP, crypto…), company country and a bilingual description
