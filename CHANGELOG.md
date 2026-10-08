@@ -5,20 +5,13 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
-## [0.13.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.12.0...v0.13.0) (2026-10-08)
+## [0.13.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.12.0...v0.13.0) - 2026-10-08
 
-
-### Features
-
-* 762 providers and 80 live plan sources ([f8e3311](https://github.com/AlexeyShalaev/vpn-hub/commit/f8e33115e0a0085803831fc3a1ec9d60e4d7ddba))
-* **catalog:** 762 providers — new countries and LowEnd hosts ([e108168](https://github.com/AlexeyShalaev/vpn-hub/commit/e1081687a1a74fe4fc7ff5a66e5ef2c327cd383f))
-* **catalog:** second research pass — 679 providers, verified payments ([71122a0](https://github.com/AlexeyShalaev/vpn-hub/commit/71122a03ea60c5d3303162e5a3a0ae360b6a87b5))
-* **plans:** eleven more WHMCS stores ([ab8d70e](https://github.com/AlexeyShalaev/vpn-hub/commit/ab8d70eeddbba15e34a85bc4544ba489d11bd335))
-* **plans:** GreenCloud, SmokyHosts, AdminVPS, Domishko and George Datacenter ([7bab303](https://github.com/AlexeyShalaev/vpn-hub/commit/7bab30355041a1da147717ec98fb47a395633f87))
-* **plans:** ITLDC, Rusonyx, Optibit and seven more WHMCS stores ([24d1dbf](https://github.com/AlexeyShalaev/vpn-hub/commit/24d1dbf12238e7ab5351d7e8b0fdd79a7a5c7f1e))
-* **plans:** Lagom 2 theme in the WHMCS parser ([42f9723](https://github.com/AlexeyShalaev/vpn-hub/commit/42f972326c519b9169c4fbd34886dfec4c06bc0e))
-* **plans:** read more WHMCS store layouts and per-product locations ([c88bcb4](https://github.com/AlexeyShalaev/vpn-hub/commit/c88bcb4f4cc7528578c8c411a42d07266cb3372d))
-* **plans:** Senko Digital, iHost.al and Baboon Hosting; tidy the registry ([5f71b5c](https://github.com/AlexeyShalaev/vpn-hub/commit/5f71b5c3ad3611f44356d2c84a6dc306e830b1d2))
+- The provider catalog now lists 762 VPS hosts in 115 countries: local hosts from the Philippines, Sri Lanka, Nepal, Cambodia, Mongolia, Ghana, Georgia, Azerbaijan and Kyrgyzstan are in, and payment methods for customers from Russia were checked against the providers' sites
+- Providers that refuse customers from Russia (AWS, Hetzner, OVH, Oracle, Azure and others) carry a "Refuses customers from Russia" tag; hosts whose terms ban VPN or proxy use are gone from the catalog
+- On a running panel the new providers are added to the catalog automatically; entries already in it stay as they are
+- Live plans now come from 80 providers instead of 51: GreenCloud, AdminVPS, ITLDC, Rusonyx, SmokyHosts, WORLDBUS, iON Cloud by Krypt, Mynymbox and more
+- When a provider sells plans from several datacenters in one line (GreenCloud, SmokyHosts, ITLDC), each plan shows its own city
 
 ## [0.12.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.11.0...v0.12.0) - 2026-10-08
 

@@ -27,6 +27,32 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.13.0",
+        "date": "2026-10-08",
+        "notes": [
+            {
+                "ru": "Каталог провайдеров — 762 VPS-хостинга в 115 странах: добавлены местные хостеры Филиппин, Шри-Ланки, Непала, Камбоджи, Монголии, Ганы, Грузии, Азербайджана и Киргизии, а способы оплаты для клиентов из России сверены с сайтами провайдеров",  # noqa: E501
+                "en": "The provider catalog now lists 762 VPS hosts in 115 countries: local hosts from the Philippines, Sri Lanka, Nepal, Cambodia, Mongolia, Ghana, Georgia, Azerbaijan and Kyrgyzstan are in, and payment methods for customers from Russia were checked against the providers' sites",  # noqa: E501
+            },
+            {
+                "ru": "Провайдеры, которые не принимают клиентов из России (AWS, Hetzner, OVH, Oracle, Azure и другие), помечены тегом «Не принимает клиентов из РФ»; хостеры, чьи правила запрещают VPN или прокси, из каталога убраны",  # noqa: E501
+                "en": 'Providers that refuse customers from Russia (AWS, Hetzner, OVH, Oracle, Azure and others) carry a "Refuses customers from Russia" tag; hosts whose terms ban VPN or proxy use are gone from the catalog',  # noqa: E501
+            },
+            {
+                "ru": "На уже работающей панели новые провайдеры добавятся в каталог сами, а записи, которые в нём уже есть, остаются как были",  # noqa: E501
+                "en": "On a running panel the new providers are added to the catalog automatically; entries already in it stay as they are",  # noqa: E501
+            },
+            {
+                "ru": "Живые тарифы теперь у 80 провайдеров вместо 51: GreenCloud, AdminVPS, ITLDC, Rusonyx, SmokyHosts, WORLDBUS, iON Cloud by Krypt, Mynymbox и другие",  # noqa: E501
+                "en": "Live plans now come from 80 providers instead of 51: GreenCloud, AdminVPS, ITLDC, Rusonyx, SmokyHosts, WORLDBUS, iON Cloud by Krypt, Mynymbox and more",  # noqa: E501
+            },
+            {
+                "ru": "Если провайдер продаёт в одной линейке тарифы из разных дата-центров (GreenCloud, SmokyHosts, ITLDC), у каждого тарифа указан его город",  # noqa: E501
+                "en": "When a provider sells plans from several datacenters in one line (GreenCloud, SmokyHosts, ITLDC), each plan shows its own city",  # noqa: E501
+            },
+        ],
+    },
+    {
         "v": "0.12.0",
         "date": "2026-10-08",
         "notes": [
