@@ -3,8 +3,10 @@
 Тема корзины `standard_cart` рендерит товары группы на сервере одинаково у всех: имя — `#productN-name`,
 описание (характеристики списком или строками) — до `#productN-price`, цена и цикл — в `#productN-price`
 («Starting from $5.00 USD Monthly», «Начиная от 2383.00₸ ежемесячно», «Desde $6,000CLP Mensualmente»),
-остаток — `<span class="qty">0 Available</span>`. Поэтому новый WHMCS-провайдер — это только конфиг
-витрин (`WhmcsPage`: URL группы, её локация, валюта по умолчанию), а разбор общий.
+остаток — `<span class="qty">0 Available</span>`. Вторая распространённая тема, Lagom 2, кладёт товар в
+`<div class="package" id="productN">`: имя — `.package-title`, цена — `.package-price`, характеристики —
+`.package-body`. Поэтому новый WHMCS-провайдер — это только конфиг витрин (`WhmcsPage`: URL группы, её
+локация, валюта по умолчанию), а разбор общий.
 
 Характеристики в описании пишут вольно («1 vCPU Core», «2 ядра», «1024MB» + «RAM» отдельной строкой,
 «Traffic:» + «1 TB»), поэтому строки описания склеиваются в пары «значение + подпись» и разбираются по
@@ -18,7 +20,7 @@ import asyncio
 import html as html_lib
 import re
 import urllib.error
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -50,13 +52,20 @@ class WhmcsPage:
 _TAG_RE = re.compile(r"<[^>]+>")
 _BREAK_RE = re.compile(r"(?i)<\s*/?\s*(?:br|li|p|div|tr|td|h\d|ul)\b[^>]*>")
 _NAME_RE = re.compile(r'id="product(\d+)-name"[^>]*>(.*?)</', re.S)
+_QTY_RE = re.compile(r'class="qty"[^>]*>\s*(\d+)')
+_LAGOM_RE = re.compile(r'<div class="package\b[^"]*" id="product\d+"')
+_LAGOM_TITLE_RE = re.compile(r'class="package-title"[^>]*>(.*?)</', re.S)
+_LAGOM_PRICE_RE = re.compile(r'class="package-price"[^>]*>(.*?)class="package-body"', re.S)
+_LAGOM_BODY_RE = re.compile(r'class="package-body"[^>]*>(.*?)class="package-footer', re.S)
 _DIGIT_RE = re.compile(r"\d")
 
 _RAM_RE = re.compile(r"\b(?:ram|memory|mem[oó]ria|mem|ddr[345])\b|памят|озу|оперативн|arbeitsspeicher|mémoire", re.I)
 # между числом и «ядрами» бывают тип и модель: «2 Shared Intel Xeon CPU Cores», «1x AMD Ryzen vCPU»
-_CPU_WORDS = r"(?:(?:shared|dedicated|physical|virtual|intel|amd|xeon|epyc|ryzen|milan|genoa|turin)\s+){0,4}"
+# (у бренда может стоять модель: «2 Intel Xeon E5 cores»), а число не должно быть хвостом модели («E5 cores»)
+_CPU_BRAND = r"(?:shared|dedicated|physical|virtual|intel|amd|xeon|epyc|ryzen|milan|genoa|turin)"
+_CPU_WORDS = rf"(?:{_CPU_BRAND}(?:\s+[a-z]{{0,2}}\d[\w-]*)?\s+){{0,4}}"
 _CPU_RE = re.compile(
-    rf"(?<![\d.,])(\d+)\s*(?:x\s*)?{_CPU_WORDS}"
+    rf"(?<![\w.,])(\d+)\s*(?:x\s*)?{_CPU_WORDS}"
     r"(?:v?cpu|v?cores?|vcore|ядр|ядер|процессор|cpu virtual|n[uú]cleos?|kerne)"
     r"|\b(?:v?cpu|cores?)\s*[:\-]?\s*(\d+)\b"
     r"|(\d+)\s*x\s*\d+(?:[.,]\d+)?\s*ghz"  # «1x2.1Ghz - 3.9Ghz CPU»
@@ -84,6 +93,7 @@ _SYMBOLS: Mapping[str, str] = {
     "€": "EUR",
     "£": "GBP",
     "₸": "KZT",
+    "₮": "MNT",
     "₽": "RUB",
     "₴": "UAH",
     "₹": "INR",
@@ -237,9 +247,15 @@ def _parse_price(text: str, default_currency: str) -> tuple[float, str, int, str
     return amount, currency, 1, ""  # цикл не подписан — считаем месячным
 
 
-def parse_whmcs_page(provider_id: str, page: WhmcsPage, html: str) -> list[dict[str, Any]]:
-    """Тарифы одной витрины WHMCS (`standard_cart`)."""
-    plans: list[dict[str, Any]] = []
+@dataclass(frozen=True)
+class _Product:
+    name: str
+    price: str  # текст блока цены
+    description: str  # HTML характеристик
+    sold_out: bool
+
+
+def _standard_cart_products(html: str) -> Iterator[_Product]:
     matches = list(_NAME_RE.finditer(html))
     for idx, m in enumerate(matches):
         num, name = m.group(1), _text(m.group(2))
@@ -248,14 +264,33 @@ def parse_whmcs_page(provider_id: str, page: WhmcsPage, html: str) -> list[dict[
         price_m = re.search(rf'id="product{num}-price"[^>]*>(.*?)</div>', block, re.S)
         if not name or price_m is None:
             continue
-        priced = _parse_price(_text(price_m.group(1)), page.currency)
-        lines = _spec_lines(_segments(block[: price_m.start()]))
+        qty = _QTY_RE.search(html[max(0, m.start() - 200) : m.end() + 400])
+        yield _Product(name, _text(price_m.group(1)), block[: price_m.start()], bool(qty and int(qty.group(1)) == 0))
+
+
+def _lagom_products(html: str) -> Iterator[_Product]:
+    starts = [m.start() for m in _LAGOM_RE.finditer(html)]
+    for idx, start in enumerate(starts):
+        block = html[start : starts[idx + 1] if idx + 1 < len(starts) else len(html)]
+        title, price, body = (rx.search(block) for rx in (_LAGOM_TITLE_RE, _LAGOM_PRICE_RE, _LAGOM_BODY_RE))
+        if title is None or price is None or body is None or not (name := _text(title.group(1))):
+            continue
+        qty = _QTY_RE.search(block)
+        yield _Product(name, _text(price.group(1)), body.group(1), bool(qty and int(qty.group(1)) == 0))
+
+
+def parse_whmcs_page(provider_id: str, page: WhmcsPage, html: str) -> list[dict[str, Any]]:
+    """Тарифы одной витрины WHMCS (тема `standard_cart` или Lagom 2)."""
+    plans: list[dict[str, Any]] = []
+    for product in list(_standard_cart_products(html)) or list(_lagom_products(html)):
+        name = product.name
+        priced = _parse_price(product.price, page.currency)
+        lines = _spec_lines(_segments(product.description))
         specs = _parse_specs(lines)
         if priced is None or not specs.cpu or not specs.ram_gb or not specs.disk_gb:
             continue
         monthly, currency, _, cycle = priced
         region, country = _product_region(page, name, " ".join(lines))
-        qty = re.search(r'class="qty"[^>]*>\s*(\d+)', html[max(0, m.start() - 200) : m.end() + 400])
         plans.append(
             make_plan(
                 plan_id=f"{provider_id}-{slugify(region)}-{slugify(name)}",
@@ -272,7 +307,7 @@ def parse_whmcs_page(provider_id: str, page: WhmcsPage, html: str) -> list[dict[
                 price=monthly,
                 currency=currency,
                 source_url=page.url,
-                available=not (qty and int(qty.group(1)) == 0),
+                available=not product.sold_out,
             )
         )
     return plans

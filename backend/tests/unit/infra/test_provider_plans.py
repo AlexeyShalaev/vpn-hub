@@ -1398,6 +1398,7 @@ def test__whmcs_parse_price__currencies_separators_and_cycles(
         (["1 core CPU", "2 GB RAM", "25GB SSD Hard drive Unmetered Bandwidth"], (1, 2, 25, None)),  # диск + безлимит
         (["Процессор - 1*2900 МГц", "Память - 4000 МБ", "Диск - 60 ГБ"], (1, 4, 60, None)),  # 4000 МБ — это 4 ГБ
         (["1.5 vCPU Thread with 2 GB RAM", "24 GB NVMe"], (None, 2, 24, None)),  # дробное ядро не читаем как «5»
+        (["2 Intel Xeon E5 cores", "4 GB DDR4 RAM", "100 GB SSD Storage"], (2, 4, 100, None)),  # не «5 cores» из E5
         (["4GB RAM", "80GB SSD", "2000 GB Monthly Bandwidth", "1 vCPU"], (1, 4, 80, 1.953)),
     ],
 )
@@ -1431,6 +1432,52 @@ def test__parse_whmcs_page__product_location_from_name_or_description() -> None:
         "x-roubaix-france-size-m-vps-roubaix-france": ("Roubaix, France", "FR"),
         "x-usa-mystery-1": ("USA", "US"),  # не нашли локацию — регион группы
     }
+
+
+WHMCS_LAGOM_PAGE = """
+<div class="package package-horizontal" id="product144">
+  <div class="package-header"><h3 class="package-title">GE - SSD VPS 01</h3>
+    <div class="package-price"><div class="price"><div class="price-starting-from">Starting from</div>
+      <div class="price-amount">$18.99 USD</div><div class="price-cycle">Monthly</div></div></div></div>
+  <div class="package-body"><div class="package-content"><ul class="package-features">
+    <li id="product144-feature1"><strong>Total Core </strong> 1 vCore</li>
+    <li id="product144-feature2"><strong>RAM </strong> 2 GB DDR4</li>
+    <li id="product144-feature3"><strong>HDD </strong> 30 GB SSD (RAID10)</li>
+    <li id="product144-feature4"><strong>Bandwidth </strong> 2TB Monthly Included</li>
+  </ul></div></div>
+  <div class="package-footer"><a href="/cart.php?a=add&pid=144">Order Now</a></div>
+</div>
+<div class="package" id="product220">
+  <div class="package-header"><h3 class="package-title">VPS SSD1</h3>
+    <div class="package-price"><div class="price"><div class="price-amount">132,000.00 ₮</div>
+      <div class="price-cycle">Сараар</div></div></div></div>
+  <div class="package-body"><div class="package-content">
+    <strong>vCPU 2 Core Processor<br/>RAM 4 GB<br/>80 GB NVMe Storage</strong>
+  </div></div>
+  <div class="package-footer"></div>
+</div>
+"""
+
+
+def test__parse_whmcs_page__reads_lagom_theme() -> None:
+    page = provider_plans.WhmcsPage("https://a.example/store/vps", "Tbilisi, Georgia", "GE")
+
+    plans = {p["name"]: p for p in provider_plans.parse_whmcs_page("worldbus", page, WHMCS_LAGOM_PAGE)}
+
+    assert set(plans) == {"GE - SSD VPS 01 · Tbilisi", "VPS SSD1 · Tbilisi"}
+    ssd = plans["GE - SSD VPS 01 · Tbilisi"]
+    assert (ssd["cpu"], ssd["ramGb"], ssd["diskGb"], ssd["diskType"], ssd["trafficTb"]) == (1, 2, 30, "SSD", 2)
+    assert (ssd["price"], ssd["currency"], ssd["available"]) == (18.99, "USD", True)
+    mn = plans["VPS SSD1 · Tbilisi"]
+    assert (mn["cpu"], mn["ramGb"], mn["diskGb"], mn["price"], mn["currency"]) == (2, 4, 80, 132000.0, "MNT")
+
+
+def test__parse_whmcs_page__no_products_in_either_theme() -> None:
+    page = provider_plans.WhmcsPage("https://a.example/store/vps", "Vienna, Austria", "AT")
+
+    assert (
+        provider_plans.parse_whmcs_page("x", page, "<html><body>Could not load any product groups</body></html>") == []
+    )
 
 
 async def test__fetch_whmcs_plans__skips_unreachable_pages(monkeypatch: pytest.MonkeyPatch) -> None:
