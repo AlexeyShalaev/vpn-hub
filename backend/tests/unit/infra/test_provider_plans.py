@@ -1373,6 +1373,9 @@ def test__parse_whmcs_page__reads_standard_cart_products_in_any_layout() -> None
         ("Desde $79.900 Mensualmente", "CLP", (79900.0, "CLP", 1, "")),
         ("R$ 49,90 mensal", "", (49.9, "BRL", 1, "")),
         ("€7.99EUR Quarterly €5.00 Setup Fee", "", (2.66, "EUR", 3, "quarterly")),
+        ("from €2.54 /mo €30.50/yr Select", "", (2.54, "EUR", 1, "")),  # цикл — ближайший к цене
+        ("Начиная от 1069.00 руб. ежемесячно", "", (1069.0, "RUB", 1, "")),
+        ("საწყისი ფასი 55.00 GEL / თვე", "", (55.0, "GEL", 1, "")),
         ("$10.00 USD One Time", "", None),
         ("Free", "", None),
     ],
@@ -1383,6 +1386,51 @@ def test__whmcs_parse_price__currencies_separators_and_cycles(
     from vpnhub.infra.provider_plans.whmcs import _parse_price
 
     assert _parse_price(text, default) == expected
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        (["2GB ECC RAM", "30GB NVMe", "2 Shared Intel Xeon CPU Cores"], (2, 2, 30, None)),
+        (["1x AMD Ryzen vCPU", "1GB DDR4 Memory", "15GB NVMe"], (1, 1, 15, None)),
+        (["8GB RAM", "80GB NVMe Hard drive", "1 dedicated physical EPYC Milan core CPU"], (1, 8, 80, None)),
+        (["2 vCPU with 4 GB DDR4 ECC RAM", "48 GB NVMe SSD Storage"], (2, 4, 48, None)),  # ядра и память одной строкой
+        (["1 core CPU", "2 GB RAM", "25GB SSD Hard drive Unmetered Bandwidth"], (1, 2, 25, None)),  # диск + безлимит
+        (["Процессор - 1*2900 МГц", "Память - 4000 МБ", "Диск - 60 ГБ"], (1, 4, 60, None)),  # 4000 МБ — это 4 ГБ
+        (["1.5 vCPU Thread with 2 GB RAM", "24 GB NVMe"], (None, 2, 24, None)),  # дробное ядро не читаем как «5»
+        (["4GB RAM", "80GB SSD", "2000 GB Monthly Bandwidth", "1 vCPU"], (1, 4, 80, 1.953)),
+    ],
+)
+def test__whmcs_parse_specs__cpu_phrasing_and_combined_lines(
+    lines: list[str], expected: tuple[int | None, float | None, float | None, float | None]
+) -> None:
+    from vpnhub.infra.provider_plans.whmcs import _parse_specs
+
+    specs = _parse_specs(lines)
+
+    assert (specs.cpu, specs.ram_gb, specs.disk_gb, specs.traffic_tb) == expected
+
+
+def test__parse_whmcs_page__product_location_from_name_or_description() -> None:
+    html = "".join(
+        f'<div id="product{n}"><span id="product{n}-name">{name}</span><ul><li>1 vCPU</li><li>2 GB RAM</li>'
+        f'<li>20 GB SSD</li><li>{where}</li></ul><div id="product{n}-price">$5.00 USD Monthly</div></div>'
+        for n, name, where in (
+            (1, "EPYCNYC-1", "Staten Island, NY Location"),
+            (2, "Size M VPS, Roubaix, France", ""),
+            (3, "Mystery-1", "Somewhere"),
+        )
+    )
+    regions = {"Staten Island": ("New York, USA", "US"), "Roubaix": ("Roubaix, France", "FR")}
+    page = provider_plans.WhmcsPage("https://a.example/store/vps", "USA", "US", regions=regions)
+
+    plans = {p["id"]: (p["region"], p["country"]) for p in provider_plans.parse_whmcs_page("x", page, html)}
+
+    assert plans == {
+        "x-new-york-usa-epycnyc-1": ("New York, USA", "US"),
+        "x-roubaix-france-size-m-vps-roubaix-france": ("Roubaix, France", "FR"),
+        "x-usa-mystery-1": ("USA", "US"),  # не нашли локацию — регион группы
+    }
 
 
 async def test__fetch_whmcs_plans__skips_unreachable_pages(monkeypatch: pytest.MonkeyPatch) -> None:
