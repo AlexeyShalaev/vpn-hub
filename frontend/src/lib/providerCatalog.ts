@@ -90,6 +90,7 @@ const TAG_EN: Record<string, string> = {
   "безлимитный трафик": "Unmetered traffic",
   "много локаций": "Many locations",
   "nvme и hdd": "NVMe & HDD",
+  "не принимает клиентов из рф": "Refuses customers from Russia",
 };
 
 function tagLabel(tag: string, lang: Lang): string {
