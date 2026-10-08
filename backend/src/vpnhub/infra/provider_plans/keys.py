@@ -53,6 +53,11 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("servarica", "Servarica", ("servarica.com",)),
     PlanSource("ihost-al", "iHost.al", ("ihost.al",)),
     PlanSource("baboonhosting", "Baboon Hosting", ("baboonhosting.com",)),
+    PlanSource("greencloudvps", "GreenCloud", ("greencloud", "greencloudvps.com")),
+    PlanSource("smokyhosts", "SmokyHosts", ("smokyhosts.com",)),
+    PlanSource("adminvps", "AdminVPS", ("adminvps.ru",)),
+    PlanSource("domishko", "Домишко", ("domishko.ru",)),
+    PlanSource("george-datacenter", "George Datacenter", ("georgedatacenter.com",)),
     # BILLmanager: публичный прайс-лист (providers/billmanager_sources.py)
     PlanSource("firstvds", "FirstVDS", ("firstvds.ru",)),
     PlanSource("profitserver", "ProfitServer", ("profitserver.ru", "profitserver.pro")),

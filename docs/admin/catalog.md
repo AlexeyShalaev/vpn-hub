@@ -42,13 +42,13 @@
 
 У провайдеров с бейджем **«Живые тарифы»** панель сама загружает актуальные тарифы: характеристики,
 цену, локацию, наличие. Отсюда работают кнопка **«Тарифы»** на карточке, **«Подобрать тариф»** и
-автозаполнение цены и квоты в форме сервера. Сейчас это 64 провайдера:
+автозаполнение цены и квоты в форме сервера. Сейчас это 69 провайдеров:
 
 - **Публичные API облаков:** Vultr, Akamai (Linode), Hetzner, Cherry Servers.
 - **Сайты провайдеров:** FirstByte, UFO Hosting, ISHOSTING, AHost, Serverspace, UltaHost, 62YUN, Timeweb Cloud, Beget, 4VPS.
 - **Публичные API хостеров:** BinaryLane, Mammoth Cloud.
 - **Публичный прайс-лист биллинга BILLmanager:** FirstVDS, ProfitServer, SmartApe, Cloud4box, KVMka, DataCheap, AskoHost, Skystark, VDS.SH, LNTech, 1BX.host, Coopertino, General iT, ITSOFT, MultiHOST, PlanetaHost, Simple-server, Appletec, ArtPlanet, Contell, ISPserver, IHOR Hosting, SpaceCore, XorekCloud, U1 HOST, Retzor, MEGAHOST, ITLDC, Rusonyx, Senko Digital, Optibit.
-- **Витрины биллинга WHMCS:** EDIS Global, FlokiNET, Zappie Host, iDHost (Kazakhtelecom), Hosteroid, Virtono, VM6 Networks, Casbay, HypeHost, Lyra Hosting, LetsHost, WebSouls, HostPro.by, Servarica, iHost.al, Baboon Hosting, WebTuga.
+- **Витрины биллинга WHMCS:** EDIS Global, FlokiNET, Zappie Host, iDHost (Kazakhtelecom), Hosteroid, Virtono, VM6 Networks, Casbay, HypeHost, Lyra Hosting, LetsHost, WebSouls, HostPro.by, Servarica, iHost.al, Baboon Hosting, WebTuga, GreenCloud, SmokyHosts, AdminVPS, Домишко, George Datacenter.
 
 Тарифы кэшируются на 30 минут. Если сайт провайдера временно недоступен, панель показывает
 последние загруженные тарифы; если их нет — провайдер просто не попадает в подбор, а каталог и

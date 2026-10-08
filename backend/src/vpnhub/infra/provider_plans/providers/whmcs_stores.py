@@ -14,6 +14,49 @@ _EDIS = "https://manage.edisglobal.com/cart.php?language=english&gid="
 _FLOKINET = "https://billing.flokinet.is/index.php?rp=/store/virtual-private-server-"
 _ZAPPIE = "https://billing.zappiehost.com/index.php?rp=/store/"
 _VIRTONO = "https://www.virtono.com/index.php?rp=/store/"
+_GREENCLOUD = "https://greencloudvps.com/billing/store/"
+_ADMINVPS = "https://my.adminvps.ru/store/"
+
+# GreenCloud: город — только в описании товара («Staten Island, NY Location»), группы смешивают локации
+_GREENCLOUD_REGIONS: Mapping[str, tuple[str, str]] = {
+    "Staten Island": ("New York, USA", "US"),
+    "Buffalo": ("Buffalo, USA", "US"),
+    "Ashburn": ("Ashburn, USA", "US"),
+    "Ogden": ("Ogden, USA", "US"),
+    "Chicago": ("Chicago, USA", "US"),
+    "San Jose": ("San Jose, USA", "US"),
+    "Phoenix": ("Phoenix, USA", "US"),
+    "Los Angeles": ("Los Angeles, USA", "US"),
+    "Jacksonville": ("Jacksonville, USA", "US"),
+    "Kansas City": ("Kansas City, USA", "US"),
+    "Dallas": ("Dallas, USA", "US"),
+    "Toronto": ("Toronto, Canada", "CA"),
+    "Coventry": ("Coventry, United Kingdom", "GB"),
+    "Amsterdam": ("Amsterdam, Netherlands", "NL"),
+    "Frankfurt": ("Frankfurt, Germany", "DE"),
+    "Düsseldorf": ("Düsseldorf, Germany", "DE"),
+    "Singapore": ("Singapore", "SG"),
+    "Tokyo": ("Tokyo, Japan", "JP"),
+    "Hong Kong": ("Hong Kong", "HK"),
+}
+# SmokyHosts: город — в имени товара («Size M VPS, Roubaix, France»)
+_SMOKYHOSTS_REGIONS: Mapping[str, tuple[str, str]] = {
+    "Bufallo": ("Buffalo, USA", "US"),
+    "Buffalo": ("Buffalo, USA", "US"),
+    "Los Angeles": ("Los Angeles, USA", "US"),
+    "Kansas City": ("Kansas City, USA", "US"),
+    "Tampa": ("Tampa, USA", "US"),
+    "Bend": ("Bend, USA", "US"),
+    "Montreal": ("Montreal, Canada", "CA"),
+    "Roubaix": ("Roubaix, France", "FR"),
+    "London": ("London, United Kingdom", "GB"),
+    "Vestfold": ("Vestfold, Norway", "NO"),
+    "Mazovia": ("Warsaw, Poland", "PL"),
+    "Mumbai": ("Mumbai, India", "IN"),
+    "Singapore": ("Singapore", "SG"),
+    "Hong Kong": ("Hong Kong", "HK"),
+    "Sydney": ("Sydney, Australia", "AU"),
+}
 
 WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
     # EDIS Global (Австрия): KVM в 17 городах, в т.ч. Москва и Дубай
@@ -113,6 +156,7 @@ WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
     "servarica": (
         WhmcsPage("https://clients.servarica.com/store/v3-kvm-slices", "Montreal, Canada", "CA"),
         WhmcsPage("https://clients.servarica.com/store/v3-kvm-fat", "Montreal, Canada", "CA"),
+        WhmcsPage("https://clients.servarica.com/store/nvme-plans", "Montreal, Canada", "CA"),
     ),
     # iHost.al: VPS в Албании
     "ihost-al": (WhmcsPage("https://www.my.ihost.al/store/vps-hosting", "Tirana, Albania", "AL", currency="EUR"),),
@@ -133,5 +177,33 @@ WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
             "PT",
             currency="EUR",
         ),
+    ),
+    # GreenCloud: KVM и EPYC VDS в 19 городах США, Канады, Европы и Азии
+    "greencloudvps": tuple(
+        WhmcsPage(f"{_GREENCLOUD}{group}", "USA", "US", regions=_GREENCLOUD_REGIONS)
+        for group in ("budget-kvm-sale", "premium-kvm-sale", "epyc-nvme-kvm-vds")
+    ),
+    # SmokyHosts: VPS в 15 городах, локация — в имени тарифа
+    "smokyhosts": (WhmcsPage("https://members.smokyhosts.com/store/vps", "USA", "US", regions=_SMOKYHOSTS_REGIONS),),
+    # AdminVPS: VPS в России, Беларуси и Европе, цены в рублях («руб.»)
+    "adminvps": tuple(
+        WhmcsPage(f"{_ADMINVPS}{group}", region, country)
+        for group, region, country in (
+            ("vps-moshchnyi", "Moscow, Russia", "RU"),
+            ("vps-moshniy-belarus", "Belarus", "BY"),
+            ("vps-finland", "Finland", "FI"),
+            ("vps-poland", "Poland", "PL"),
+            ("vps-france", "France", "FR"),
+            ("vps-italy", "Italy", "IT"),
+            ("vps-spain", "Spain", "ES"),
+            ("vps-switzerland", "Switzerland", "CH"),
+        )
+    ),
+    # Домишко: KVM VDS в Нидерландах
+    "domishko": (WhmcsPage("https://my.domishko.ru/index.php/store/vds-servery", "Netherlands", "NL"),),
+    # George Datacenter: AMD EPYC VPS в Эшберне и Далласе
+    "george-datacenter": (
+        WhmcsPage("https://desk.georgedatacenter.com/store/ashburn-amd-7443p-7b13", "Ashburn, USA", "US"),
+        WhmcsPage("https://desk.georgedatacenter.com/store/dallas-amd-7443p", "Dallas, USA", "US"),
     ),
 }
