@@ -1373,6 +1373,9 @@ def test__parse_whmcs_page__reads_standard_cart_products_in_any_layout() -> None
         ("Desde $79.900 Mensualmente", "CLP", (79900.0, "CLP", 1, "")),
         ("R$ 49,90 mensal", "", (49.9, "BRL", 1, "")),
         ("€7.99EUR Quarterly €5.00 Setup Fee", "", (2.66, "EUR", 3, "quarterly")),
+        ("from €2.54 /mo €30.50/yr Select", "", (2.54, "EUR", 1, "")),  # цикл — ближайший к цене
+        ("Начиная от 1069.00 руб. ежемесячно", "", (1069.0, "RUB", 1, "")),
+        ("საწყისი ფასი 55.00 GEL / თვე", "", (55.0, "GEL", 1, "")),
         ("$10.00 USD One Time", "", None),
         ("Free", "", None),
     ],
@@ -1383,6 +1386,98 @@ def test__whmcs_parse_price__currencies_separators_and_cycles(
     from vpnhub.infra.provider_plans.whmcs import _parse_price
 
     assert _parse_price(text, default) == expected
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        (["2GB ECC RAM", "30GB NVMe", "2 Shared Intel Xeon CPU Cores"], (2, 2, 30, None)),
+        (["1x AMD Ryzen vCPU", "1GB DDR4 Memory", "15GB NVMe"], (1, 1, 15, None)),
+        (["8GB RAM", "80GB NVMe Hard drive", "1 dedicated physical EPYC Milan core CPU"], (1, 8, 80, None)),
+        (["2 vCPU with 4 GB DDR4 ECC RAM", "48 GB NVMe SSD Storage"], (2, 4, 48, None)),  # ядра и память одной строкой
+        (["1 core CPU", "2 GB RAM", "25GB SSD Hard drive Unmetered Bandwidth"], (1, 2, 25, None)),  # диск + безлимит
+        (["Процессор - 1*2900 МГц", "Память - 4000 МБ", "Диск - 60 ГБ"], (1, 4, 60, None)),  # 4000 МБ — это 4 ГБ
+        (["1.5 vCPU Thread with 2 GB RAM", "24 GB NVMe"], (None, 2, 24, None)),  # дробное ядро не читаем как «5»
+        (["2 Intel Xeon E5 cores", "4 GB DDR4 RAM", "100 GB SSD Storage"], (2, 4, 100, None)),  # не «5 cores» из E5
+        (["4GB RAM", "80GB SSD", "2000 GB Monthly Bandwidth", "1 vCPU"], (1, 4, 80, 1.953)),
+    ],
+)
+def test__whmcs_parse_specs__cpu_phrasing_and_combined_lines(
+    lines: list[str], expected: tuple[int | None, float | None, float | None, float | None]
+) -> None:
+    from vpnhub.infra.provider_plans.whmcs import _parse_specs
+
+    specs = _parse_specs(lines)
+
+    assert (specs.cpu, specs.ram_gb, specs.disk_gb, specs.traffic_tb) == expected
+
+
+def test__parse_whmcs_page__product_location_from_name_or_description() -> None:
+    html = "".join(
+        f'<div id="product{n}"><span id="product{n}-name">{name}</span><ul><li>1 vCPU</li><li>2 GB RAM</li>'
+        f'<li>20 GB SSD</li><li>{where}</li></ul><div id="product{n}-price">$5.00 USD Monthly</div></div>'
+        for n, name, where in (
+            (1, "EPYCNYC-1", "Staten Island, NY Location"),
+            (2, "Size M VPS, Roubaix, France", ""),
+            (3, "Mystery-1", "Somewhere"),
+        )
+    )
+    regions = {"Staten Island": ("New York, USA", "US"), "Roubaix": ("Roubaix, France", "FR")}
+    page = provider_plans.WhmcsPage("https://a.example/store/vps", "USA", "US", regions=regions)
+
+    plans = {p["id"]: (p["region"], p["country"]) for p in provider_plans.parse_whmcs_page("x", page, html)}
+
+    assert plans == {
+        "x-new-york-usa-epycnyc-1": ("New York, USA", "US"),
+        "x-roubaix-france-size-m-vps-roubaix-france": ("Roubaix, France", "FR"),
+        "x-usa-mystery-1": ("USA", "US"),  # не нашли локацию — регион группы
+    }
+
+
+WHMCS_LAGOM_PAGE = """
+<div class="package package-horizontal" id="product144">
+  <div class="package-header"><h3 class="package-title">GE - SSD VPS 01</h3>
+    <div class="package-price"><div class="price"><div class="price-starting-from">Starting from</div>
+      <div class="price-amount">$18.99 USD</div><div class="price-cycle">Monthly</div></div></div></div>
+  <div class="package-body"><div class="package-content"><ul class="package-features">
+    <li id="product144-feature1"><strong>Total Core </strong> 1 vCore</li>
+    <li id="product144-feature2"><strong>RAM </strong> 2 GB DDR4</li>
+    <li id="product144-feature3"><strong>HDD </strong> 30 GB SSD (RAID10)</li>
+    <li id="product144-feature4"><strong>Bandwidth </strong> 2TB Monthly Included</li>
+  </ul></div></div>
+  <div class="package-footer"><a href="/cart.php?a=add&pid=144">Order Now</a></div>
+</div>
+<div class="package" id="product220">
+  <div class="package-header"><h3 class="package-title">VPS SSD1</h3>
+    <div class="package-price"><div class="price"><div class="price-amount">132,000.00 ₮</div>
+      <div class="price-cycle">Сараар</div></div></div></div>
+  <div class="package-body"><div class="package-content">
+    <strong>vCPU 2 Core Processor<br/>RAM 4 GB<br/>80 GB NVMe Storage</strong>
+  </div></div>
+  <div class="package-footer"></div>
+</div>
+"""
+
+
+def test__parse_whmcs_page__reads_lagom_theme() -> None:
+    page = provider_plans.WhmcsPage("https://a.example/store/vps", "Tbilisi, Georgia", "GE")
+
+    plans = {p["name"]: p for p in provider_plans.parse_whmcs_page("worldbus", page, WHMCS_LAGOM_PAGE)}
+
+    assert set(plans) == {"GE - SSD VPS 01 · Tbilisi", "VPS SSD1 · Tbilisi"}
+    ssd = plans["GE - SSD VPS 01 · Tbilisi"]
+    assert (ssd["cpu"], ssd["ramGb"], ssd["diskGb"], ssd["diskType"], ssd["trafficTb"]) == (1, 2, 30, "SSD", 2)
+    assert (ssd["price"], ssd["currency"], ssd["available"]) == (18.99, "USD", True)
+    mn = plans["VPS SSD1 · Tbilisi"]
+    assert (mn["cpu"], mn["ramGb"], mn["diskGb"], mn["price"], mn["currency"]) == (2, 4, 80, 132000.0, "MNT")
+
+
+def test__parse_whmcs_page__no_products_in_either_theme() -> None:
+    page = provider_plans.WhmcsPage("https://a.example/store/vps", "Vienna, Austria", "AT")
+
+    assert (
+        provider_plans.parse_whmcs_page("x", page, "<html><body>Could not load any product groups</body></html>") == []
+    )
 
 
 async def test__fetch_whmcs_plans__skips_unreachable_pages(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1713,3 +1808,23 @@ def test__parse_binarylane_sizes__expands_vps_by_region_and_skips_dedicated() ->
         4.9,
         "AUD",
     )
+
+
+def test__parse_billmanager_export__maps_service_datacenter_names_to_cities() -> None:
+    """Служебные имена ДЦ («EU1.ITLDC (AMS)») провайдер сопоставляет с городом и страной в конфиге."""
+    doc = BM_EXPORT.replace("<name>Moscow</name><name_ru>Москва, Россия</name_ru>", "<name>EU1.ITLDC (AMS)</name>")
+    source = provider_plans.BillmanagerSource(
+        "https://my.example.com/billmgr",
+        "https://example.com",
+        dc_regions={"(AMS)": ("Amsterdam, Netherlands", "NL")},
+    )
+
+    plans = {p["id"]: p for p in provider_plans.parse_billmanager_export("itldc", source, doc)}
+
+    ams = plans["itldc-1400-4"]
+    assert (ams["region"], ams["country"], ams["name"]) == (
+        "Amsterdam, Netherlands",
+        "NL",
+        "Взлёт · Amsterdam, Netherlands",
+    )
+    assert plans["itldc-1400-7"]["country"] == "CZ"  # не сопоставлен — страна по коду в имени, как раньше

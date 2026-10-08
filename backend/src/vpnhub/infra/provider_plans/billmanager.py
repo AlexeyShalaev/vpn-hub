@@ -52,6 +52,8 @@ class BillmanagerSource:
     default_region: str = ""  # если у тарифа не указан дата-центр
     country: str = ""  # ISO-код, если все дата-центры провайдера в одной стране
     dc_countries: Mapping[str, str] = field(default_factory=dict)  # подстрока имени ДЦ → ISO-код
+    # подстрока имени ДЦ → (подпись локации, ISO-код): для служебных имён вроде «EU1.ITLDC (AMS)»
+    dc_regions: Mapping[str, tuple[str, str]] = field(default_factory=dict)
     disk_type: str = ""  # если тип диска не назван в имени/описании тарифа
     itemtype: str = "vds"
 
@@ -179,6 +181,14 @@ def _description_specs(about: str, specs: _Specs) -> _Specs:
 _DC_CODE_RE = re.compile(r"[(\[]([A-Z]{2})[)\]]")
 
 
+def _dc_region(source: BillmanagerSource, region: str) -> tuple[str, str]:
+    """(подпись локации, ISO-код) для ДЦ: сначала явное сопоставление провайдера, иначе — имя ДЦ как есть."""
+    for needle, (label, code) in source.dc_regions.items():
+        if needle.lower() in region.lower():
+            return label, code
+    return region, _dc_country(source, region)
+
+
 def _dc_country(source: BillmanagerSource, region: str) -> str:
     """Страна ДЦ: из конфига провайдера или кода в скобках в имени («Host-Telecom (CZ)»)."""
     for needle, code in source.dc_countries.items():
@@ -253,25 +263,28 @@ def _pricelist_plans(provider_id: str, source: BillmanagerSource, pl: ET.Element
         return []
     about = _plain(f"{name} {description}")
     disk_type = _storage_type_from_text(about) or specs.disk_hint or source.disk_type
-    return [
-        make_plan(
-            plan_id=f"{provider_id}-{_text(pl, 'id')}" + (f"-{dc_id}" if dc_id else ""),
-            name=f"{name} · {region}",
-            region=region,
-            country=_dc_country(source, region),
-            cpu=specs.cpu,
-            ram_gb=round(specs.ram_gb, 2),
-            disk_gb=round(specs.disk_gb),
-            disk_type=disk_type,
-            port_mbps=specs.port_mbps,
-            traffic_tb=specs.traffic_tb,
-            traffic_known=specs.traffic_known,
-            price=cost,
-            currency=currency.upper(),
-            source_url=source.site_url,
+    plans = []
+    for dc_id, dc_name in _datacenters(pl, source.default_region):
+        region, country = _dc_region(source, dc_name)
+        plans.append(
+            make_plan(
+                plan_id=f"{provider_id}-{_text(pl, 'id')}" + (f"-{dc_id}" if dc_id else ""),
+                name=f"{name} · {region}",
+                region=region,
+                country=country,
+                cpu=specs.cpu,
+                ram_gb=round(specs.ram_gb, 2),
+                disk_gb=round(specs.disk_gb),
+                disk_type=disk_type,
+                port_mbps=specs.port_mbps,
+                traffic_tb=specs.traffic_tb,
+                traffic_known=specs.traffic_known,
+                price=cost,
+                currency=currency.upper(),
+                source_url=source.site_url,
+            )
         )
-        for dc_id, region in _datacenters(pl, source.default_region)
-    ]
+    return plans
 
 
 def _parse_stream(provider_id: str, source: BillmanagerSource, stream: BinaryIO) -> list[dict[str, Any]]:

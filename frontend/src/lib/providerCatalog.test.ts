@@ -95,6 +95,9 @@ describe("card tags", () => {
 
   it("translates the catalog's standard tags for the English UI", () => {
     expect(cardTags(p, "en")).toEqual(["40+ countries", "Hourly billing", "NVMe"]);
+    expect(cardTags(provider("z", { tags: ["Не принимает клиентов из РФ"] }), "en")).toEqual([
+      "Refuses customers from Russia",
+    ]);
     expect(cardTags(provider("y", { tags: ["35 стран", "30+ локаций"] }), "en")).toEqual([
       "35 countries",
       "30+ locations",

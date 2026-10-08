@@ -43,4 +43,39 @@ BILLMANAGER_SOURCES: Mapping[str, Src] = {
         dc_countries={"zech": "CZ", "Netherlands": "NL", "Russia": "RU"},
     ),
     "megahost-kz": Src("https://lk.megahost.kz/billmgr", "https://megahost.kz/vps/", country="KZ"),
+    # ДЦ ITLDC названы служебно («EU1.ITLDC (AMS)») — по коду аэропорта даём город и страну
+    "itldc": Src(
+        "https://my.itldc.com/billmgr",
+        "https://itldc.com/en/vds/",
+        dc_regions={
+            "(AMS)": ("Amsterdam, Netherlands", "NL"),
+            "(SKG)": ("Thessaloniki, Greece", "GR"),
+            "(BCN)": ("Barcelona, Spain", "ES"),
+            "(SOF)": ("Sofia, Bulgaria", "BG"),
+            "(RIX)": ("Riga, Latvia", "LV"),
+            "(PRG)": ("Prague, Czechia", "CZ"),
+            "(GDN)": ("Gdansk, Poland", "PL"),
+            "(GVA)": ("Geneva, Switzerland", "CH"),
+            "(BUC)": ("Bucharest, Romania", "RO"),
+            "(MXP)": ("Milan, Italy", "IT"),
+            "(DUS)": ("Dusseldorf, Germany", "DE"),
+            "(SIN)": ("Singapore", "SG"),
+            "(IEV)": ("Kyiv, Ukraine", "UA"),
+            "(LAX)": ("Los Angeles, USA", "US"),
+            "(EWR)": ("New Jersey, USA", "US"),
+            "(MIA)": ("Miami, USA", "US"),
+            "(ORD)": ("Chicago, USA", "US"),
+            "(SEA)": ("Seattle, USA", "US"),
+        },
+    ),
+    "rusonyx": Src(
+        "https://my.rusonyx.ru/billmgr", "https://www.rusonyx.ru/hosting/vps/", dc_regions={"СДЦ": ("Россия", "RU")}
+    ),
+    "senko-digital": Src("https://my.senko.digital/billmgr", "https://senko.digital/virtual-servers"),
+    "optibit": Src(
+        "https://my.optibit.ru/billmgr",
+        "https://www.optibit.ru/vds/",
+        dc_regions={"Красноярск": ("Красноярск, Россия", "RU")},
+        country="RU",
+    ),
 }
