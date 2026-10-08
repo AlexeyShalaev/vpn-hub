@@ -71,6 +71,7 @@ BILLMANAGER_SOURCES: Mapping[str, Src] = {
     "rusonyx": Src(
         "https://my.rusonyx.ru/billmgr", "https://www.rusonyx.ru/hosting/vps/", dc_regions={"СДЦ": ("Россия", "RU")}
     ),
+    "senko-digital": Src("https://my.senko.digital/billmgr", "https://senko.digital/virtual-servers"),
     "optibit": Src(
         "https://my.optibit.ru/billmgr",
         "https://www.optibit.ru/vds/",

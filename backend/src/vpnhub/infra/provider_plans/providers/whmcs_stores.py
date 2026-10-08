@@ -114,6 +114,17 @@ WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
         WhmcsPage("https://clients.servarica.com/store/v3-kvm-slices", "Montreal, Canada", "CA"),
         WhmcsPage("https://clients.servarica.com/store/v3-kvm-fat", "Montreal, Canada", "CA"),
     ),
+    # iHost.al: VPS в Албании
+    "ihost-al": (WhmcsPage("https://www.my.ihost.al/store/vps-hosting", "Tirana, Albania", "AL", currency="EUR"),),
+    # Baboon Hosting: KVM VPS в Амстердаме
+    "baboonhosting": (
+        WhmcsPage(
+            "https://clients.baboonhosting.com/index.php?rp=/store/kvmvps",
+            "Amsterdam, Netherlands",
+            "NL",
+            currency="EUR",
+        ),
+    ),
     # WebTuga: VPS в Португалии
     "webtuga": (
         WhmcsPage(

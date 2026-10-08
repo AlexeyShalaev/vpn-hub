@@ -51,55 +51,22 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("websouls", "WebSouls", ("websouls.com",)),
     PlanSource("hostpro-by", "HostPro.by", ("hostpro.by",)),
     PlanSource("servarica", "Servarica", ("servarica.com",)),
+    PlanSource("ihost-al", "iHost.al", ("ihost.al",)),
+    PlanSource("baboonhosting", "Baboon Hosting", ("baboonhosting.com",)),
     # BILLmanager: публичный прайс-лист (providers/billmanager_sources.py)
     PlanSource("firstvds", "FirstVDS", ("firstvds.ru",)),
-    PlanSource(
-        "profitserver",
-        "ProfitServer",
-        (
-            "profitserver.ru",
-            "profitserver.pro",
-        ),
-    ),
+    PlanSource("profitserver", "ProfitServer", ("profitserver.ru", "profitserver.pro")),
     PlanSource("smartape", "SmartApe", ("smartape.ru",)),
     PlanSource("cloud4box", "Cloud4box", ("cloud4box.com",)),
     PlanSource("kvmka", "KVMka", ("kvmka.ru",)),
     PlanSource("datacheap", "DataCheap", ("datacheap.ru",)),
     PlanSource("askohost", "AskoHost", ("asko.host",)),
-    PlanSource(
-        "skystark",
-        "Skystark",
-        (
-            "skystark.ru",
-            "skystark.net",
-        ),
-    ),
-    PlanSource(
-        "vds-sh",
-        "VDS.SH",
-        (
-            "vdssh",
-            "vds.sh",
-        ),
-    ),
+    PlanSource("skystark", "Skystark", ("skystark.ru", "skystark.net")),
+    PlanSource("vds-sh", "VDS.SH", ("vdssh", "vds.sh")),
     PlanSource("ln-tech", "LNTech", ("ln-tech.ru",)),
     PlanSource("1bx-host", "1BX.host", ("1bx",)),
-    PlanSource(
-        "coopertino",
-        "Coopertino",
-        (
-            "купертино",
-            "coopertino.ru",
-        ),
-    ),
-    PlanSource(
-        "general-it",
-        "General iT",
-        (
-            "g-i-t.ru",
-            "git.ru",
-        ),
-    ),
+    PlanSource("coopertino", "Coopertino", ("купертино", "coopertino.ru")),
+    PlanSource("general-it", "General iT", ("g-i-t.ru", "git.ru")),
     PlanSource("itsoft", "ITSOFT", ("itsoft.ru",)),
     PlanSource("multihost", "MultiHOST", ("multihost.com",)),
     PlanSource("planetahost", "PlanetaHost", ("planetahost.ru",)),
@@ -108,44 +75,16 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("artplanet", "ArtPlanet", ("artplanet.ru",)),
     PlanSource("contell", "Contell", ("contell.ru",)),
     PlanSource("ispserver", "ISPserver", ("ispserver.ru",)),
-    PlanSource(
-        "ihor",
-        "IHOR Hosting",
-        (
-            "айхор",
-            "ihor-hosting.ru",
-            "ihor.online",
-        ),
-    ),
+    PlanSource("ihor", "IHOR Hosting", ("айхор", "ihor-hosting.ru", "ihor.online")),
     PlanSource("spacecore", "SpaceCore", ("spacecore.pro",)),
-    PlanSource(
-        "xorek",
-        "XorekCloud",
-        (
-            "xorek",
-            "xorek.cloud",
-        ),
-    ),
+    PlanSource("xorek", "XorekCloud", ("xorek", "xorek.cloud")),
     PlanSource("u1host", "U1 HOST", ("u1host.com",)),
     PlanSource("retzor", "Retzor", ("retzor.com",)),
     PlanSource("megahost-kz", "MEGAHOST", ("megahost", "megahost.kz")),
     PlanSource("itldc", "ITLDC", ("itldc.com",)),
-    PlanSource(
-        "rusonyx",
-        "Rusonyx",
-        (
-            "rusonyx.ru",
-            "русоникс",
-        ),
-    ),
-    PlanSource(
-        "optibit",
-        "Optibit",
-        (
-            "оптибит",
-            "optibit.ru",
-        ),
-    ),
+    PlanSource("rusonyx", "Rusonyx", ("rusonyx.ru", "русоникс")),
+    PlanSource("optibit", "Optibit", ("оптибит", "optibit.ru")),
+    PlanSource("senko-digital", "Senko Digital", ("senko", "senko.digital")),
 )
 
 _COMPACT_RE = re.compile(r"[\s._-]+")
