@@ -298,6 +298,147 @@
   hq: NL
   countries: [NL]
   payments: [crypto, card, paypal]
+- id: greencloudvps
+  name: GreenCloud
+  url: https://greencloudvps.com/billing/store/ssd-kvm-vps
+  blurb: KVM VPS в 11+ городах США, а также в Канаде, Европе и Азии; есть бюджетные и обычные тарифы. Оплата картой, PayPal, криптовалютой (BTCPay, Cryptomus), Alipay, банковским переводом.
+  blurbEn: KVM VPS in 11+ US cities plus Canada, Europe and Asia; budget and regular plans. Pays by card, PayPal, crypto (BTCPay, Cryptomus), Alipay or bank transfer.
+  tags: []
+  countries: [US, CA, NL, DE, GB, SG, JP, HK]
+  payments: [crypto, card, paypal, bank, local]
+- id: smokyhosts
+  name: SmokyHosts
+  url: https://members.smokyhosts.com/store/vps
+  blurb: 'Индийская компания SmokyHosts: KVM VPS (Virtualizor) в США, Канаде, Франции, Великобритании, Норвегии, Польше, Сингапуре, Гонконге, Индии (Мумбаи) и Австралии, а также cPanel-хостинг и реселлинг VPS. Оплата международными картами и PayPal, для Индии — CCAvenue (карты, UPI).'
+  blurbEn: 'Indian company SmokyHosts: KVM VPS (Virtualizor) in the US, Canada, France, the UK, Norway, Poland, Singapore, Hong Kong, India (Mumbai) and Australia, plus cPanel hosting and VPS reselling. Pays by international cards and PayPal; CCAvenue (cards, UPI) for India.'
+  tags: [10+ стран]
+  hq: IN
+  countries: [US, CA, FR, GB, 'NO', PL, SG, HK, IN, AU]
+  payments: [card, paypal, local]
+- id: adminvps
+  name: AdminVPS
+  url: https://adminvps.ru/vps/vps_russia.php
+  blurb: 'VPS в России (Москва) и за рубежом: Германия, Нидерланды, Польша, Италия, Беларусь, Казахстан, Финляндия, Великобритания, Франция, Швейцария. Оплата картами РФ и иностранными, СБП, ЮMoney, по счёту.'
+  blurbEn: 'VPS in Russia (Moscow) and abroad: DE, NL, PL, IT, BY, KZ, FI, UK, FR, CH. Pay with Russian or foreign cards, SBP, YooMoney or invoice.'
+  tags: [10+ стран]
+  hq: RU
+  countries: [RU, DE, NL, PL, IT, BY, KZ, FI, GB, FR, CH]
+  payments: [ru_card, sbp, ru_wallet, card, bank]
+- id: domishko
+  name: Домишко (Domishko)
+  url: https://domishko.ru/services/vdsservers/
+  blurb: KVM VDS в Москве и Нидерландах (тарифы «Хутор», «Деревня», «Город»...) от ООО «Инвеб». Оплата картой, WebMoney, PayPal.
+  blurbEn: KVM VDS in Moscow and the Netherlands from Inveb LLC. Pay by card, WebMoney or PayPal.
+  tags: []
+  hq: RU
+  countries: [RU, NL]
+  payments: [ru_card, ru_wallet, paypal]
+- id: george-datacenter
+  name: George Datacenter
+  url: https://www.georgedatacenter.com/cheapvps.php
+  blurb: 'Американская George Datacenter LLC: KVM VPS на Xeon E5 с NVMe и на AMD Ryzen 9 / EPYC в Лас-Вегасе, Лос-Анджелесе, Далласе, Канзас-Сити и Эшберне, с безлимитным трафиком на гигабитном порту. Оплата картами Visa/Mastercard/Amex и PayPal.'
+  blurbEn: 'US-based George Datacenter LLC: Xeon E5 NVMe and AMD Ryzen 9 / EPYC KVM VPS in Las Vegas, Los Angeles, Dallas, Kansas City and Ashburn, with unmetered bandwidth on a gigabit port. Pays by Visa/Mastercard/Amex cards and PayPal.'
+  tags: [Безлимитный трафик]
+  hq: US
+  countries: [US]
+  payments: [card, paypal]
+- id: worldbus
+  name: WORLDBUS
+  url: https://worldbus.ge/vps/georgia/
+  blurb: 'Грузинский хостинг и регистратор .GE WORLDBUS (TradeZone LLC, Тбилиси): KVM VPS в собственной площадке в Тбилиси, а также в Стамбуле, Германии, Нидерландах, Великобритании и Франции. Оплата через PayPal, картами, биткоином и банковским переводом; сайт есть на русском.'
+  blurbEn: 'Georgian host and .GE registrar WORLDBUS (TradeZone LLC, Tbilisi): KVM VPS in its own Tbilisi facility plus Istanbul, Germany, the Netherlands, the UK and France. Pays via PayPal, cards, Bitcoin and bank transfer; site available in Russian.'
+  tags: []
+  hq: GE
+  countries: [GE, TR, DE, NL, GB, FR]
+  payments: [crypto, card, paypal, bank]
+- id: cloudfanatic
+  name: Cloudfanatic
+  url: https://cloudfanatic.net/pricing/
+  blurb: Cloudfanatic продаёт KVM VPS на NVMe с безлимитным трафиком в Чикаго, Лос-Анджелесе, Северной Каролине и Фениксе. Оплата картой или PayPal, после первого платежа — также Bitcoin.
+  blurbEn: Cloudfanatic sells KVM NVMe VPS with unmetered bandwidth in Chicago, Los Angeles, North Carolina and Phoenix. Pay by card or PayPal; Bitcoin is allowed after a first card/PayPal payment.
+  tags: [Безлимитный трафик]
+  countries: [US]
+  payments: [crypto, card, paypal]
+- id: iniz
+  name: INIZ
+  url: https://iniz.com/vps
+  blurb: 'Британский хостер INIZ (SYN LTD, с 2014 г.): KVM VPS с NVMe и DDoS-защитой в Лондоне, Ковентри, Амстердаме и США, цены без НДС.'
+  blurbEn: 'UK host INIZ (SYN LTD, since 2014): KVM NVMe VPS with DDoS protection in London, Coventry, Amsterdam and the US, prices ex VAT.'
+  tags: []
+  hq: GB
+  countries: [GB, NL, US]
+  payments: [crypto, card, paypal]
+- id: krypt-ion
+  name: iON Cloud by Krypt
+  url: https://ion.krypt.asia/store/vps-cloud-los-angeles
+  blurb: Облачные VPS iON (Krypt) с маршрутом China Direct в Лос-Анджелесе, Кремниевой долине, Далласе, Гонолулу и Сингапуре (от 4 vCPU/8 ГБ). Оплата PayPal или Alipay.
+  blurbEn: Krypt's iON cloud VPS with China Direct routing in Los Angeles, Silicon Valley, Dallas, Honolulu and Singapore (from 4 vCPU/8 GB). Pays via PayPal or Alipay.
+  tags: []
+  hq: US
+  countries: [US, SG]
+  payments: [paypal, local]
+- id: mynymbox
+  name: Mynymbox
+  url: https://mynymbox.io/vps
+  blurb: 'Анонимный хостинг с юрисдикцией Невис: KVM VPS в Нидерландах и Финляндии, нужен только email (можно алиас), Tor/VPN разрешены. Только криптовалюта: BTC, Lightning, XMR, LTC, ZEC, Cashu.'
+  blurbEn: 'Anonymous host under Nevis jurisdiction: KVM VPS in the Netherlands and Finland, email-only (aliases OK), Tor/VPN fine. Crypto only: BTC, Lightning, XMR, LTC, ZEC, Cashu.'
+  tags: []
+  hq: KN
+  countries: [NL, FI]
+  payments: [crypto]
+- id: napoleon
+  name: Napoleon
+  url: https://painel.napoleon.com.br/store/cloud-bra
+  blurb: Бразильский хостер реселлерского и выделенного хостинга; VPS в Бразилии (4 ГБ RAM, 25 ГБ NVMe, 200 Мбит/с, анти-DDoS) и NVMe VPS в США. Оплата PIX или boleto.
+  blurbEn: Brazilian reseller/dedicated hosting company; VPS in Brazil (4 GB RAM, 25 GB NVMe, 200 Mbps, anti-DDoS) and NVMe VPS in the US. Pay by PIX or boleto.
+  tags: [Безлимитный трафик]
+  hq: BR
+  countries: [BR, US]
+  payments: [local]
+- id: noblevps
+  name: Noble VPS
+  url: https://noblevps.com/plans
+  blurb: Windows и Linux VPS в дата-центре в Фениксе (Аризона, США) с NVMe и безлимитным трафиком; ориентированы в том числе на удалённые рабочие столы. Оплата картой и криптовалютой.
+  blurbEn: Windows and Linux VPS in a Phoenix, Arizona (US) data center with NVMe and unmetered bandwidth, aimed partly at remote desktops. Pays by card and crypto.
+  tags: [Безлимитный трафик]
+  countries: [US]
+  payments: [crypto, card]
+- id: royal-server
+  name: Royal Server
+  url: https://royal-server.ro/servere-vps-linux.php
+  blurb: 'Румынский хостинг Royal Server с собственным дата-центром в Тулче (AS213323): KVM VPS на Intel i9-14900K, Xeon Gold 6254 и Ryzen 9 9950X с NVMe и защитой от DDoS, а также выделенные серверы и колокация. Оплата картами Visa/Mastercard и SEPA-переводом.'
+  blurbEn: 'Romanian host Royal Server with its own data center in Tulcea (AS213323): KVM VPS on Intel i9-14900K, Xeon Gold 6254 and Ryzen 9 9950X with NVMe and DDoS protection, plus dedicated servers and colocation. Pays by Visa/Mastercard and SEPA transfer.'
+  tags: []
+  hq: RO
+  countries: [RO]
+  payments: [card, bank]
+- id: binary-racks
+  name: Binary Racks
+  url: https://www.binaryracks.com/linux-vps/
+  blurb: 'Британский провайдер Binary Racks: KVM VPS на NVMe (в том числе бюджетные, high-memory и с выделенными ядрами), выделенные серверы и колокация в Великобритании. Оплата картой и PayPal.'
+  blurbEn: 'UK provider Binary Racks: NVMe KVM VPS (including budget, high-memory and dedicated-CPU lines), dedicated servers and colocation in the UK. Pays by card and PayPal.'
+  tags: []
+  hq: GB
+  countries: [GB]
+  payments: [card, paypal]
+- id: hostslim
+  name: HostSlim
+  url: https://clients.hostslim.eu/store/vps-hosting
+  blurb: 'Европейский хостинг HostSlim (с 2008 года, собственная сеть AS207083): KVM VPS с портом 10 Гбит/с и безлимитным трафиком, выделенные серверы и колокация в Амстердаме и Таллине. Оплата через PayPal, iDEAL, картой, биткоином и банковским переводом.'
+  blurbEn: 'European host HostSlim (since 2008, own network AS207083): KVM VPS with a 10 Gbps port and unmetered traffic, dedicated servers and colocation in Amsterdam and Tallinn. Pays via PayPal, iDEAL, card, Bitcoin and bank wire.'
+  tags: [Безлимитный трафик]
+  hq: EE
+  countries: [NL, EE]
+  payments: [crypto, card, paypal, bank, local]
+- id: datacom-mn
+  name: Datacom (Датаком)
+  url: https://manage.datacom.mn/store/cloud
+  blurb: 'Монгольский регистратор и хостинг Datacom (Датаком ХХК, Улан-Батор, с 1994 года): SSD VPS, размещённые в Монголии, с заказом через собственный биллинг. Способы оплаты на публичных страницах не указаны.'
+  blurbEn: 'Mongolian registrar and host Datacom (Datacom LLC, Ulaanbaatar, since 1994): SSD VPS hosted in Mongolia, ordered through its own billing portal. Payment methods are not listed on public pages.'
+  tags: []
+  hq: MN
+  countries: [MN]
+  payments: []
 - id: firstvds
   name: FirstVDS
   url: https://firstvds.ru/products/vds_vps_cloud
@@ -693,15 +834,6 @@
   hq: RU
   countries: [RU, KZ, BY, EE, NL]
   payments: [ru_card, bank]
-- id: adminvps
-  name: AdminVPS
-  url: https://adminvps.ru/vps/vps_russia.php
-  blurb: 'VPS в России (Москва) и за рубежом: Германия, Нидерланды, Польша, Италия, Беларусь, Казахстан, Финляндия, Великобритания, Франция, Швейцария. Оплата картами РФ и иностранными, СБП, ЮMoney, по счёту.'
-  blurbEn: 'VPS in Russia (Moscow) and abroad: DE, NL, PL, IT, BY, KZ, FI, UK, FR, CH. Pay with Russian or foreign cards, SBP, YooMoney or invoice.'
-  tags: [10+ стран]
-  hq: RU
-  countries: [RU, DE, NL, PL, IT, BY, KZ, FI, GB, FR, CH]
-  payments: [ru_card, sbp, ru_wallet, card, bank]
 - id: avanetco
   name: AVANETCO
   url: https://www.avanetco.com/kuwait-vps-hosting/
@@ -990,15 +1122,6 @@
   hq: RU
   countries: [RU, NL, DE, KZ]
   payments: [ru_card]
-- id: domishko
-  name: Домишко (Domishko)
-  url: https://domishko.ru/services/vdsservers/
-  blurb: KVM VDS в Москве и Нидерландах (тарифы «Хутор», «Деревня», «Город»...) от ООО «Инвеб». Оплата картой, WebMoney, PayPal.
-  blurbEn: KVM VDS in Moscow and the Netherlands from Inveb LLC. Pay by card, WebMoney or PayPal.
-  tags: []
-  hq: RU
-  countries: [RU, NL]
-  payments: [ru_card, ru_wallet, paypal]
 - id: macloud
   name: Маклауд (Macloud)
   url: https://macloud.ru/cloud-vps
@@ -1151,6 +1274,15 @@
   hq: US
   countries: [US]
   payments: [crypto, card]
+- id: ethernet-servers
+  name: Ethernet Servers
+  url: https://www.ethernetservers.com/vps-hosting
+  blurb: 'Британский хостинг: KVM VPS на SSD с портом 10 Гбит/с в Майами, Лос-Анджелесе, Нью-Джерси, Франкфурте и Лондоне (панель VirtFusion), также shared-хостинг и выделенные серверы. Оплата картой, PayPal, Alipay, банковским переводом и криптовалютой.'
+  blurbEn: UK host offering SSD KVM VPS with 10 Gbps ports in Miami, Los Angeles, New Jersey, Frankfurt and London (VirtFusion panel), plus shared hosting and dedicated servers. Pays by card, PayPal, Alipay, bank transfer and cryptocurrency.
+  tags: []
+  hq: GB
+  countries: [US, DE, GB]
+  payments: [crypto, card, paypal, bank, local]
 - id: eurohoster
   name: EuroHoster
   url: https://eurohoster.org/en/store/vps-netherlands
@@ -1196,14 +1328,6 @@
   hq: KZ
   countries: [KZ]
   payments: [ru_card, card, paypal, bank, local]
-- id: greencloudvps
-  name: GreenCloud
-  url: https://greencloudvps.com/billing/store/ssd-kvm-vps
-  blurb: KVM VPS в 11+ городах США, а также в Канаде, Европе и Азии; есть бюджетные и обычные тарифы. Оплата картой, PayPal, криптовалютой (BTCPay, Cryptomus), Alipay, банковским переводом.
-  blurbEn: KVM VPS in 11+ US cities plus Canada, Europe and Asia; budget and regular plans. Pays by card, PayPal, crypto (BTCPay, Cryptomus), Alipay or bank transfer.
-  tags: []
-  countries: [US, CA, NL, DE, GB, SG, JP, HK]
-  payments: [crypto, card, paypal, bank, local]
 - id: hayhost-am
   name: HayHost
   url: https://hayhost.am/vps-hosting?language=russian
@@ -1213,6 +1337,15 @@
   hq: AM
   countries: [AM, DE, FI]
   payments: [ru_card, ru_wallet, card, bank, local]
+- id: host-mayo
+  name: Host Mayo
+  url: https://hostmayo.com/vps.php
+  blurb: 'Британская Host Mayo LTD: KVM VPS на Intel Xeon с панелью Virtualizor в США (Канзас, Юта), Великобритании и Нидерландах, а также Windows VPS, shared-хостинг и выделенные серверы. Оплата через PayPal, Stripe (карты, Alipay, SEPA), Wise/Payoneer и криптовалюту через Cryptomus.'
+  blurbEn: 'UK-registered Host Mayo LTD: Intel Xeon KVM VPS with Virtualizor in the US (Kansas, Utah), the UK and the Netherlands, plus Windows VPS, shared hosting and dedicated servers. Pays via PayPal, Stripe (cards, Alipay, SEPA), Wise/Payoneer and crypto via Cryptomus.'
+  tags: [Безлимитный трафик]
+  hq: GB
+  countries: [US, GB, NL]
+  payments: [crypto, card, paypal, bank, local]
 - id: hostbrr
   name: HostBrr
   url: https://hostbrr.com/vps.html
@@ -1258,6 +1391,14 @@
   hq: CY
   countries: [AU, AZ, BR, BG, CN, CZ, FR, DE, GR, HU, IN, IL, IT, KZ, LV, LU, NL, PL, RO, SG, ES, CH, UA, GB, US]
   payments: [ru_wallet, crypto, card, paypal, bank, local]
+- id: hostshield
+  name: HostShield
+  url: https://hostshield.net/linux-vps
+  blurb: KVM VPS (Linux, Windows и storage на HDD) и выделенные серверы в Нидерландах. Оплата картой через Stripe, PayPal, криптовалютой через CoinGate, Perfect Money и Alipay.
+  blurbEn: KVM VPS (Linux, Windows and HDD storage) and dedicated servers in the Netherlands. Pays by card via Stripe, PayPal, crypto via CoinGate, Perfect Money and Alipay.
+  tags: []
+  countries: [NL]
+  payments: [crypto, card, paypal, local]
 - id: hostwinds
   name: Hostwinds
   url: https://www.hostwinds.com/vps/unmanaged-linux
@@ -1302,6 +1443,15 @@
   hq: US
   countries: [US, NL]
   payments: [crypto, card, paypal, bank]
+- id: layerone
+  name: LayerOne
+  url: https://layeronecloud.com/pricing/
+  blurb: KVM VPS в Тампе (Флорида) с почасовой оплатой из предоплаченного баланса, NVMe и защитой от DDoS; персональные VPN по правилам разрешены. Оплата картой, Apple/Google Pay, Alipay, PayPal, ACH и стейблкоинами (USDC и др.).
+  blurbEn: KVM VPS in Tampa, Florida, billed hourly from prepaid credit, with NVMe and DDoS protection; personal VPN endpoints are explicitly allowed. Pays by card, Apple/Google Pay, Alipay, PayPal, ACH and stablecoins (USDC and others).
+  tags: [Почасовая оплата]
+  hq: US
+  countries: [US]
+  payments: [crypto, card, paypal, bank, local]
 - id: legionbox
   name: LegionBox
   url: https://legionbox.com/virtual-servers/
@@ -1338,15 +1488,24 @@
   hq: CA
   countries: [CA]
   payments: [crypto]
-- id: mynymbox
-  name: Mynymbox
-  url: https://mynymbox.io/vps
-  blurb: 'Анонимный хостинг с юрисдикцией Невис: KVM VPS в Нидерландах и Финляндии, нужен только email (можно алиас), Tor/VPN разрешены. Только криптовалюта: BTC, Lightning, XMR, LTC, ZEC, Cashu.'
-  blurbEn: 'Anonymous host under Nevis jurisdiction: KVM VPS in the Netherlands and Finland, email-only (aliases OK), Tor/VPN fine. Crypto only: BTC, Lightning, XMR, LTC, ZEC, Cashu.'
-  tags: []
-  hq: KN
-  countries: [NL, FI]
-  payments: [crypto]
+- id: mevspace
+  name: Mevspace
+  url: https://mevspace.com/vps-cloud
+  blurb: 'Польский провайдер MEVSPACE Sp. z o.o.: VPS Cloud с безлимитным трафиком, выделенные серверы и колокация в собственных дата-центрах в Варшаве и под Варшавой. Оплата картой, банковским переводом, через PayPal и криптовалютой (BitPay).'
+  blurbEn: 'Polish provider MEVSPACE Sp. z o.o.: VPS Cloud with unmetered traffic, dedicated servers and colocation in its own data centers in and near Warsaw. Pays by card, bank transfer, PayPal and crypto (BitPay).'
+  tags: [Безлимитный трафик]
+  hq: PL
+  countries: [PL]
+  payments: [crypto, card, paypal, bank]
+- id: netshop-isp
+  name: NetShop ISP
+  url: https://netshop-isp.com.cy/virtual-servers/
+  blurb: 'Кипрский провайдер с собственными дата-центрами на Кипре: KVM VPS на Кипре, Мальте, в Великобритании, Нидерландах, Сингапуре, Гонконге, ОАЭ, США и ещё ряде стран, плюс выделенные серверы и колокация. Оплата картой, PayPal или криптовалютой.'
+  blurbEn: 'Cypriot provider with its own data centers in Cyprus: KVM VPS in Cyprus, Malta, the UK, the Netherlands, Singapore, Hong Kong, the UAE, the US and several other countries, plus dedicated servers and colocation. Pays by card, PayPal or crypto.'
+  tags: [10+ стран]
+  hq: CY
+  countries: [CY, MT, GB, NL, SG, HK, BR, AE, US, MY, MX, TH, CO, ID, RO, JP, AU, CW, CN]
+  payments: [crypto, card, paypal]
 - id: njalla
   name: Njalla
   url: https://njal.la/servers/
@@ -1356,14 +1515,6 @@
   hq: CR
   countries: [SE]
   payments: [crypto, paypal]
-- id: noblevps
-  name: Noble VPS
-  url: https://noblevps.com/plans
-  blurb: Windows и Linux VPS в дата-центре в Фениксе (Аризона, США) с NVMe и безлимитным трафиком; ориентированы в том числе на удалённые рабочие столы. Оплата картой и криптовалютой.
-  blurbEn: Windows and Linux VPS in a Phoenix, Arizona (US) data center with NVMe and unmetered bandwidth, aimed partly at remote desktops. Pays by card and crypto.
-  tags: [Безлимитный трафик]
-  countries: [US]
-  payments: [crypto, card]
 - id: noez
   name: noez
   url: https://noez.de/en/services
@@ -1534,6 +1685,33 @@
   tags: []
   countries: [US]
   payments: [crypto]
+- id: st-hosting
+  name: ST-Hosting
+  url: https://st-hosting.com/vserver
+  blurb: 'Немецкий хостинг ST-Hosting (NUXOA GmbH, Майзах): LXC vServer и KVM rootserver на SSD/NVMe, Ryzen и EPYC, IPv6-only серверы, веб-хостинг и выделенные серверы в дата-центре во Франкфурте (FRA4), предоплатная система без минимального срока. Оплата банковским переводом, PayPal, Klarna/Sofort, GiroPay, EPS, Paysafecard и криптовалютой (BTC, ETH, LTC).'
+  blurbEn: 'German host ST-Hosting (NUXOA GmbH, Maisach): LXC vServers and KVM root servers on SSD/NVMe, Ryzen and EPYC, IPv6-only servers, web hosting and dedicated servers in a Frankfurt data center (FRA4), prepaid with no minimum term. Pays by bank transfer, PayPal, Klarna/Sofort, GiroPay, EPS, Paysafecard and crypto (BTC, ETH, LTC).'
+  tags: []
+  hq: DE
+  countries: [DE]
+  payments: [crypto, paypal, bank, local]
+- id: sucura-networks
+  name: Sucura Networks
+  url: https://sucuranetworks.ca/toronto-cloud-servers.html
+  blurb: 'Канадский оператор Sucura Networks (Sucura Networks Inc, AS398999): KVM-виртуалки с NVMe, портом 10 Гбит/с, BGP и бесплатной защитой от DDoS в Торонто, Далласе, Нью-Йорке, Ашберне, Чикаго и Франкфурте, почасовая или помесячная оплата. Оплата картой, PayPal, криптовалютой и банковским переводом.'
+  blurbEn: 'Canadian operator Sucura Networks (Sucura Networks Inc, AS398999): KVM VMs with NVMe, 10-gigabit ports, BGP and free DDoS protection in Toronto, Dallas, New York, Ashburn, Chicago and Frankfurt, billed hourly or monthly. Pays by card, PayPal, crypto and wire transfer.'
+  tags: [Почасовая оплата]
+  hq: CA
+  countries: [CA, US, DE]
+  payments: [crypto, card, paypal, bank]
+- id: terabix
+  name: Terabix
+  url: https://terabix.net/cloud-vm/
+  blurb: 'Малайзийская Terabix Technologies Sdn Bhd: облачные VM на AMD EPYC Genoa и Milan с NVMe Gen4 в Джохоре (Малайзия) на собственной сети AS137552. Оплата картами Visa/Mastercard/UnionPay, PayPal, Apple Pay, Google Pay, Alipay и криптовалютой.'
+  blurbEn: 'Malaysian Terabix Technologies Sdn Bhd: AMD EPYC Genoa and Milan cloud VMs with NVMe Gen4 in Johor, Malaysia, on its own AS137552 network. Pays by Visa/Mastercard/UnionPay cards, PayPal, Apple Pay, Google Pay, Alipay and crypto.'
+  tags: []
+  hq: MY
+  countries: [MY]
+  payments: [crypto, card, paypal, local]
 - id: tier-net
   name: Tier.Net
   url: https://www.tier.net/vps
@@ -1631,6 +1809,15 @@
   hq: IS
   countries: [IS]
   payments: [crypto, card, paypal, bank]
+- id: 1gservers
+  name: 1GServers
+  url: https://1gservers.com/cloud-computing-vps-server-hosting.html
+  blurb: '1GServers, LLC: облачные VPS на AMD EPYC с NVMe RAID10 и почасовой или помесячной оплатой, а также выделенные серверы и колокация в собственном дата-центре в Финиксе (Аризона, США). Оплата картой, PayPal и криптовалютой через BitPay.'
+  blurbEn: '1GServers, LLC: AMD EPYC cloud VPS on NVMe RAID10 with hourly or monthly billing, plus dedicated servers and colocation in its Phoenix, Arizona (US) facility. Pays by card, PayPal and crypto via BitPay.'
+  tags: [Почасовая оплата]
+  hq: US
+  countries: [US]
+  payments: [crypto, card, paypal]
 - id: 3v-hosting
   name: 3v-Hosting
   url: https://3v-host.com/hosting/vps/linux-vps/
@@ -1744,6 +1931,24 @@
   tags: [10+ стран, Почасовая оплата]
   countries: [US, NL, DE, GB, FR, CA, SG, IN, JP, AU, ES, MX]
   payments: [crypto]
+- id: bitsflowcloud
+  name: BitsFlowCloud
+  url: https://ccp.bitsflow.cloud/order/forms/
+  blurb: 'Британская компания с ориентацией на клиентов из Китая: KVM VPS (VirtFusion) во Франкфурте, Нюрнберге, Лондоне, Фримонте, Лос-Анджелесе, Канзас-Сити, Солт-Лейк-Сити, Токио и Гонконге, часть маршрутов оптимизирована для Китая. Оплата картой через Stripe, Alipay, WeChat Pay и криптовалютой.'
+  blurbEn: 'UK-registered company focused on Chinese customers: KVM VPS (VirtFusion) in Frankfurt, Nuremberg, London, Fremont, Los Angeles, Kansas City, Salt Lake City, Tokyo and Hong Kong, some with China-optimized routes. Pays by card via Stripe, Alipay, WeChat Pay and cryptocurrency.'
+  tags: []
+  hq: GB
+  countries: [DE, GB, US, JP, HK]
+  payments: [crypto, card, local]
+- id: borneo-kg
+  name: Borneo.KG
+  url: https://borneo.kg/vps.html
+  blurb: 'Киргизский хостинг Borneo.KG («Интернет Курорт», Бишкек): VPS/VDS в Кыргызстане с безлимитным трафиком, а также аренда и размещение серверов. Оплата картами Visa/Mastercard, банковским переводом, WebMoney и через терминалы «Мобильник»; сайт на русском.'
+  blurbEn: 'Kyrgyz host Borneo.KG (''Internet Resort'', Bishkek): VPS/VDS in Kyrgyzstan with unmetered traffic, plus server rental and colocation. Pays by Visa/Mastercard, bank transfer, WebMoney and Mobilnik terminals; Russian-language site.'
+  tags: [Безлимитный трафик]
+  hq: KG
+  countries: [KG]
+  payments: [ru_wallet, card, bank, local]
 - id: btcvps
   name: BTCVPS
   url: https://btcvps.com/
@@ -1856,6 +2061,15 @@
   tags: [Безлимитный трафик]
   countries: [FI, NL, CH, DE, BG, PL]
   payments: [crypto]
+- id: firevps
+  name: FireVPS
+  url: https://firevps.net/amd-ryzen-vps/
+  blurb: Хостинг, ориентированный на Windows RDP, который также продаёт Linux VPS на AMD Ryzen с локациями в США, Канаде, Германии, Великобритании, Сингапуре, Австралии, Франции, Польше, Нидерландах и Японии. Оплата через PayPal, Perfect Money и криптовалютой.
+  blurbEn: Windows-RDP-focused host that also sells Linux VPS on AMD Ryzen with locations in the US, Canada, Germany, UK, Singapore, Australia, France, Poland, the Netherlands and Japan. Pays via PayPal, Perfect Money and crypto.
+  tags: [10+ стран]
+  hq: BD
+  countries: [US, CA, DE, GB, SG, AU, FR, PL, NL, JP]
+  payments: [crypto, paypal, local]
 - id: firsthost-lv
   name: FirstHost.lv
   url: https://www.firsthost.lv/en/services/ssd-cloud-hosting
@@ -1874,6 +2088,14 @@
   hq: ES
   countries: [DE, NL, ES, SE, CH, US, RU]
   payments: [ru_card, crypto, card, bank]
+- id: gdms
+  name: GDMS (Global Digital Management Solutions)
+  url: https://www.global-dms.com/virtual-private-servers/
+  blurb: 'GDMS — облачный провайдер для развивающихся рынков: «суверенные» VPS в собственных площадках в Пномпене (Камбоджа), Вьентьяне (Лаос), Ханое (Вьетнам), Янгоне (Мьянма) и Браззавиле (Конго). Оплата через PayPal, картой через Stripe, Alipay и WeChat Pay, криптовалютой через Cryptomus и банковским переводом.'
+  blurbEn: 'GDMS is a cloud provider for emerging markets: ''sovereign'' VPS in its own sites in Phnom Penh (Cambodia), Vientiane (Laos), Hanoi (Vietnam), Yangon (Myanmar) and Brazzaville (Congo). Pays via PayPal, card through Stripe, Alipay and WeChat Pay, crypto through Cryptomus and bank transfer.'
+  tags: []
+  countries: [KH, LA, VN, MM, CG]
+  payments: [crypto, card, paypal, bank, local]
 - id: ghostvps
   name: GhostVPS
   url: https://www.ghostvps.shop/
@@ -1882,6 +2104,14 @@
   tags: [10+ стран, Почасовая оплата]
   countries: [US, CA, DE, NL, GB, FR, FI, PL, IT, SG, IN, AU]
   payments: [crypto]
+- id: godlike-host
+  name: Godlike Host
+  url: https://godlike.host/vps-hosting/
+  blurb: Игровой хостинг Godlike Host также продаёт неуправляемые и управляемые VPS на Ryzen с NVMe и панелью VirtFusion; игровые VPS размещены в Эшберне, Портленде, Амстердаме, Франкфурте и Сингапуре. Оплата картой, Apple/Google Pay, PayPal и криптовалютой через CoinPayments.
+  blurbEn: Game host Godlike Host also sells unmanaged and managed Ryzen VPS with NVMe and the VirtFusion panel; its gaming VPS run in Ashburn, Portland, Amsterdam, Frankfurt and Singapore. Pays by card, Apple/Google Pay, PayPal and crypto via CoinPayments.
+  tags: [Безлимитный трафик]
+  countries: [US, NL, DE, SG]
+  payments: [crypto, card, paypal]
 - id: hosthongkong
   name: Host Hong Kong.net
   url: https://www.hosthongkong.net/
@@ -1935,6 +2165,14 @@
   hq: CA
   countries: [CA, US]
   payments: [crypto, card]
+- id: hostiger
+  name: Hostiger
+  url: https://hostiger.com/vps-hosting
+  blurb: 'VPS и VDS в 37 регионах: Стамбул (кампус Türk Telekom), Европа, США, Латинская Америка, Ближний Восток, Азия и Австралия. Оплата картой, PayPal и криптовалютой.'
+  blurbEn: 'VPS and VDS in 37 regions: Istanbul (Türk Telekom campus), Europe, the US, Latin America, the Middle East, Asia and Australia. Pays by card, PayPal and cryptocurrency.'
+  tags: [20+ стран]
+  countries: [TR, NL, DE, GB, ES, FR, SE, PL, IT, US, CA, MX, BR, CL, IL, ZA, IN, ID, JP, KR, SG, AU]
+  payments: [crypto, card, paypal]
 - id: hostiko
   name: Hostiko
   url: https://hostiko.com.ua/en/vps/
@@ -1998,6 +2236,15 @@
   hq: UA
   countries: [UA]
   payments: [crypto, card, paypal]
+- id: infrawire
+  name: Infrawire
+  url: https://infrawire.net/vps
+  blurb: 'Французский хостинг Infrawire (WEDEPLOY SAS, Париж): NVMe VPS с безлимитным трафиком и почасовые облачные серверы в 20+ странах Европы, Азии и Америки через партнёрские дата-центры. Оплата картами Visa/Mastercard, PayPal, Alipay, криптовалютой (BTC, ETH, LTC, USDT) и банковским переводом.'
+  blurbEn: 'French host Infrawire (WEDEPLOY SAS, Paris): NVMe VPS with unmetered traffic and hourly cloud servers in 20+ countries across Europe, Asia and the Americas via partner data centers. Pays by Visa/Mastercard, PayPal, Alipay, crypto (BTC, ETH, LTC, USDT) and bank transfer.'
+  tags: [10+ стран, Почасовая оплата, Безлимитный трафик]
+  hq: FR
+  countries: [FR, DE, NL, GB, BG, FI, IT, ES, SE, TR, IN, HK, JP, SG, IL, US, CA]
+  payments: [crypto, card, paypal, bank, local]
 - id: initech
   name: Initech
   url: https://initech.global/
@@ -2007,14 +2254,14 @@
   hq: US
   countries: [US, CA, DE, NL, GB, FR, FI, SG, JP, IN, AU, HK, AE, BR, ZA, KR, CN]
   payments: [crypto, paypal]
-- id: iniz
-  name: INIZ
-  url: https://iniz.com/vps
-  blurb: 'Британский хостер INIZ (SYN LTD, с 2014 г.): KVM VPS с NVMe и DDoS-защитой в Лондоне, Ковентри, Амстердаме и США, цены без НДС.'
-  blurbEn: 'UK host INIZ (SYN LTD, since 2014): KVM NVMe VPS with DDoS protection in London, Coventry, Amsterdam and the US, prices ex VAT.'
+- id: interdata-networks
+  name: Interdata Networks
+  url: https://interdata.my/index.php?rp=/store/kvm-vps&currency=1
+  blurb: 'Малайзийский хостинг Interdata Networks (SERVEFORU HOST INTEGRATED, инфраструктура SVR4U): KVM VPS и VDS в Малайзии и Вьетнаме, а также в Сингапуре и Орегоне (США), с защитой от DDoS. Оплата картой (Stripe), через PayPal и криптовалютой.'
+  blurbEn: 'Malaysian host Interdata Networks (SERVEFORU HOST INTEGRATED, SVR4U infrastructure): KVM VPS and VDS in Malaysia and Vietnam, plus Singapore and Oregon (USA), with DDoS protection. Pays by card (Stripe), PayPal and crypto.'
   tags: []
-  hq: GB
-  countries: [GB, NL, US]
+  hq: MY
+  countries: [MY, VN, SG, US]
   payments: [crypto, card, paypal]
 - id: interserver
   name: InterServer
@@ -2051,6 +2298,14 @@
   tags: [Почасовая оплата]
   countries: [SE]
   payments: [crypto]
+- id: kuroit
+  name: Kuroit
+  url: https://www.kuroit.com/vps/
+  blurb: 'Kuroit Limited: KVM VPS, storage VPS и выделенные серверы в Великобритании (Уэст-Мидлендс, Лондон), США (Эшберн, Чикаго, Даллас, Лос-Анджелес, Тампа), Амстердаме, Токио и Сингапуре. Оплата через Stripe (карты), PayPal и криптовалюту через Cryptomus.'
+  blurbEn: 'Kuroit Limited: KVM VPS, storage VPS and dedicated servers in the UK (West Midlands, London), the US (Ashburn, Chicago, Dallas, Los Angeles, Tampa), Amsterdam, Tokyo and Singapore. Pays via Stripe (cards), PayPal and crypto via Cryptomus.'
+  tags: []
+  countries: [GB, US, NL, JP, SG]
+  payments: [crypto, card, paypal]
 - id: kyun
   name: Kyun
   url: https://kyun.sh/
@@ -2113,6 +2368,15 @@
   hq: SI
   countries: [SI]
   payments: [crypto, card, paypal, bank, local]
+- id: nolimitcloud
+  name: NolimitCloud (NolimitHost)
+  url: https://nolimitcloud.eu/pages/vps-hosting.php
+  blurb: Чешская компания (NolimitCloud s.r.o.) с VPS на AMD Ryzen 9 во Франкфурте и Чикаго, бюджетными VPS во Франкфурте и storage VPS в Нидерландах, а также выделенными серверами. Оплата картой, PayPal, криптовалютой и множеством европейских методов через Tebex и Stripe.
+  blurbEn: Czech company (NolimitCloud s.r.o.) offering AMD Ryzen 9 VPS in Frankfurt and Chicago, budget VPS in Frankfurt and storage VPS in the Netherlands, plus dedicated servers. Pays by card, PayPal, crypto and many European methods via Tebex and Stripe.
+  tags: []
+  hq: CZ
+  countries: [DE, US, NL]
+  payments: [crypto, card, paypal, bank, local]
 - id: orangewebsite
   name: OrangeWebsite
   url: https://orangewebsite.com/hosting/vps
@@ -2130,6 +2394,15 @@
   hq: HK
   countries: [FI, CH]
   payments: [crypto, paypal]
+- id: petrosky
+  name: PetroSky
+  url: https://petrosky.io/pricing/pro
+  blurb: 'VPS-хостинг PetroSky (PetroSky LLC, с 2019 года): Linux и Windows VPS на AMD EPYC с NVMe и защитой от DDoS в Париже (Франция) и Монреале (Канада), без переподписки ресурсов. Оплата картой, через PayPal и криптовалютой (Cryptomus).'
+  blurbEn: 'PetroSky VPS hosting (PetroSky LLC, since 2019): Linux and Windows VPS on AMD EPYC with NVMe and DDoS protection in Paris, France and Montreal, Canada, with no resource overselling. Pays by card, PayPal and crypto (Cryptomus).'
+  tags: [Безлимитный трафик]
+  hq: US
+  countries: [FR, CA]
+  payments: [crypto, card, paypal]
 - id: private-layer
   name: Private Layer
   url: https://privatelayer.com/
@@ -2325,14 +2598,6 @@
   hq: EE
   countries: [NL, DE, GB, EE, SG, JP, HK, AU, US]
   payments: [crypto, card, paypal, bank, local]
-- id: valebyte
-  name: Valebyte
-  url: https://valebyte.com/en/vps-hosting/
-  blurb: Магазин выделенных серверов и KVM VPS с сайтом на русском языке; VPS доступны в Лондоне, Сингапуре, Страсбурге и Варшаве, есть готовые образы WireGuard, VLESS Reality, 3X-UI и AmneziaVPN. Оплата картой, PayPal, SEPA и криптовалютой (USDT, BTC, ETH, TON).
-  blurbEn: Dedicated-server marketplace that also sells KVM VPS (London, Singapore, Strasbourg, Warsaw) with one-click WireGuard, VLESS Reality, 3X-UI and AmneziaVPN images; site in English and Russian. Pays by card, PayPal, SEPA and crypto (USDT, BTC, ETH, TON).
-  tags: [Безлимитный трафик]
-  countries: [GB, SG, FR, PL]
-  payments: [crypto, card, paypal, bank]
 - id: vdsina-com
   name: VDSina.com
   url: https://www.vdsina.com/pricing/standard
@@ -2342,6 +2607,15 @@
   hq: AE
   countries: [NL, RU]
   payments: [ru_card, ru_wallet, crypto, card, paypal, bank]
+- id: vebble
+  name: Vebble
+  url: https://deploy.vebble.com/cart/kvm-singapore/
+  blurb: KVM VPS и VDS на AMD EPYC с NVMe, портом 10 Гбит/с и защитой от DDoS в Сингапуре, а также shared-хостинг; VPN-серверы прямо разрешены правилами. Оплата картой, PayPal, Alipay и криптовалютой.
+  blurbEn: AMD EPYC KVM VPS and VDS with NVMe, 10-gigabit ports and DDoS protection in Singapore, plus shared hosting; VPN servers are explicitly allowed by the AUP. Pays by card, PayPal, Alipay and cryptocurrency.
+  tags: []
+  hq: GB
+  countries: [SG]
+  payments: [crypto, card, paypal, local]
 - id: virmach
   name: VirMach
   url: https://billing.virmach.com/index.php?rp=/store/cloud-computing-linux-vps-kvm
@@ -2367,14 +2641,6 @@
   tags: []
   countries: [US, NL, GB]
   payments: [ru_wallet, crypto, card, paypal, local]
-- id: vpslab
-  name: VPSLab
-  url: https://vpslab.cloud/linux-vps-server
-  blurb: KVM VPS на NVMe в Нидерландах и Германии, также Windows RDP, storage VPS и игровые серверы; регистрация без KYC. Оплата только криптовалютой (BTC, XMR, ETH, LTC, USDT, USDC, SOL и другие).
-  blurbEn: KVM NVMe VPS in the Netherlands and Germany, plus Windows RDP, storage VPS and game servers; sign-up without KYC. Crypto-only payments (BTC, XMR, ETH, LTC, USDT, USDC, SOL and more).
-  tags: [Безлимитный трафик]
-  countries: [NL, DE]
-  payments: [crypto]
 - id: xhost24
   name: xHost24
   url: https://xhost24.com/
@@ -2402,6 +2668,15 @@
   hq: LV
   countries: [NL, PL, DE, US]
   payments: [ru_card, sbp, ru_wallet, crypto, card, paypal, bank]
+- id: websnp
+  name: WebsNP
+  url: https://www.websnp.com/vps-server-hosting
+  blurb: 'Непальский хостинг WebsNP (с 2014 года): KVM VPS на Xeon Gold с NVMe в сети немецкого оператора SMARTNET (AS203446). Оплата через PayPal, картой, криптовалютой, банковским переводом, eSewa и Khalti.'
+  blurbEn: 'Nepali host WebsNP (since 2014): KVM VPS on Xeon Gold with NVMe, on the network of German operator SMARTNET (AS203446). Pays via PayPal, card, crypto, bank transfer, eSewa and Khalti.'
+  tags: []
+  hq: NP
+  countries: [DE]
+  payments: [crypto, card, paypal, bank, local]
 - id: acecloud
   name: AceCloud
   url: https://acecloud.ai/pricing/
@@ -2429,6 +2704,15 @@
   hq: UZ
   countries: [UZ]
   payments: [card, bank, local]
+- id: allhost
+  name: AllHost
+  url: https://allhost.io/performance-vps-hosting/
+  blurb: Британский хостинг (AH Cloud Ltd, бренд AllHost) с KVM VPS на AMD Ryzen 9 / EPYC и NVMe в дата-центре в Мидлендсе (Ковентри) и отдельной линейкой VPS в Лондоне, а также cPanel-хостингом. Способы оплаты на публичных страницах не указаны.
+  blurbEn: UK host (AH Cloud Ltd t/a AllHost) offering KVM VPS on AMD Ryzen 9 / EPYC with NVMe in a Midlands (Coventry) data center and a separate London VPS line, plus cPanel hosting. Payment methods are not listed on public pages.
+  tags: []
+  hq: GB
+  countries: [GB]
+  payments: []
 - id: amen-pt
   name: Amen.pt
   url: https://www.amen.pt/servidores/vps/
@@ -2438,6 +2722,15 @@
   hq: PT
   countries: [NL]
   payments: [card, paypal, bank]
+- id: arphost
+  name: ARPHost
+  url: https://arphost.com/vps-hosting/
+  blurb: 'Американская ARPHost, LLC: VPS на Intel с локальным NVMe или хранилищем Ceph, выделенные серверы и колокация в дата-центре в Тампе (Флорида). Оплата картами Visa, Mastercard, Amex, Discover и через PayPal.'
+  blurbEn: 'US-based ARPHost, LLC: Intel VPS on local NVMe or Ceph storage, bare-metal servers and colocation in a Tampa, Florida data center. Pays by Visa, Mastercard, Amex, Discover and PayPal.'
+  tags: []
+  hq: US
+  countries: [US]
+  payments: [card, paypal]
 - id: arsys
   name: Arsys
   url: https://www.arsys.net/servers/vps
@@ -2627,6 +2920,15 @@
   hq: ZA
   countries: [ZA]
   payments: [card, paypal, bank, local]
+- id: eurovps
+  name: EuroVPS
+  url: https://www.eurovps.com/managed-vps-hosting/
+  blurb: Европейский провайдер управляемых VPS (Linux и Windows) на Intel Xeon и AMD EPYC в дата-центре EvoSwitch под Амстердамом; юрлицо на Кипре. Ориентирован на бизнес-клиентов с полным администрированием.
+  blurbEn: European provider of managed VPS (Linux and Windows) on Intel Xeon and AMD EPYC in the EvoSwitch data center near Amsterdam; legal entity in Cyprus. Aimed at business customers, with full management included.
+  tags: []
+  hq: CY
+  countries: [NL]
+  payments: []
 - id: euserv
   name: EUserv
   url: https://www.euserv.com/en/virtual-private-server/root-vserver/v2/
@@ -2681,6 +2983,15 @@
   hq: DE
   countries: [DE]
   payments: []
+- id: glitch-servers
+  name: Glitch Servers
+  url: https://glitchservers.com/vps
+  blurb: 'Британский хостинг Glitch Servers: KVM VPS на Intel и AMD Ryzen с защитой от DDoS в дата-центре в Великобритании (VirtFusion), а также выделенные серверы, колокация и игровые серверы. Оплата картой через Stripe и банковским переводом.'
+  blurbEn: 'UK host Glitch Servers: Intel and AMD Ryzen KVM VPS with DDoS protection in a UK data center (VirtFusion panel), plus dedicated servers, colocation and game servers. Pays by card via Stripe and bank transfer.'
+  tags: []
+  hq: GB
+  countries: [GB]
+  payments: [card, bank]
 - id: globalhost-ba
   name: Globalhost
   url: https://www.global.ba/vps-hosting
@@ -2690,6 +3001,15 @@
   hq: BA
   countries: [BA]
   payments: [card, paypal]
+- id: globe-lu
+  name: GLOBE.LU
+  url: https://www.globe.lu/v-server/
+  blurb: 'Люксембургский хостер: KVM VPS на NVMe с собственной панелью и почтовым сервером, размещённые в дата-центре в Фалькенштайне (Германия). Оплата картой, PayPal или банковским переводом, счёт выставляется поквартально.'
+  blurbEn: 'Luxembourg host: NVMe KVM VPS with its own control panel and mail server, located in a data center in Falkenstein (Germany). Pays by card, PayPal or bank transfer, invoiced quarterly.'
+  tags: []
+  hq: LU
+  countries: [DE]
+  payments: [card, paypal, bank]
 - id: green-webpage
   name: Green Webpage
   url: https://www.greenwebpage.com/vpshosting.php
@@ -2798,6 +3118,15 @@
   hq: TR
   countries: [TR]
   payments: [bank]
+- id: hostingenlaweb
+  name: Hosting en la Web
+  url: https://www.hostingenlaweb.com/vps
+  blurb: 'Уругвайский хостинг с собственными серверами и IP-диапазонами в дата-центре уровня Tier III в Уругвае: VPS на VMware с Linux или Windows. Оплата картой, PayPal, через e-BROU/BANRED и наличными в сетях RedPagos и Abitab.'
+  blurbEn: 'Uruguayan host running its own servers and IP ranges in a Tier III data center in Uruguay: VMware VPS with Linux or Windows. Pays by card, PayPal, e-BROU/BANRED bank payments, or cash at RedPagos/Abitab.'
+  tags: []
+  hq: UY
+  countries: [UY]
+  payments: [card, paypal, bank, local]
 - id: hosting-com-tr
   name: Hosting.com.tr
   url: https://www.hosting.com.tr/server/vps-server/
@@ -2870,6 +3199,32 @@
   hq: LT
   countries: [LT]
   payments: []
+- id: ip-projects
+  name: IP-Projects
+  url: https://www.ip-projects.de/en/virtual-server/linux-ssd-vps
+  blurb: 'Немецкий хостинг-оператор со своей площадкой во Франкфурте: KVM vServer (SSD, NVMe, storage, compute, Ceph HA), выделенные серверы и колокация. Оплата SEPA, банковским переводом, картой через Stripe и PayPal.'
+  blurbEn: 'German hosting operator with its own Frankfurt facility: KVM vServers (SSD, NVMe, storage, compute, Ceph HA), dedicated servers and colocation. Pays by SEPA debit or transfer, card via Stripe and PayPal.'
+  tags: []
+  hq: DE
+  countries: [DE]
+  payments: [card, paypal, bank]
+- id: iwebfusion
+  name: iWebFusion
+  url: https://www.iwebfusion.net/vps
+  blurb: 'Американский хостинг iWebFusion (H4Y Technologies LLC, с 2001 года): KVM VPS и VPS на AMD EPYC с SolusVM, выделенные серверы и колокация в собственных и партнёрских дата-центрах в США (Бенд, Лос-Анджелес, Шарлотт). Оплата картой и через PayPal.'
+  blurbEn: 'US host iWebFusion (H4Y Technologies LLC, since 2001): KVM and AMD EPYC VPS with SolusVM, dedicated servers and colocation in its own and partner data centers in the USA (Bend, Los Angeles, Charlotte). Pays by card and PayPal.'
+  tags: []
+  hq: US
+  countries: [US]
+  payments: [card, paypal]
+- id: koanode
+  name: K.N (Koanode)
+  url: https://koanode.com/
+  blurb: K.N — облачные KVM-инстансы на SSD с почасовой оплатой в регионах Майами, Франкфурт и Амстердам, оплата с предоплаченного баланса. Пополнение банковской картой через Stripe, кошельками и Alipay.
+  blurbEn: K.N offers hourly-billed SSD KVM cloud instances in Miami, Frankfurt and Amsterdam, paid from a prepaid balance. Top-ups by bank card via Stripe, wallets and Alipay.
+  tags: [Почасовая оплата]
+  countries: [US, DE, NL]
+  payments: [card, local]
 - id: karvl
   name: Karvl
   url: https://www.karvl.com/pricing/
@@ -2924,6 +3279,15 @@
   hq: SE
   countries: [SE]
   payments: [card, local]
+- id: lumadock
+  name: LumaDock
+  url: https://lumadock.com/vps-hosting
+  blurb: 'Британская LumaDock Ltd.: KVM VPS на AMD EPYC с NVMe и безлимитным трафиком в Лондоне, Франкфурте, Амстердаме, Нью-Йорке, Мадриде, Хельсинки, Варшаве, Бухаресте, Париже и Милане, а также Ryzen VDS, storage VPS и выделенные серверы. Оплата только банковской картой.'
+  blurbEn: 'UK-registered LumaDock Ltd.: AMD EPYC KVM VPS with NVMe and unmetered bandwidth in London, Frankfurt, Amsterdam, New York, Madrid, Helsinki, Warsaw, Bucharest, Paris and Milan, plus Ryzen VDS, storage VPS and dedicated servers. Pays by bank card only.'
+  tags: [10+ стран, Безлимитный трафик]
+  hq: GB
+  countries: [GB, DE, NL, US, ES, FI, PL, RO, FR, IT]
+  payments: [card]
 - id: lws
   name: LWS
   url: https://www.lws.fr/vps-pas-cher.php
@@ -3005,6 +3369,15 @@
   hq: NP
   countries: [NP]
   payments: [bank, local]
+- id: netsite-lu
+  name: NETsite.lu
+  url: https://netsite.lu/de/vps.php
+  blurb: 'Люксембургский хостер и регистратор (с 2002 года): KVM VPS с root-доступом и безлимитным трафиком в дата-центре в Люксембурге, а также управляемые VPS. Сайт на немецком, французском и английском.'
+  blurbEn: 'Luxembourg host and registrar (since 2002): KVM VPS with root access and unmetered traffic in a Luxembourg data center, plus managed VPS. Site in German, French and English.'
+  tags: [Безлимитный трафик]
+  hq: LU
+  countries: [LU]
+  payments: [bank]
 - id: oxahost
   name: OxaHost
   url: https://www.oxahost.tn/serveurs/vps-cloud-linux
@@ -3077,6 +3450,15 @@
   hq: HU
   countries: [HU]
   payments: [paypal]
+- id: raff
+  name: Raff
+  url: https://rafftechnologies.com/pricing
+  blurb: 'Американская облачная платформа Raff (Raff Technologies LLC): Linux и Windows VM на KVM с NVMe и безлимитным трафиком, а также Kubernetes, управляемые базы данных и объектное хранилище; регион US East. Оплата картами (включая UnionPay), Google Pay и Apple Pay, переводом по запросу.'
+  blurbEn: 'US cloud platform Raff (Raff Technologies LLC): KVM Linux and Windows VMs with NVMe and unmetered bandwidth, plus Kubernetes, managed databases and object storage; US East region. Pays by card (incl. UnionPay), Google Pay and Apple Pay, wire on request.'
+  tags: [Почасовая оплата, Безлимитный трафик]
+  hq: US
+  countries: [US]
+  payments: [card, bank]
 - id: raiola-networks
   name: Raiola Networks
   url: https://raiolanetworks.com/servidores-vps/
@@ -3158,6 +3540,15 @@
   hq: IT
   countries: [IT]
   payments: [card, paypal]
+- id: serverscamp
+  name: ServersCamp
+  url: https://serverscamp.com/pricing/compute
+  blurb: 'Румынское облако ServersCamp (SERVERS CAMP SRL): виртуальные машины с NVMe-дисками, приватными сетями, балансировщиками, API и Terraform на собственном оборудовании в Бухаресте, почасовая тарификация. Оплата банковской картой (Stripe).'
+  blurbEn: 'Romanian cloud ServersCamp (SERVERS CAMP SRL): virtual machines with replicated NVMe disks, private networks, load balancers, API and Terraform on its own hardware in Bucharest, billed hourly. Pays by card (Stripe).'
+  tags: [Почасовая оплата]
+  hq: RO
+  countries: [RO]
+  payments: [card]
 - id: servetheworld
   name: ServeTheWorld
   url: https://stw.no/no/ssd-vps/
@@ -3176,6 +3567,15 @@
   hq: NZ
   countries: [NZ]
   payments: []
+- id: solidvps
+  name: SolidVPS
+  url: https://solidvps.com/linux-vps.php
+  blurb: 'Американская Solid Systems, LLC (SolidVPS): KVM VPS — бюджетные, облачные на Xeon и с выделенными ядрами AMD EPYC — в США (Буффало, Даллас, Канзас-Сити, Лос-Анджелес, Финикс, Сиэтл, Тампа), Торонто, Реддиче (Великобритания) и Харлеме (Нидерланды). Оплата картой и PayPal.'
+  blurbEn: 'US-based Solid Systems, LLC (SolidVPS): KVM VPS — budget, Xeon cloud and dedicated-core AMD EPYC — in the US (Buffalo, Dallas, Kansas City, Los Angeles, Phoenix, Seattle, Tampa), Toronto, Redditch (UK) and Haarlem (Netherlands). Pays by card and PayPal.'
+  tags: []
+  hq: US
+  countries: [US, CA, GB, NL]
+  payments: [card, paypal]
 - id: solucionhost
   name: SolucionHost
   url: https://www.solucionhost.com.ar/vps
@@ -3221,6 +3621,15 @@
   hq: VN
   countries: [VN]
   payments: [bank, local]
+- id: torchbyte
+  name: Torchbyte
+  url: https://torchbyte.com/vps
+  blurb: 'Румынский хостинг Torchbyte (All Things IT SRL): KVM VPS на Ryzen 9, Xeon Gold и EPYC в дата-центре NXDATA-1 в Бухаресте на собственной сети AS215362, с безлимитным портом 10 Гбит/с и защитой от DDoS. Оплата через PayPal, Stripe (карты) и Paysafecard.'
+  blurbEn: 'Romanian host Torchbyte (All Things IT SRL): Ryzen 9, Xeon Gold and EPYC KVM VPS in the NXDATA-1 data center in Bucharest on its own AS215362 network, with an unmetered 10 Gbit/s port and DDoS protection. Pays via PayPal, Stripe (cards) and Paysafecard.'
+  tags: [Безлимитный трафик]
+  hq: RO
+  countries: [RO]
+  payments: [card, paypal, local]
 - id: transip
   name: TransIP
   url: https://www.transip.nl/vps/
@@ -3229,6 +3638,15 @@
   tags: [Безлимитный трафик]
   hq: NL
   countries: [NL]
+  payments: []
+- id: tudcloud
+  name: Tudcloud
+  url: https://tudcloud.com/vps-hk.php
+  blurb: 'Tudcloud: KVM VPS в Гонконге с маршрутизацией CN2 и в Сиэтле на сетях CMIN2 (AS9929) и AS4837 с ориентацией на связность с Китаем, а также Windows VPS и выделенные серверы. Способы оплаты до оформления заказа не показаны.'
+  blurbEn: 'Tudcloud: KVM VPS in Hong Kong with CN2 routing and in Seattle on CMIN2 (AS9929) and AS4837 networks aimed at China connectivity, plus Windows VPS and dedicated servers. Payment methods are not shown before checkout.'
+  tags: [Безлимитный трафик]
+  hq: US
+  countries: [HK, US]
   payments: []
 - id: uol-host
   name: UOL Host
@@ -3248,6 +3666,24 @@
   hq: LV
   countries: [LV, NL, SE]
   payments: [crypto, card]
+- id: velohost
+  name: Velohost
+  url: https://velohost.de/kvm-ipv4.php
+  blurb: 'Небольшой немецкий хостинг: KVM-серверы на AMD в дата-центре MyLoc в Дюссельдорфе, а также выделенные серверы, веб-хостинг и игровые серверы. Оплата через PayPal, картой и банковским переводом.'
+  blurbEn: Small German host offering AMD KVM servers in the MyLoc data center in Düsseldorf, plus dedicated servers, web hosting and game servers. Pays via PayPal, card and bank transfer.
+  tags: []
+  hq: DE
+  countries: [DE]
+  payments: [card, paypal, bank]
+- id: veloxmedia
+  name: VeloxMedia
+  url: https://veloxmedia.co.uk/vps/
+  blurb: Облачные NVMe VPS (Velox Media Inc.) в Лондоне, Амстердаме и двух регионах США (Огайо и Калифорния) с безлимитным трафиком; сайт есть на русском. Оплата картой через Stripe и PayPal.
+  blurbEn: Cloud NVMe VPS (Velox Media Inc.) in London, Amsterdam and two US regions (Ohio and California) with unmetered transfer; site also in Russian. Pays by card via Stripe and PayPal.
+  tags: [Безлимитный трафик]
+  hq: US
+  countries: [GB, NL, US]
+  payments: [card, paypal]
 - id: versio
   name: Versio
   url: https://www.versio.nl/vps-hosting
@@ -3374,6 +3810,15 @@
   hq: DE
   countries: [DE]
   payments: [card, paypal, bank, local]
+- id: 24fire
+  name: 24fire
+  url: https://24fire.de/kvmserver/xeon
+  blurb: 'Немецкий prepaid-хостинг 24fire GmbH: KVM-серверы на AMD EPYC и Ryzen 9 в дата-центре NTT во Франкфурте и на Intel Xeon и Ryzen 7 в Skylink в Эйгелсховене (Нидерланды). Оплата с баланса, пополнение через PayPal, карту, Paysafecard и Apple Pay.'
+  blurbEn: 'German prepaid host 24fire GmbH: AMD EPYC and Ryzen 9 KVM servers at NTT in Frankfurt and Intel Xeon and Ryzen 7 servers at Skylink in Eygelshoven (Netherlands). Paid from a prepaid balance topped up via PayPal, card, Paysafecard and Apple Pay.'
+  tags: []
+  hq: DE
+  countries: [DE, NL]
+  payments: [card, paypal, local]
 - id: ablenet-vps
   name: ABLENET VPS
   url: https://www.ablenet.jp/vps/
@@ -3401,6 +3846,15 @@
   hq: ZA
   countries: [ZA]
   payments: [card, bank]
+- id: airnode
+  name: Airnode
+  url: https://www.airnode.nl/vps
+  blurb: Небольшой нидерландский провайдер с VPS на собственном оборудовании в дата-центре Digital Realty AMS5 в Амстердаме, а также игровым хостингом и выделенными серверами. Способы оплаты на публичных страницах не указаны.
+  blurbEn: Small Dutch provider selling VPS on its own hardware in the Digital Realty AMS5 data center in Amsterdam, plus game hosting and dedicated servers. Payment methods are not listed on public pages.
+  tags: []
+  hq: NL
+  countries: [NL]
+  payments: []
 - id: alfahosting
   name: Alfahosting
   url: https://alfahosting.de/vserver-hosting/
@@ -3446,6 +3900,14 @@
   hq: US
   countries: [US, CA, GB, SG]
   payments: [card]
+- id: aveshost
+  name: Aveshost
+  url: https://www.aveshost.com/vps-ghana
+  blurb: 'Ганский хостинг Aveshost: KVM VPS в дата-центрах в Аккре (Гана), Йоханнесбурге и Кейптауне (ЮАР), Лагосе (Нигерия) и Найроби (Кения); есть готовые VPS под WireGuard. Способы оплаты на публичных страницах не перечислены.'
+  blurbEn: 'Ghanaian host Aveshost: KVM VPS in data centers in Accra (Ghana), Johannesburg and Cape Town (South Africa), Lagos (Nigeria) and Nairobi (Kenya); also offers ready-made WireGuard VPS. Payment methods are not listed on public pages.'
+  tags: []
+  countries: [GH, ZA, NG, KE]
+  payments: []
 - id: axxess-vps
   name: Axxess VPS Hosting
   url: https://www.axxess.co.za/hosting/vps
@@ -3499,6 +3961,15 @@
   tags: []
   hq: TR
   countries: [TR]
+  payments: []
+- id: bytehosting
+  name: ByteHosting
+  url: https://bytehosting.cloud/xeon-virtual-servers.html
+  blurb: Датский хостинг (CVR 44291002) с VPS на Intel Xeon и AMD Ryzen с большим объёмом памяти; вся инфраструктура во Франкфурте (дата-центры Equinix). Способы оплаты на публичных страницах не указаны.
+  blurbEn: Danish host (CVR 44291002) selling Intel Xeon and AMD Ryzen VPS with large RAM; all infrastructure is in Frankfurt (Equinix data centers). Payment methods are not shown on public pages.
+  tags: []
+  hq: DK
+  countries: [DE]
   payments: []
 - id: byteplus
   name: BytePlus ECS
@@ -3571,14 +4042,6 @@
   hq: US
   countries: [US]
   payments: [card]
-- id: cloudfanatic
-  name: Cloudfanatic
-  url: https://cloudfanatic.net/pricing/
-  blurb: Cloudfanatic продаёт KVM VPS на NVMe с безлимитным трафиком в Чикаго, Лос-Анджелесе, Северной Каролине и Фениксе. Оплата картой или PayPal, после первого платежа — также Bitcoin.
-  blurbEn: Cloudfanatic sells KVM NVMe VPS with unmetered bandwidth in Chicago, Los Angeles, North Carolina and Phoenix. Pay by card or PayPal; Bitcoin is allowed after a first card/PayPal payment.
-  tags: [Безлимитный трафик]
-  countries: [US]
-  payments: [crypto, card, paypal]
 - id: cloudscale
   name: cloudscale
   url: https://www.cloudscale.ch/en/pricing
@@ -3633,6 +4096,15 @@
   hq: BE
   countries: [BE]
   payments: []
+- id: computebox
+  name: ComputeBox
+  url: https://computebox.de/vps-pricing
+  blurb: 'Немецкий провайдер ComputeBox: KVM VPS на AMD EPYC Milan/Turin с NVMe и защитой от DDoS, а также облачные серверы с NVIDIA GPU, в дата-центрах в Гамбурге и Бремене. Оплата картой, SEPA-дебетом и PayPal через Stripe.'
+  blurbEn: 'German provider ComputeBox: KVM VPS on AMD EPYC Milan/Turin with NVMe and DDoS protection, plus NVIDIA GPU cloud servers, in data centers in Hamburg and Bremen. Pays by card, SEPA direct debit and PayPal via Stripe.'
+  tags: []
+  hq: DE
+  countries: [DE]
+  payments: [card, paypal, bank]
 - id: conetix
   name: Conetix
   url: https://conetix.com.au/virtual-private-servers/
@@ -3875,6 +4347,15 @@
   hq: SK
   countries: [SK]
   payments: [bank]
+- id: fastcloud-ge
+  name: FastCloud
+  url: https://fastcloud.ge/store/ssd-vps-hosting
+  blurb: 'Грузинский хостинг FastCloud: SSD и стандартные (SAS) VPS с ежедневным бэкапом, дата-центр в Тбилиси. Оплата картами Visa/Mastercard, PayPal, TBC Pay, местными платёжными сервисами и терминалами, банковским переводом.'
+  blurbEn: 'Georgian host FastCloud: SSD and standard (SAS) VPS with daily backups, data center in Tbilisi. Pays by Visa/Mastercard, PayPal, TBC Pay, local payment services and terminals, and bank transfer.'
+  tags: []
+  hq: GE
+  countries: [GE]
+  payments: [card, paypal, bank, local]
 - id: flow-swiss
   name: Flow Swiss
   url: https://flow.swiss/compute
@@ -3963,6 +4444,15 @@
   tags: [10+ стран]
   countries: [US, CA, BG, DE, FI, FR, NL, PL, SG, AU]
   payments: [card, paypal]
+- id: himalayan-host
+  name: Himalayan Host
+  url: https://www.himalayanhost.com/store/linux-cloud-vps-and-dedicated-servers
+  blurb: 'Непальский хостинг Himalayan Host (Катманду): KVM VPS в собственном дата-центре в Катманду, а также облачные VPS на площадке в Европе. Способы оплаты на сайте не перечислены.'
+  blurbEn: 'Nepali host Himalayan Host (Kathmandu): KVM VPS in its own Kathmandu data center, plus cloud VPS hosted in Europe. Payment methods are not listed on the site.'
+  tags: []
+  hq: NP
+  countries: [NP]
+  payments: []
 - id: hitrost
   name: Hitrost.com
   url: https://www.hitrost.com/vps-gostovanje/cenik-vps-gostovanja/
@@ -3990,6 +4480,23 @@
   hq: AL
   countries: [AL, MK]
   payments: [paypal, bank]
+- id: host-com-py
+  name: Host.com.py
+  url: https://host.com.py/vps/
+  blurb: 'Парагвайский хостинг из Сьюдад-дель-Эсте: KVM VPS с размещением в Парагвае и парагвайскими IP, безлимитный трафик на симметричных каналах. Заказ через WhatsApp, оплата через местный платёжный шлюз Pagopar.'
+  blurbEn: 'Paraguayan host from Ciudad del Este: KVM VPS located in Paraguay with Paraguay-geolocated IPs and unmetered traffic on symmetric links. Ordered via WhatsApp, paid through the local Pagopar gateway.'
+  tags: [Безлимитный трафик]
+  hq: PY
+  countries: [PY]
+  payments: [local]
+- id: hostbilby
+  name: HostBilby
+  url: https://hostbilby.com/value-vps
+  blurb: 'HostBilby Inc.: VPS линеек Value и Ultra, VDS и выделенные серверы в Спокане (штат Вашингтон, США) и Торонто (Канада). Оплата кредитной картой, канадской дебетовой картой и PayPal.'
+  blurbEn: 'HostBilby Inc.: Value and Ultra VPS lines, VDS and dedicated servers in Spokane, Washington (US) and Toronto (Canada). Pays by credit card, Canadian debit card and PayPal.'
+  tags: []
+  countries: [US, CA]
+  payments: [card, paypal]
 - id: hostcenter-il
   name: HostCenter
   url: https://www.hostcenter.co.il/%d7%a9%d7%a8%d7%aa-vps/
@@ -4071,6 +4578,15 @@
   hq: DE
   countries: [DE]
   payments: []
+- id: hostingb2b
+  name: HostingB2B
+  url: https://hostingb2b.com/vps-hosting/
+  blurb: 'Кипрский хостинг-провайдер: VPS (Linux, Windows, RDP), облачные и выделенные серверы и колокация в дата-центрах на Кипре, на Мальте, в Амстердаме и Дубае. Заказ через собственный биллинг.'
+  blurbEn: 'Cypriot hosting provider: VPS (Linux, Windows, RDP), cloud and dedicated servers and colocation in data centers in Cyprus, Malta, Amsterdam and Dubai. Ordered through its own billing portal.'
+  tags: []
+  hq: CY
+  countries: [CY, MT, NL, AE]
+  payments: []
 - id: hostinq-az
   name: Hostinq.az
   url: https://hostinq.az/kategori/vds-vps-paketlri
@@ -4080,6 +4596,15 @@
   hq: AZ
   countries: [DE, US, GB, SG, AU, JP, IN]
   payments: [local]
+- id: hostishere
+  name: Hostishere
+  url: https://my.hostishere.com/store/amd-ryzen-rootserver
+  blurb: 'Немецкий хостинг (Феллбах): KVM VPS на AMD Ryzen 9 9950X/9950X3D с DDR5 и NVMe, порт 10 Гбит/с и защита от DDoS, дата-центры NTT FRA01 и nLighten FRA4 во Франкфурте. Способы оплаты на сайте не указаны.'
+  blurbEn: German host (Fellbach) selling KVM VPS on AMD Ryzen 9 9950X/9950X3D with DDR5 and NVMe, a 10 Gbps port and DDoS protection, in the NTT FRA01 and nLighten FRA4 data centers in Frankfurt. Payment methods are not listed on the site.
+  tags: []
+  hq: DE
+  countries: [DE]
+  payments: []
 - id: hostixo
   name: Hostixo
   url: https://www.hostixo.com/sunucu/bulut-sunucu/
@@ -4089,6 +4614,15 @@
   hq: TR
   countries: [TR]
   payments: []
+- id: hostman
+  name: Hostman
+  url: https://hostman.com/products/cloud-server
+  blurb: 'Облачный провайдер с кипрским юрлицом (Лимасол): облачные серверы на NVMe с почасовой оплатой и root-доступом в Германии, Нидерландах, Великобритании, Финляндии, Франции и США. Оплата банковской картой.'
+  blurbEn: 'Cloud provider with a Cypriot legal entity (Limassol): NVMe cloud servers with hourly billing and root access in Germany, the Netherlands, the UK, Finland, France and the US. Pays by card.'
+  tags: [Почасовая оплата]
+  hq: CY
+  countries: [DE, NL, GB, FI, FR, US]
+  payments: [card]
 - id: hostnet
   name: Hostnet
   url: https://www.hostnet.nl/vps
@@ -4152,6 +4686,14 @@
   hq: KR
   countries: [KR]
   payments: []
+- id: hostwild
+  name: HostWild
+  url: https://hostwild.com/usa-cloud-vps/
+  blurb: 'HostWild LLC: облачные VPS с Linux или Windows на NVMe в США (Вашингтон, Лос-Анджелес, Сан-Франциско), Канаде, Великобритании, Германии, Нидерландах, Сингапуре, Японии и Австралии, а также выделенные серверы. Способы оплаты до оформления заказа не показаны.'
+  blurbEn: 'HostWild LLC: Linux or Windows NVMe cloud VPS in the US (Washington DC, Los Angeles, San Francisco), Canada, the UK, Germany, the Netherlands, Singapore, Japan and Australia, plus dedicated servers. Payment methods are not shown before checkout.'
+  tags: []
+  countries: [US, CA, GB, DE, NL, SG, JP, AU]
+  payments: []
 - id: hudson-valley-host
   name: Hudson Valley Host
   url: https://hudsonvalleyhost.com/self-managed-vps-2/
@@ -4169,6 +4711,15 @@
   hq: CZ
   countries: [CZ]
   payments: [card, paypal, local]
+- id: hyper-host-solutions
+  name: HyperHost Solutions
+  url: https://clients.hyperhostsolutions.com/store/cloud-servers
+  blurb: 'Британский хостинг HyperHost Solutions Ltd: KVM VPS и вычислительные инстансы с NVMe/SSD и защитой от DDoS, а также веб-хостинг, почта и телеком-услуги; дата-центры в Великобритании. Оплата картой (Stripe), через PayPal и прямым дебетом GoCardless.'
+  blurbEn: 'UK host HyperHost Solutions Ltd: KVM VPS and compute instances with NVMe/SSD and DDoS protection, plus web hosting, email and telecom services; UK-based data centres. Pays by card (Stripe), PayPal and GoCardless direct debit.'
+  tags: [Безлимитный трафик]
+  hq: GB
+  countries: [GB]
+  payments: [card, paypal, bank]
 - id: hythost
   name: HytHost
   url: https://hythost.com/vps-hosting.php
@@ -4214,6 +4765,23 @@
   hq: FR
   countries: [FR]
   payments: []
+- id: inet-ws
+  name: INET.WS
+  url: https://inet.ws/
+  blurb: 'Linux и FreeBSD VPS в 14 дата-центрах: Эшберн, Атланта, Чикаго, Даллас, Лос-Анджелес, Майами, Нью-Йорк, Феникс, Сиэтл, Торонто, Ванкувер, Лондон, Франкфурт и Париж; также облачные роутеры MikroTik и бесплатные еженедельные бэкапы. Оплата через PayPal и Stripe.'
+  blurbEn: 'Linux and FreeBSD VPS in 14 data centers: Ashburn, Atlanta, Chicago, Dallas, Los Angeles, Miami, New York, Phoenix, Seattle, Toronto, Vancouver, London, Frankfurt and Paris; also MikroTik cloud routers and free weekly backups. Pays via PayPal and Stripe.'
+  tags: []
+  countries: [US, CA, GB, DE, FR]
+  payments: [card, paypal]
+- id: informaten
+  name: Informaten
+  url: https://informaten.com/en/vservers?type=xeon
+  blurb: 'Немецкий хостинг: настраиваемые KVM vServer на Intel Xeon Gold и AMD EPYC с хранилищем Ceph и защитой от DDoS в дата-центрах maincubes FRA01 и FirstColo во Франкфурте, оплата вперёд за выбранный срок без договора. Способы оплаты на открытых страницах не указаны.'
+  blurbEn: German host offering configurable KVM vServers on Intel Xeon Gold and AMD EPYC with Ceph storage and DDoS protection in the maincubes FRA01 and FirstColo data centers in Frankfurt, prepaid for a chosen term with no contract. Payment methods are not listed on the public pages.
+  tags: []
+  hq: DE
+  countries: [DE]
+  payments: []
 - id: inleed
   name: Inleed
   url: https://inleed.se/virtuell-server/
@@ -4223,15 +4791,6 @@
   hq: SE
   countries: [SE]
   payments: [card, bank, local]
-- id: krypt-ion
-  name: iON Cloud by Krypt
-  url: https://ion.krypt.asia/store/vps-cloud-los-angeles
-  blurb: Облачные VPS iON (Krypt) с маршрутом China Direct в Лос-Анджелесе, Кремниевой долине, Далласе, Гонолулу и Сингапуре (от 4 vCPU/8 ГБ). Оплата PayPal или Alipay.
-  blurbEn: Krypt's iON cloud VPS with China Direct routing in Los Angeles, Silicon Valley, Dallas, Honolulu and Singapore (from 4 vCPU/8 GB). Pays via PayPal or Alipay.
-  tags: []
-  hq: US
-  countries: [US, SG]
-  payments: [paypal, local]
 - id: ionswitch
   name: IonSwitch
   url: https://ionswitch.com/vps/
@@ -4259,6 +4818,24 @@
   hq: GB
   countries: [DE, PL, FR, GB, CA, US]
   payments: [card, paypal]
+- id: iq-hosting
+  name: IQ Hosting
+  url: https://www.iq-hosting.com/vps-hosting
+  blurb: 'Иракский хостер (сайт на арабском, курдском и английском): KVM VPS и облачные серверы в зарубежных дата-центрах во Франции, Германии, Великобритании, Польше, США, Канаде и Сингапуре. Оплата через ZainCash, Qi Card, FIB, PayPal или банковским переводом.'
+  blurbEn: 'Iraqi host (Arabic, Kurdish and English site): KVM VPS and cloud servers in foreign data centers in France, Germany, the UK, Poland, the US, Canada and Singapore. Pays via ZainCash, Qi Card, FIB, PayPal or bank transfer.'
+  tags: []
+  hq: IQ
+  countries: [FR, DE, GB, PL, US, CA, SG]
+  payments: [paypal, bank, local]
+- id: itsumiku
+  name: itsumiku
+  url: https://www.itsumiku.com/en/pricing
+  blurb: 'Облачная платформа itsumiku (Itsumiku LLC, США): VPS на AMD EPYC с собственной панелью, снапшотами, файрволом и VNC, размещение в Наалдвейке (Нидерланды). Оплата картой и с баланса аккаунта.'
+  blurbEn: 'itsumiku cloud platform (Itsumiku LLC, USA): AMD EPYC VPS with an in-house console, snapshots, per-VM firewall and VNC, hosted in Naaldwijk, Netherlands. Pays by card and account balance.'
+  tags: []
+  hq: US
+  countries: [NL]
+  payments: [card]
 - id: iwinv
   name: iwinv
   url: https://www.iwinv.kr/server/server
@@ -4358,6 +4935,15 @@
   hq: BR
   countries: [US, JP, GB, DE]
   payments: [crypto, card, bank, local]
+- id: layer-ae
+  name: Layer
+  url: https://layer.ae/vps
+  blurb: KVM VPS на AMD Ryzen с DDR5, NVMe и портом 10 Гбит/с в Спокане (США), Ковентри (Великобритания), Эйгелсховене (Нидерланды) и Сингапуре, а также storage VPS и выделенные серверы. Способы оплаты на открытых страницах не указаны.
+  blurbEn: AMD Ryzen KVM VPS with DDR5, NVMe and 10 Gbps ports in Spokane (US), Coventry (UK), Eygelshoven (NL) and Singapore, plus storage VPS and dedicated servers. Payment methods are not listed on the public pages.
+  tags: []
+  hq: AE
+  countries: [US, GB, NL, SG]
+  payments: []
 - id: layer3-cloud
   name: Layer3 Cloud
   url: https://www.layer3.cloud/pricing
@@ -4394,6 +4980,14 @@
   hq: HK
   countries: [TR, SA, AE, TH, VN, KH, HK, TW, KR, SG, PH, BD, JP, BH, MY, OM, KW, PK, NP, ID, MM, IQ, QA, DE, BG, GR, GB, FR, RU, RO, US, MX, CA, ZA, EG, BR, AR, CL, CO, PE, EC]
   payments: [card, paypal, local]
+- id: limitless-hosting
+  name: Limitless Hosting
+  url: https://my.limitlesshost.net/order/main/packages/kvmvps-ssd/?group_id=46
+  blurb: 'Хостинг Limitless Hosting (Limitless Hosting Ltd, с 2016 года): небольшие KVM VPS на SSD с процессорами Intel в Чикаго (США), а также shared- и реселлер-хостинг в США, ЕС, Сингапуре и Австралии. Оплата банковской картой.'
+  blurbEn: 'Limitless Hosting (Limitless Hosting Ltd, since 2016): small SSD KVM VPS with Intel CPUs in Chicago (USA), plus shared and reseller hosting in the USA, EU, Singapore and Australia. Pays by card.'
+  tags: []
+  countries: [US]
+  payments: [card]
 - id: linveo
   name: Linveo
   url: https://linveo.com/
@@ -4520,15 +5114,6 @@
   hq: LV
   countries: [LV]
   payments: [card, paypal, bank]
-- id: napoleon
-  name: Napoleon
-  url: https://painel.napoleon.com.br/store/cloud-bra
-  blurb: Бразильский хостер реселлерского и выделенного хостинга; VPS в Бразилии (4 ГБ RAM, 25 ГБ NVMe, 200 Мбит/с, анти-DDoS) и NVMe VPS в США. Оплата PIX или boleto.
-  blurbEn: Brazilian reseller/dedicated hosting company; VPS in Brazil (4 GB RAM, 25 GB NVMe, 200 Mbps, anti-DDoS) and NVMe VPS in the US. Pay by PIX or boleto.
-  tags: [Безлимитный трафик]
-  hq: BR
-  countries: [BR, US]
-  payments: [local]
 - id: naver-cloud
   name: NAVER Cloud Platform
   url: https://www.ncloud.com/charge/price
@@ -4538,6 +5123,23 @@
   hq: KR
   countries: [KR, US, SG, JP, DE]
   payments: [card, bank, local]
+- id: navegalo
+  name: Navégalo
+  url: https://navegalo.com/vps
+  blurb: 'Коста-риканский оператор дата-центра Tier III в Сан-Хосе: KVM VPS и облачные серверы с выделенными vCPU, SSD и постоянной защитой от DDoS. Способы оплаты на публичных страницах не указаны.'
+  blurbEn: 'Costa Rican operator of a Tier III data center in San José: KVM VPS and dedicated-vCPU cloud servers with SSD and always-on DDoS protection. Payment methods are not listed on the public pages.'
+  tags: []
+  hq: CR
+  countries: [CR]
+  payments: []
+- id: neolo
+  name: Neolo
+  url: https://www.neolo.com/usa/vps-hosting/
+  blurb: 'Латиноамериканский хостинг Neolo с VPS в дата-центрах Северной Америки и Европы (IP на выбор: США, Великобритания или Европа) и испаноязычной поддержкой. Оплата картами, PayPal, криптовалютой (BTC, USDT, BNB), Zelle и переводами через местные банки.'
+  blurbEn: 'Latin American host Neolo offering VPS in North American and European data centers (IP choice: US, UK or Europe) with Spanish-language support. Pays by card, PayPal, crypto (BTC, USDT, BNB), Zelle and local bank transfers.'
+  tags: []
+  countries: [US, GB]
+  payments: [crypto, card, paypal, bank, local]
 - id: neostrada
   name: Neostrada
   url: https://www.neostrada.nl/cloud-servers-vps-hosting.html
@@ -4637,6 +5239,15 @@
   hq: TH
   countries: [TH]
   payments: [card, bank]
+- id: nuxoa
+  name: NUXOA
+  url: https://nuxoa.de/linux-server/
+  blurb: 'Немецкая NUXOA GmbH: Linux-серверы (виртуальные) на NVMe с ежедневными полными бэкапами в дата-центре во Франкфурте-на-Майне, а также Windows/терминальные серверы и колокация. Оплата пополнением баланса через PayPal, Sofort и paysafecard.'
+  blurbEn: 'German NUXOA GmbH: NVMe Linux virtual servers with daily full backups in a Frankfurt am Main data center, plus Windows/terminal servers and colocation. Paid by topping up a balance via PayPal, Sofort and paysafecard.'
+  tags: []
+  hq: DE
+  countries: [DE]
+  payments: [paypal, local]
 - id: oderland-cloud
   name: Oderland Cloud
   url: https://www.oderland.com/cloud/prices/
@@ -4681,6 +5292,14 @@
   tags: []
   countries: [US, SG]
   payments: []
+- id: ozonti
+  name: Ozonti Network
+  url: https://www.ozonti.net/cloud
+  blurb: 'Хостинг Ozonti Network (Ozonti Network LLC): KVM-серверы на AMD Ryzen 9950X с NVMe в Юте (США), Лондоне, Варшаве, Франкфурте, Амстердаме и Барселоне, а также GPU и выделенные серверы. Оплата картой (Stripe).'
+  blurbEn: 'Ozonti Network (Ozonti Network LLC): KVM servers on AMD Ryzen 9950X with NVMe in Utah (USA), London, Warsaw, Frankfurt, Amsterdam and Barcelona, plus GPU and dedicated servers. Pays by card (Stripe).'
+  tags: []
+  countries: [US, GB, PL, DE, NL, ES]
+  payments: [card]
 - id: pa-vietnam
   name: P.A Việt Nam
   url: https://www.pavietnam.vn/vn/server/cloud-server
@@ -4735,6 +5354,15 @@
   hq: RS
   countries: [RS]
   payments: [card]
+- id: prabhu-host
+  name: Prabhu Host
+  url: https://www.prabhuhost.com/vps-hosting/
+  blurb: 'Непальский хостинг Prabhu Host (Stable Cluster Pvt Ltd): VPS в дата-центре в Катманду и линейка облачных VPS на зарубежных площадках. Оплата через eSewa, Khalti, IMEPay, ConnectIPS, Fonepay, банковским переводом и картами Visa/Mastercard через Stripe.'
+  blurbEn: 'Nepali host Prabhu Host (Stable Cluster Pvt Ltd): VPS in a Kathmandu data center plus a cloud VPS line hosted abroad. Pays via eSewa, Khalti, IMEPay, ConnectIPS, Fonepay, bank transfer and Visa/Mastercard through Stripe.'
+  tags: []
+  hq: NP
+  countries: [NP]
+  payments: [card, bank, local]
 - id: pro-data
   name: Pro-Data
   url: https://www.pro-data.tech/virtual-server
@@ -4887,6 +5515,15 @@
   hq: CH
   countries: [CH]
   payments: []
+- id: sectorlink
+  name: Sectorlink
+  url: https://my.sectorlink.com/store/cloud-servers-vps
+  blurb: 'Американский бизнес-хостер (Мичиган): управляемые облачные VPS CloudPod на Linux и Windows с безлимитным трафиком, а также выделенные серверы и колокация в собственном дата-центре в США. Оплата картой.'
+  blurbEn: 'US business host (Michigan): managed CloudPod Linux and Windows VPS with unmetered bandwidth, plus dedicated servers and colocation in its own US data center. Pays by card.'
+  tags: [Безлимитный трафик]
+  hq: US
+  countries: [US]
+  payments: [card]
 - id: seflow
   name: SeFlow
   url: https://www.seflow.net/mycore-vps/
@@ -4977,6 +5614,15 @@
   hq: RS
   countries: [RS]
   payments: [card, paypal]
+- id: smarthost-az
+  name: Smarthost
+  url: https://smarthost.az/az/vps
+  blurb: 'Азербайджанский регистратор доменов .AZ и хостинг Smarthost (ООО «Mikrotex», Баку): VPS на собственных серверах в дата-центре Delta Telecom в Баку. Оплата картами Visa/Mastercard; интерфейс есть на русском.'
+  blurbEn: 'Azerbaijani .AZ registrar and host Smarthost (Mikrotex LLC, Baku): VPS on its own servers in the Delta Telecom data center in Baku. Pays by Visa/Mastercard; site available in Russian.'
+  tags: []
+  hq: AZ
+  countries: [AZ]
+  payments: [card]
 - id: spd-hosting
   name: SPD Hosting
   url: https://www.spd.co.il/cloud-solution/virtual-server-linux-crz
@@ -4994,6 +5640,15 @@
   tags: []
   hq: CZ
   countries: [CZ]
+  payments: []
+- id: srilankahosting
+  name: Sri Lanka Hosting
+  url: https://www.srilankahosting.lk/sri-lankan-linux-vps
+  blurb: 'Шри-ланкийский бренд Sri Lanka Hosting (ServerClub.lk): KVM VPS в дата-центре уровня Tier III в Коломбо, а также OpenVZ и KVM VPS в Вильнюсе (Литва). Способы оплаты на сайте не указаны явно.'
+  blurbEn: 'Sri Lankan brand Sri Lanka Hosting (ServerClub.lk): KVM VPS in a Tier III data center in Colombo, plus OpenVZ and KVM VPS in Vilnius, Lithuania. Payment methods are not listed explicitly on the site.'
+  tags: []
+  hq: LK
+  countries: [LK, LT]
   payments: []
 - id: ssd-nodes
   name: SSD Nodes
@@ -5094,6 +5749,15 @@
   hq: KE
   countries: [KE]
   payments: []
+- id: trumvps
+  name: TrumVPS
+  url: https://trumvps.vn/vps-viet-nam/
+  blurb: 'Вьетнамский хостинг TrumVPS (TRUMVPS COMPANY LIMITED): VPS в Ханое (Вьетнам), а также зарубежные VPS более чем в 30 странах Азии, Европы, Америки и Австралии. Сайт на вьетнамском, цены в донгах; способы оплаты на сайте явно не перечислены.'
+  blurbEn: 'Vietnamese host TrumVPS (TRUMVPS COMPANY LIMITED): VPS in Hanoi, Vietnam, plus foreign VPS in more than 30 countries across Asia, Europe, the Americas and Australia. Vietnamese-language site with VND prices; payment methods are not listed explicitly.'
+  tags: [40+ стран]
+  hq: VN
+  countries: [VN, SG, HK, JP, KR, TH, PH, ID, TR, IL, KZ, RU, GB, DE, FR, NL, ES, IT, AT, CH, CZ, PL, UA, DK, IE, PT, LT, LV, EE, FI, 'NO', SE, BG, BE, GR, US, CA, BR, CL, AU]
+  payments: []
 - id: turkticaret-net
   name: Turkticaret.net
   url: https://www.turkticaret.net/bulut-sunucu
@@ -5139,6 +5803,15 @@
   hq: GB
   countries: [GB]
   payments: [card, paypal, bank]
+- id: umniah-cloud
+  name: Umniah Cloud
+  url: https://cloud.umniah.com/vps-hosting.php
+  blurb: 'Облачный портал иорданского оператора связи Umniah: Linux и Windows VPS в собственном дата-центре Tier III в Аммане, с безлимитным трафиком. Заказ через биллинг портала после регистрации.'
+  blurbEn: 'Cloud portal of the Jordanian telecom operator Umniah: Linux and Windows VPS in its own Tier III data center in Amman, with unmetered bandwidth. Ordered through the portal''s billing after registration.'
+  tags: [Безлимитный трафик]
+  hq: JO
+  countries: [JO]
+  payments: []
 - id: unihost
   name: Unihost
   url: https://unihost.com/vps/
@@ -5236,6 +5909,14 @@
   blurbEn: NVMe cloud VPS with unmetered traffic and DDoS protection in Dallas, Frankfurt and Johannesburg; also Windows, storage VPS and VDS. Payment methods are not listed on the site.
   tags: [Безлимитный трафик]
   countries: [US, DE, ZA]
+  payments: []
+- id: virtury
+  name: Virtury
+  url: https://my.virtury.com/index.php?/cart/cloud-server/
+  blurb: 'Virtury Cloud: KVM и LXC VPS на NVMe, выделенные серверы и колокация в собственном дата-центре PDC01-ISB01 в Исламабаде (Пакистан). Способы оплаты до оформления заказа не показаны.'
+  blurbEn: 'Virtury Cloud: NVMe KVM and LXC VPS, dedicated servers and colocation in its own PDC01-ISB01 data center in Islamabad, Pakistan. Payment methods are not shown before checkout.'
+  tags: []
+  countries: [PK]
   payments: []
 - id: vmshell
   name: VmShell
@@ -5507,6 +6188,15 @@
   hq: JP
   countries: [JP]
   payments: [card]
+- id: elhostingperu
+  name: elHostingPeru
+  url: https://elhostingperu.com/servidores-vps-linux-lima-peru/
+  blurb: 'Перуанский хостинг компании eCreative EIRL (Лима): Linux VPS на KVM с NVMe, по описанию провайдера размещённые в Лиме, также Windows VPS и WordPress-хостинг. Оплата картой, PayPal, банковским переводом и через Yape/Plin.'
+  blurbEn: 'Peruvian host run by eCreative EIRL (Lima): KVM Linux VPS on NVMe, described by the provider as hosted in Lima, plus Windows VPS and WordPress hosting. Pays by card, PayPal, bank transfer and Yape/Plin.'
+  tags: []
+  hq: PE
+  countries: [PE]
+  payments: [card, paypal, bank, local]
 - id: gabia-cloud
   name: Gabia Cloud (가비아 클라우드)
   url: https://www.gabiacloud.com/gcloud/
@@ -5579,6 +6269,15 @@
   hq: US
   countries: [US, NL]
   payments: [card, paypal, bank]
+- id: liasail
+  name: LiaSail
+  url: https://liasail.com/products/ecs
+  blurb: 'Облачная платформа LiaSail с офисами в Гонконге и Сингапуре: ECS-серверы и bare metal на Intel Xeon Platinum, IP-пулы и трафик-пакеты в регионах Азии и Америки (Сингапур, Токио, Сеул, Джакарта, Хошимин, Бангкок, Лос-Анджелес, Нью-Йорк, Керетаро). Оплата через PayPal, Stripe (карты) и Alipay.'
+  blurbEn: 'LiaSail cloud platform with offices in Hong Kong and Singapore: ECS cloud servers and bare metal on Intel Xeon Platinum, IP pools and traffic packages in Asian and American regions (Singapore, Tokyo, Seoul, Jakarta, Ho Chi Minh City, Bangkok, Los Angeles, New York, Queretaro). Pays via PayPal, Stripe (cards) and Alipay.'
+  tags: [Почасовая оплата]
+  hq: HK
+  countries: [SG, JP, KR, ID, VN, TH, US, MX]
+  payments: [card, paypal, local]
 - id: resellerclub-vps
   name: ResellerClub VPS
   url: https://www.resellerclub.com/vps-hosting
@@ -5595,6 +6294,24 @@
   blurbEn: VPS on AMD EPYC and Ryzen 9 in Frankfurt, plus dedicated servers and BGP sessions, ordered through a WHMCS billing portal. Payment methods are not shown on the accessible pages.
   tags: []
   countries: [DE]
+  payments: []
+- id: tarekcloud
+  name: TarekCloud
+  url: https://www.tarekcloud.com/products/us-lax-ryzen-standard
+  blurb: 'Гонконгский хостинг TarekCloud: VPS в собственном сегменте в дата-центре Equinix HK2 (Гонконг) и вычислительные узлы в Лос-Анджелесе (Ryzen 9950X) и Финиксе, а также выделенные серверы и LIR-услуги. Оплата через Alipay и WeChat Pay.'
+  blurbEn: 'Hong Kong host TarekCloud: VPS on owned hardware and IPs at Equinix HK2 (Hong Kong) plus compute nodes in Los Angeles (Ryzen 9950X) and Phoenix, along with dedicated servers and LIR services. Pays via Alipay and WeChat Pay.'
+  tags: []
+  hq: HK
+  countries: [HK, US]
+  payments: [local]
+- id: xeniahosting
+  name: XeniaHosting
+  url: https://xeniahosting.com/en/vps/eco
+  blurb: 'Итальянский хостинг XeniaHosting (группа XeniaGroup SRL): настраиваемые VPS на AMD EPYC/Intel Xeon и игровые VPS на Ryzen/Core i9 с NVMe и защитой от DDoS, выделенные серверы; дата-центры в регионе Милана (Италия) и Амстердама (Нидерланды). Способы оплаты на публичных страницах не указаны.'
+  blurbEn: 'Italian host XeniaHosting (XeniaGroup SRL group): configurable VPS on AMD EPYC/Intel Xeon and gaming VPS on Ryzen/Core i9 with NVMe and DDoS protection, plus dedicated servers; data centers in the Milan region (Italy) and Amsterdam region (Netherlands). Payment methods are not listed on public pages.'
+  tags: []
+  hq: IT
+  countries: [IT, NL]
   payments: []
 - id: aws-ec2
   name: Amazon EC2
@@ -5713,6 +6430,15 @@
   hq: CY
   countries: [NL, DE, FR, SE, GB, IE, ES, CY, GR, IT]
   payments: [crypto, card, paypal, bank, local]
+- id: onidel
+  name: Onidel Cloud
+  url: https://onidel.com/services/premium-vps
+  blurb: 'Австралийский облачный провайдер: VPS с тройной репликацией дисков, high-frequency и storage VPS в Сиднее, Сингапуре, Хошимине, Амстердаме и Нью-Йорке с почасовой оплатой. Оплата картой, PayPal и криптовалютой через CoinGate.'
+  blurbEn: 'Australian cloud provider: VPS with triple-replicated storage, high-frequency and storage VPS in Sydney, Singapore, Ho Chi Minh City, Amsterdam and New York, billed hourly. Pays by card, PayPal and crypto via CoinGate.'
+  tags: [Почасовая оплата, Не принимает клиентов из РФ]
+  hq: AU
+  countries: [AU, SG, VN, NL, US]
+  payments: [crypto, card, paypal]
 - id: open-telekom-cloud
   name: Open Telekom Cloud
   url: https://www.open-telekom-cloud.com/en/prices/price-calculator
@@ -5748,6 +6474,15 @@
   tags: [Не принимает клиентов из РФ]
   hq: HU
   countries: [HU, US]
+  payments: [crypto]
+- id: serverpoint
+  name: ServerPoint
+  url: https://www.serverpoint.com/en/vps-hosting/linux-vps/
+  blurb: 'Американский хостинг ServerPoint (A+ Hosting, Inc., Невада): KVM VPS на AMD EPYC с хранилищем Ceph NVMe и почасовой оплатой, а также выделенные серверы; дата-центры в Лас-Вегасе, Далласе, Ашберне, Кремниевой долине, Амстердаме и Сингапуре. Принимает криптовалюту (Bitcoin).'
+  blurbEn: 'US host ServerPoint (A+ Hosting, Inc., Nevada): KVM VPS on AMD EPYC with Ceph NVMe storage and hourly billing, plus dedicated servers; data centers in Las Vegas, Dallas, Ashburn, Silicon Valley, Amsterdam and Singapore. Accepts crypto (Bitcoin).'
+  tags: [Почасовая оплата, Не принимает клиентов из РФ]
+  hq: US
+  countries: [US, NL, SG]
   payments: [crypto]
 - id: stackit
   name: STACKIT
