@@ -206,4 +206,79 @@ WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
         WhmcsPage("https://desk.georgedatacenter.com/store/ashburn-amd-7443p-7b13", "Ashburn, USA", "US"),
         WhmcsPage("https://desk.georgedatacenter.com/store/dallas-amd-7443p", "Dallas, USA", "US"),
     ),
+    # WORLDBUS: SSD VPS в Тбилиси, Стамбуле и Европе (тема Lagom)
+    "worldbus": tuple(
+        WhmcsPage(f"https://portal.worldbus.ge/store/{group}", region, country)
+        for group, region, country in (
+            ("ssd-vps-in-georgia", "Tbilisi, Georgia", "GE"),
+            ("ssd-vps-in-turkey", "Istanbul, Turkey", "TR"),
+            ("ssd-vps-in-germany", "Falkenstein, Germany", "DE"),
+            ("ssd-vps-in-netherlands", "Naaldwijk, Netherlands", "NL"),
+            ("standard-vps-in-france", "France", "FR"),
+            ("standard-vps-in-united-kingdom", "United Kingdom", "GB"),
+        )
+    ),
+    # Cloudfanatic: KVM VPS в четырёх городах США
+    "cloudfanatic": tuple(
+        WhmcsPage(f"https://my.cloudfanatic.net/store/{group}", region, "US")
+        for group, region in (
+            ("chicago-10gbps-cloud", "Chicago, USA"),
+            ("la-ssd-kvm-vps", "Los Angeles, USA"),
+            ("nc-ssd-kvm-vps", "Raleigh, USA"),
+            ("phoenix-cloud", "Phoenix, USA"),
+        )
+    ),
+    # INIZ: SSD VPS в Лос-Анджелесе, Нью-Йорке и Ковентри, цены в фунтах
+    "iniz": tuple(
+        WhmcsPage(f"https://my.iniz.com/store/{group}", region, country)
+        for group, region, country in (
+            ("la-ssd-vps", "Los Angeles, USA", "US"),
+            ("nyc-ssd-vps", "New York, USA", "US"),
+            ("uk-ssd-vps", "Coventry, United Kingdom", "GB"),
+        )
+    ),
+    # iON Cloud by Krypt: VPS в США и Сингапуре
+    "krypt-ion": tuple(
+        WhmcsPage(f"https://ion.krypt.asia/store/vps-cloud-{group}", region, country)
+        for group, region, country in (
+            ("los-angeles", "Los Angeles, USA", "US"),
+            ("silicon-valley", "San Jose, USA", "US"),
+            ("dallas", "Dallas, USA", "US"),
+            ("honolulu", "Honolulu, USA", "US"),
+            ("singapore", "Singapore", "SG"),
+        )
+    ),
+    # Mynymbox: KVM VPS в Хельсинки и Амстердаме
+    "mynymbox": (
+        WhmcsPage("https://client.mynymbox.io/store/kvm-vps-finland", "Helsinki, Finland", "FI"),
+        WhmcsPage("https://client.mynymbox.io/store/kvm-vps-netherlands", "Amsterdam, Netherlands", "NL"),
+    ),
+    # Napoleon: VPS в Бразилии и США, цены в реалах
+    "napoleon": (
+        WhmcsPage("https://painel.napoleon.com.br/store/cloud-bra", "Brazil", "BR"),
+        WhmcsPage("https://painel.napoleon.com.br/store/cloud", "USA", "US"),
+    ),
+    # Noble VPS: VPS в Финиксе
+    "noblevps": (WhmcsPage("https://dash.noblevps.com/index.php?rp=/store/usa-vps", "Phoenix, USA", "US"),),
+    # Royal Server: VPS в Румынии
+    "royal-server": (
+        WhmcsPage("https://royaldata.ro/index.php/store/vps-server", "Romania", "RO"),
+        WhmcsPage("https://royaldata.ro/index.php/store/vps-kvm-ryzen-9-9950x-nvme-gen-5", "Romania", "RO"),
+    ),
+    # Binary Racks: VPS в Великобритании, цены в фунтах (тема Lagom)
+    "binary-racks": tuple(
+        WhmcsPage(f"https://portal.binaryracks.com/index.php?rp=/store/{group}&currency=14", "United Kingdom", "GB")
+        for group in ("vps", "budget-vps")
+    ),
+    # HostSlim: VPS в Нидерландах и Эстонии
+    "hostslim": (
+        WhmcsPage(
+            "https://clients.hostslim.eu/store/vps-hosting",
+            "Netherlands",
+            "NL",
+            regions={"Estonia": ("Estonia", "EE")},
+        ),
+    ),
+    # Datacom: облачные VPS в Монголии, цены в тугриках (тема Lagom)
+    "datacom-mn": (WhmcsPage("https://manage.datacom.mn/store/cloud", "Mongolia", "MN"),),
 }
