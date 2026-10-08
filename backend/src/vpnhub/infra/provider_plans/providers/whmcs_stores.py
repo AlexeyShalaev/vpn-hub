@@ -84,6 +84,36 @@ WHMCS_STORES: Mapping[str, tuple[WhmcsPage, ...]] = {
     "vm6-networks": (
         WhmcsPage("https://www.vm6.co.uk/manager/store/budget-uk-vps-hosting", "Norwich, United Kingdom", "GB"),
     ),
+    # Casbay: Linux VPS в Малайзии
+    "casbay": (WhmcsPage("https://billing.casbay.com/store/linux-vps-my-t2", "Kuala Lumpur, Malaysia", "MY"),),
+    # HypeHost: VPS в Сан-Паулу, цены в реалах
+    "hypehost": (
+        WhmcsPage("https://my.hypehost.com.br/index.php?rp=/store/vps-ryzen-sao-paulo", "Sao Paulo, Brazil", "BR"),
+        WhmcsPage("https://my.hypehost.com.br/index.php?rp=/store/vps-sao-paulo", "Sao Paulo, Brazil", "BR"),
+    ),
+    # Lyra Hosting: Linux VPS в Нидерландах
+    "lyrahosting": (
+        WhmcsPage("https://my.lyrahosting.com/store/linux-vps-netherlands", "Netherlands", "NL", currency="EUR"),
+    ),
+    # LetsHost: VPS в Ирландии (Дублин)
+    "letshost": (
+        WhmcsPage(
+            "https://billing.letshost.ie/index.php?rp=/store/vps-servers", "Dublin, Ireland", "IE", currency="EUR"
+        ),
+    ),
+    # WebSouls: VPS в Пакистане
+    "websouls": (
+        WhmcsPage(
+            "https://billing.websouls.com/index.php?rp=/store/virtual-private-server-pak-based", "Pakistan", "PK"
+        ),
+    ),
+    # HostPro.by: VPS в Беларуси, цены в белорусских рублях
+    "hostpro-by": (WhmcsPage("https://my.hostpro.by/store/vps-vds", "Minsk, Belarus", "BY", currency="BYN"),),
+    # Servarica: KVM-слайсы в Монреале
+    "servarica": (
+        WhmcsPage("https://clients.servarica.com/store/v3-kvm-slices", "Montreal, Canada", "CA"),
+        WhmcsPage("https://clients.servarica.com/store/v3-kvm-fat", "Montreal, Canada", "CA"),
+    ),
     # WebTuga: VPS в Португалии
     "webtuga": (
         WhmcsPage(

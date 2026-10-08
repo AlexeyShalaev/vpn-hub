@@ -1713,3 +1713,23 @@ def test__parse_binarylane_sizes__expands_vps_by_region_and_skips_dedicated() ->
         4.9,
         "AUD",
     )
+
+
+def test__parse_billmanager_export__maps_service_datacenter_names_to_cities() -> None:
+    """Служебные имена ДЦ («EU1.ITLDC (AMS)») провайдер сопоставляет с городом и страной в конфиге."""
+    doc = BM_EXPORT.replace("<name>Moscow</name><name_ru>Москва, Россия</name_ru>", "<name>EU1.ITLDC (AMS)</name>")
+    source = provider_plans.BillmanagerSource(
+        "https://my.example.com/billmgr",
+        "https://example.com",
+        dc_regions={"(AMS)": ("Amsterdam, Netherlands", "NL")},
+    )
+
+    plans = {p["id"]: p for p in provider_plans.parse_billmanager_export("itldc", source, doc)}
+
+    ams = plans["itldc-1400-4"]
+    assert (ams["region"], ams["country"], ams["name"]) == (
+        "Amsterdam, Netherlands",
+        "NL",
+        "Взлёт · Amsterdam, Netherlands",
+    )
+    assert plans["itldc-1400-7"]["country"] == "CZ"  # не сопоставлен — страна по коду в имени, как раньше

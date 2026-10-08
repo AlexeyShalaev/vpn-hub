@@ -44,6 +44,13 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("virtono", "Virtono", ("virtono.com",)),
     PlanSource("vm6-networks", "VM6 Networks", ("vm6", "vm6.co.uk")),
     PlanSource("webtuga", "WebTuga", ("webtuga.pt",)),
+    PlanSource("casbay", "Casbay", ("casbay.com",)),
+    PlanSource("hypehost", "HypeHost", ("hypehost.com.br",)),
+    PlanSource("lyrahosting", "Lyra Hosting", ("lyrahosting.com",)),
+    PlanSource("letshost", "LetsHost", ("letshost.ie",)),
+    PlanSource("websouls", "WebSouls", ("websouls.com",)),
+    PlanSource("hostpro-by", "HostPro.by", ("hostpro.by",)),
+    PlanSource("servarica", "Servarica", ("servarica.com",)),
     # BILLmanager: публичный прайс-лист (providers/billmanager_sources.py)
     PlanSource("firstvds", "FirstVDS", ("firstvds.ru",)),
     PlanSource(
@@ -122,6 +129,23 @@ PLAN_SOURCES: tuple[PlanSource, ...] = (
     PlanSource("u1host", "U1 HOST", ("u1host.com",)),
     PlanSource("retzor", "Retzor", ("retzor.com",)),
     PlanSource("megahost-kz", "MEGAHOST", ("megahost", "megahost.kz")),
+    PlanSource("itldc", "ITLDC", ("itldc.com",)),
+    PlanSource(
+        "rusonyx",
+        "Rusonyx",
+        (
+            "rusonyx.ru",
+            "русоникс",
+        ),
+    ),
+    PlanSource(
+        "optibit",
+        "Optibit",
+        (
+            "оптибит",
+            "optibit.ru",
+        ),
+    ),
 )
 
 _COMPACT_RE = re.compile(r"[\s._-]+")
