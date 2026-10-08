@@ -17,7 +17,9 @@
 - **Сортировка** — порядок каталога, по названию или по числу локаций.
 
 На карточке видны флаги стран-локаций (наведите курсор — появятся названия), способы оплаты и бейдж
-**«Живые тарифы»**. Карточки подгружаются порциями — кнопка **«Показать ещё»** внизу.
+**«Живые тарифы»**. Способы оплаты сверены с сайтами провайдеров; если провайдер в своих правилах прямо
+отказывает клиентам из России, на карточке есть тег **«Не принимает клиентов из РФ»**.
+Карточки подгружаются порциями — кнопка **«Показать ещё»** внизу.
 
 ## Подбор тарифа по всем провайдерам
 
@@ -40,13 +42,13 @@
 
 У провайдеров с бейджем **«Живые тарифы»** панель сама загружает актуальные тарифы: характеристики,
 цену, локацию, наличие. Отсюда работают кнопка **«Тарифы»** на карточке, **«Подобрать тариф»** и
-автозаполнение цены и квоты в форме сервера. Сейчас это 51 провайдер:
+автозаполнение цены и квоты в форме сервера. Сейчас это 64 провайдера:
 
 - **Публичные API облаков:** Vultr, Akamai (Linode), Hetzner, Cherry Servers.
 - **Сайты провайдеров:** FirstByte, UFO Hosting, ISHOSTING, AHost, Serverspace, UltaHost, 62YUN, Timeweb Cloud, Beget, 4VPS.
 - **Публичные API хостеров:** BinaryLane, Mammoth Cloud.
-- **Публичный прайс-лист биллинга BILLmanager:** FirstVDS, ProfitServer, SmartApe, Cloud4box, KVMka, DataCheap, AskoHost, Skystark, VDS.SH, LNTech, 1BX.host, Coopertino, General iT, ITSOFT, MultiHOST, PlanetaHost, Simple-server, Appletec, ArtPlanet, Contell, ISPserver, IHOR Hosting, SpaceCore, XorekCloud, U1 HOST, Retzor, MEGAHOST.
-- **Витрины биллинга WHMCS:** EDIS Global, FlokiNET, Zappie Host, iDHost (Kazakhtelecom), Hosteroid, Virtono, VM6 Networks, WebTuga.
+- **Публичный прайс-лист биллинга BILLmanager:** FirstVDS, ProfitServer, SmartApe, Cloud4box, KVMka, DataCheap, AskoHost, Skystark, VDS.SH, LNTech, 1BX.host, Coopertino, General iT, ITSOFT, MultiHOST, PlanetaHost, Simple-server, Appletec, ArtPlanet, Contell, ISPserver, IHOR Hosting, SpaceCore, XorekCloud, U1 HOST, Retzor, MEGAHOST, ITLDC, Rusonyx, Senko Digital, Optibit.
+- **Витрины биллинга WHMCS:** EDIS Global, FlokiNET, Zappie Host, iDHost (Kazakhtelecom), Hosteroid, Virtono, VM6 Networks, Casbay, HypeHost, Lyra Hosting, LetsHost, WebSouls, HostPro.by, Servarica, iHost.al, Baboon Hosting, WebTuga.
 
 Тарифы кэшируются на 30 минут. Если сайт провайдера временно недоступен, панель показывает
 последние загруженные тарифы; если их нет — провайдер просто не попадает в подбор, а каталог и
