@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { PasskeysSection } from "../components/PasskeysSection";
 import { Avatar, Btn, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { LANG_LABEL, LANGS, useT } from "../lib/i18n";
@@ -140,6 +141,9 @@ export function ProfileScreen() {
           </div>
         )}
       </div>
+
+      {/* Ключи доступа (passkeys) */}
+      <PasskeysSection />
 
       {/* Администрирование (для админа) */}
       {me?.isAdmin && (

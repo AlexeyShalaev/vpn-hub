@@ -16,11 +16,14 @@ export function PhoneField({
   onChange,
   autoFocus,
   onEnter,
+  autoComplete,
 }: {
   value: string;
   onChange: (v: string) => void;
   autoFocus?: boolean;
   onEnter?: () => void;
+  // "username webauthn" на форме входа — браузер предложит ключи доступа в автозаполнении
+  autoComplete?: string;
 }) {
   return (
     <div className="phone-field" onKeyDown={onEnter ? (e) => e.key === "Enter" && onEnter() : undefined}>
@@ -32,6 +35,7 @@ export function PhoneField({
         onChange={(v) => onChange(v ?? "")}
         inputComponent={StyledInput}
         autoFocus={autoFocus}
+        autoComplete={autoComplete}
         placeholder="900 000-00-00"
       />
     </div>

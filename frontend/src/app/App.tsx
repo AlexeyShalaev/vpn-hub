@@ -1,13 +1,15 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Component, type ReactNode, useEffect, useState } from "react";
+import { Component, type ReactNode, useEffect, useRef, useState } from "react";
 import { PhoneField } from "../components/PhoneField";
 import { Btn, Field, FilePicker, Icon, KeyInput } from "../components/ui";
 import { ApiError } from "../lib/api";
 import { subscribeEvents } from "../lib/events";
 import { useT } from "../lib/i18n";
+import { signInWithPasskey } from "../lib/passkeyFlow";
 import * as q from "../lib/queries";
 import { downloadRecoveryKey } from "../lib/recoveryKey";
 import type { Me } from "../lib/types";
+import { conditionalMediationAvailable, isUserCancel, originMatches, passkeysSupported } from "../lib/webauthn";
 import { NAV_META, useNav } from "../nav";
 import { AccessScreen } from "../screens/Access";
 import { AvailableScreen } from "../screens/Available";
@@ -47,14 +49,62 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  // Ключи доступа: кнопка и автозаполнение — только если браузер умеет WebAuthn и панель открыта
+  // по тому же адресу, к которому сервер привязывает ключи (VPNHUB_BASE_URL).
+  const pkConfig = useQuery({
+    queryKey: ["passkeys-config"],
+    queryFn: q.passkeyConfig,
+    enabled: passkeysSupported(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const canPasskey =
+    mode === "login" && !!pkConfig.data?.available && originMatches(pkConfig.data.origin, window.location.origin);
+  const conditionalAbort = useRef<AbortController | null>(null);
+  const [conditionalRun, setConditionalRun] = useState(0);
+
+  function signedIn(me: Me) {
+    setMe(me);
+    qc.invalidateQueries();
+    if (redirect) go(me.role === "owner" ? "home" : "available");
+  }
+
+  // Тихий (conditional) запрос: ключи появятся в подсказках поля телефона. Перезапускаем после
+  // явной попытки по кнопке — браузер не держит два WebAuthn-запроса одновременно.
+  useEffect(() => {
+    if (!canPasskey) return;
+    const ac = new AbortController();
+    conditionalAbort.current = ac;
+    (async () => {
+      if (!(await conditionalMediationAvailable()) || ac.signal.aborted) return;
+      try {
+        signedIn(await signInWithPasskey({ conditional: true, signal: ac.signal }));
+      } catch (e) {
+        if (ac.signal.aborted || isUserCancel(e)) return;
+        setError(e instanceof ApiError ? e.message : t("auth.passkeyError"));
+      }
+    })();
+    return () => ac.abort();
+  }, [canPasskey, conditionalRun]);
+
+  async function onPasskey() {
+    setError("");
+    conditionalAbort.current?.abort();
+    setBusy(true);
+    try {
+      signedIn(await signInWithPasskey());
+    } catch (e) {
+      if (!isUserCancel(e)) setError(e instanceof ApiError ? e.message : t("auth.passkeyError"));
+      setConditionalRun((n) => n + 1);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onLogin() {
     setError("");
     setBusy(true);
     try {
-      const me = await q.login({ phone: form.phone, password: form.password });
-      setMe(me);
-      qc.invalidateQueries();
-      if (redirect) go(me.role === "owner" ? "home" : "available");
+      signedIn(await q.login({ phone: form.phone, password: form.password }));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t("auth.loginError"));
     } finally {
@@ -108,7 +158,11 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
           </Field>
         )}
         <Field label={t("auth.phone")}>
-          <PhoneField value={form.phone} onChange={(v) => set("phone", v)} />
+          <PhoneField
+            value={form.phone}
+            onChange={(v) => set("phone", v)}
+            autoComplete={canPasskey ? "username webauthn" : undefined}
+          />
         </Field>
         <Field label={mode === "register" ? t("auth.passwordMin8") : t("auth.password")}>
           <input
@@ -133,6 +187,17 @@ function AuthScreen({ redirect = true, joinName }: { redirect?: boolean; joinNam
         <Btn variant="primary" block disabled={busy} onClick={() => (mode === "login" ? onLogin() : onRegister())}>
           {busy ? "…" : mode === "login" ? t("auth.signIn") : t("auth.signUp")}
         </Btn>
+        {canPasskey && (
+          <>
+            <div className="muted-3" style={{ textAlign: "center", fontSize: 12, margin: "10px 0" }}>
+              {t("auth.or")}
+            </div>
+            <Btn block disabled={busy} onClick={onPasskey}>
+              <Icon name="key" size={17} />
+              {t("auth.passkeySignIn")}
+            </Btn>
+          </>
+        )}
 
         <div style={{ textAlign: "center", marginTop: 14 }}>
           <Btn

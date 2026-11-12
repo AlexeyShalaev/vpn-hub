@@ -9,6 +9,15 @@ import { VPN_LABEL } from "../lib/types";
 
 // ---------- icons ----------
 const PATHS: Record<string, ReactNode> = {
+  // ключ доступа (passkey)
+  key: (
+    <>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M10.85 12.15L19 4" />
+      <path d="M16 7l3 3" />
+      <path d="M14 9l2 2" />
+    </>
+  ),
   home: (
     <>
       <path d="M4 11l8-7 8 7" />
