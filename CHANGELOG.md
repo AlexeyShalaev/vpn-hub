@@ -5,6 +5,10 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.14.1](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.14.0...v0.14.1) - 2026-11-13
+
+- Fixed: the panel could offer an update before the new version's image was published, and in Kubernetes it stopped opening after clicking Update. While the image is being built, System now shows a "version … is on its way" badge, and the update becomes available once the image is in the registry
+
 ## [0.14.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.13.0...v0.14.0) - 2026-11-12
 
 - Sign in with a passkey: your device's fingerprint, face or PIN instead of phone and password. Add, rename and remove passkeys in your profile; on the sign-in screen the browser offers a saved passkey on its own. Works when the panel is opened at the https address from VPNHUB_BASE_URL
