@@ -439,6 +439,7 @@ export function SystemScreen() {
     mutationFn: q.adminCheckUpdates,
     onSuccess: (r) => {
       if (r.checked === false) toast(r.reason || t("system.updateCheckUnavailable"));
+      else if (r.pending) toast(t("system.updatePendingHint", { v: r.latest }));
       else if (r.available) toast(t("system.versionAvailable", { v: r.latest }));
       else toast(t("system.latestVersionInstalled"));
       qc.invalidateQueries({ queryKey: ["adminSystem"] });
@@ -637,6 +638,11 @@ export function SystemScreen() {
             <span className="badge warn">
               <span className="dot" style={{ background: "var(--warn)" }} />
               {t("system.updateAvailableBadge", { v: sys.latest })}
+            </span>
+          ) : sys.updatePending ? (
+            <span className="badge" title={t("system.updatePendingHint", { v: sys.latest })}>
+              <span className="dot" />
+              {t("system.updatePendingBadge", { v: sys.latest })}
             </span>
           ) : (
             <span className="badge ok">

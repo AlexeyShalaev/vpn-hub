@@ -43,6 +43,41 @@ def admin_service(uow, settings) -> AdminService:
     return AdminService(uow, settings, BackupService(uow, settings))
 
 
+class _Registry:
+    """Подмена проверки тега в реестре: без сети, с записью вызовов."""
+
+    def __init__(self) -> None:
+        self.answer: bool | None = True
+        self.calls: list[tuple[str, str]] = []
+
+    async def __call__(self, image: str, tag: str) -> bool | None:
+        self.calls.append((image, tag))
+        return self.answer
+
+
+@pytest.fixture(autouse=True)
+def fake_registry(monkeypatch) -> _Registry:
+    """Тесты не ходят в ghcr: по умолчанию образ «есть», кейсы переопределяют answer."""
+    fake = _Registry()
+    monkeypatch.setattr(admin_mod.registry, "tag_exists", fake)
+    return fake
+
+
+@pytest.fixture
+def feed_with(monkeypatch, settings):
+    """Фид настроен и отдаёт релиз заданной версии."""
+
+    def _set(version: str) -> None:
+        monkeypatch.setattr(settings, "update_feed_url", "https://feed.example/releases.json")
+
+        async def _fetch(url, timeout=6.0):
+            return {"latest": version, "releases": []}
+
+        monkeypatch.setattr(admin_mod, "fetch_feed", _fetch)
+
+    return _set
+
+
 # --- users ---------------------------------------------------------------
 
 
@@ -267,6 +302,119 @@ async def test__check_updates__feed_configured_but_unreachable__falls_back_with_
     assert result["checked"] is False
     assert result["latest"] == "0.1.0"  # нет кэша → текущая версия
     assert result.get("reason")
+
+
+# --- образ новой версии ещё не опубликован ------------------------------
+
+
+async def test__check_updates__image_not_in_registry__pending_not_available(admin_service, feed_with, fake_registry):
+    """Релиз в фиде есть, а реестр отвечает 404 по тегу → обновление не предлагаем, а ждём образ."""
+    # Arrange
+    feed_with("9.9.9")
+    fake_registry.answer = False
+    # Act
+    result = await admin_service.check_updates()
+    # Assert
+    assert result["checked"] is True
+    assert result["latest"] == "9.9.9"
+    assert result["available"] is False
+    assert result["pending"] is True
+    assert fake_registry.calls == [(admin_service.settings.image, "9.9.9")]
+
+
+@pytest.mark.parametrize("answer", [True, None], ids=["published", "registry-unknown"])
+async def test__check_updates__image_published_or_unknown__available(admin_service, feed_with, fake_registry, answer):
+    """Образ есть (или реестр не ответил) → обновление доступно, как раньше."""
+    # Arrange
+    feed_with("9.9.9")
+    fake_registry.answer = answer
+    # Act
+    result = await admin_service.check_updates()
+    # Assert
+    assert result["available"] is True
+    assert result["pending"] is False
+
+
+async def test__check_updates__already_latest__does_not_query_registry(admin_service, feed_with, fake_registry):
+    # Arrange
+    feed_with("0.1.0")
+    # Act
+    result = await admin_service.check_updates()
+    # Assert
+    assert result["available"] is False
+    assert fake_registry.calls == []
+
+
+async def test__system__image_pending_and_fresh__no_recheck(admin_service, session_maker, fake_registry):
+    """Свежий кэш «образа нет» → updatePending, реестр повторно не дёргаем."""
+    # Arrange
+    cached = {"latest": "2.0.0", "imageReady": False, "imageAt": admin_mod.time.time()}
+    async with seed(session_maker) as s:
+        s.add(m.Setting(key="update_feed_cache", value=json.dumps(cached)))
+    # Act
+    info = await admin_service.system()
+    # Assert
+    assert info["updateAvailable"] is False
+    assert info["updatePending"] is True
+    assert fake_registry.calls == []
+
+
+async def test__system__image_pending_but_stale__rechecks_and_offers(admin_service, session_maker, fake_registry):
+    """Кэш «образа нет» устарел, а образ уже появился → обновление становится доступным."""
+    # Arrange
+    cached = {"latest": "2.0.0", "imageReady": False, "imageAt": admin_mod.time.time() - 3600}
+    async with seed(session_maker) as s:
+        s.add(m.Setting(key="update_feed_cache", value=json.dumps(cached)))
+    fake_registry.answer = True
+    # Act
+    info = await admin_service.system()
+    # Assert
+    assert info["updateAvailable"] is True
+    assert info["updatePending"] is False
+    assert len(fake_registry.calls) == 1
+    async with session_maker() as check:
+        stored = json.loads((await check.get(m.Setting, "update_feed_cache")).value)
+    assert stored["imageReady"] is True
+
+
+async def test__apply_update__image_missing__refuses_without_touching_deployment(
+    admin_service, settings, session_maker, fake_registry, monkeypatch
+):
+    """Регресс 0.14.0: патч Deployment на несуществующий тег положил панель (Recreate + ImagePullBackOff)."""
+    # Arrange
+    monkeypatch.setattr(settings, "update_command", "true")
+    async with seed(session_maker) as s:
+        s.add(m.Setting(key="update_feed_cache", value=json.dumps({"latest": "9.9.9"})))
+    fake_registry.answer = False
+    started: list[str] = []
+    monkeypatch.setattr(admin_mod.selfupdate, "start", lambda _s, target, _lang=None: started.append(target) or {})
+    # Act
+    result = await admin_service.apply_update()
+    # Assert
+    assert result["ok"] is False
+    assert result["pending"] is True
+    assert "9.9.9" in result["message"]
+    assert started == []
+
+
+@pytest.mark.parametrize("answer", [True, None], ids=["published", "registry-unknown"])
+async def test__apply_update__image_published_or_unknown__starts(
+    admin_service, settings, session_maker, fake_registry, monkeypatch, answer
+):
+    # Arrange
+    monkeypatch.setattr(settings, "update_command", "true")
+    async with seed(session_maker) as s:
+        s.add(m.Setting(key="update_feed_cache", value=json.dumps({"latest": "9.9.9"})))
+    fake_registry.answer = answer
+    started: list[str] = []
+    monkeypatch.setattr(
+        admin_mod.selfupdate, "start", lambda _s, target, _lang=None: started.append(target) or {"ok": True}
+    )
+    # Act
+    result = await admin_service.apply_update()
+    # Assert
+    assert result == {"ok": True}
+    assert started == ["9.9.9"]
 
 
 # --- system --------------------------------------------------------------

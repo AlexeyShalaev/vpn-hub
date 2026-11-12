@@ -56,6 +56,16 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "Не удалось получить фид обновлений: {error}",
         "en": "Failed to fetch the update feed: {error}",
     },
+    "update.image_not_ready": {
+        "ru": (
+            "Образ версии {version} ещё не опубликован. Обычно он появляется через 10–15 минут"
+            " после релиза, попробуйте позже"
+        ),
+        "en": (
+            "The image for version {version} is not published yet. It usually appears 10-15 minutes"
+            " after the release, try again later"
+        ),
+    },
     # ── ключи модулей (пополняются миграцией i18n) ───────────────────────────────
     # AUTO-KEYS-START — не удалять этот маркер: между ним и AUTO-KEYS-END живут
     # сообщения, извлечённые из сервисов/роутеров при переводе бэкенда.

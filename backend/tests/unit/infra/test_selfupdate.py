@@ -211,7 +211,11 @@ async def test__start__accepts_and_sets_running_status(monkeypatch: pytest.Monke
     assert accepted["mode"] == "command"
     assert accepted["target"] == "0.5.0"
     assert su.status()["state"] == "running"
-    await asyncio.sleep(0.05)  # дать _run отработать
+    # дать _run отработать: подпроцесс под нагрузкой полного прогона может не уложиться в 50 мс
+    for _ in range(200):
+        if su.status()["state"] != "running":
+            break
+        await asyncio.sleep(0.01)
     assert su.status()["state"] == "triggered"
 
 

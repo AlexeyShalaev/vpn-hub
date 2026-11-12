@@ -1270,6 +1270,8 @@ const ru = {
   "system.upToDateBadge": "актуальная версия",
   "system.update": "Обновить",
   "system.updateAvailableBadge": "доступно обновление {v}",
+  "system.updatePendingBadge": "готовится версия {v}",
+  "system.updatePendingHint": "Релиз {v} уже вышел, образ ещё собирается. Обновление появится здесь через 10–15 минут.",
   "system.updateChannel": "Канал обновлений: {channel}",
   "system.updateCheckUnavailable": "Проверка обновлений недоступна",
   "system.updateDriver": "Драйвер обновлений",
@@ -2675,6 +2677,9 @@ const en = {
   "system.upToDateBadge": "up to date",
   "system.update": "Update",
   "system.updateAvailableBadge": "update {v} available",
+  "system.updatePendingBadge": "version {v} is on its way",
+  "system.updatePendingHint":
+    "Release {v} is out and its image is still being built. The update will show up here in 10-15 minutes.",
   "system.updateChannel": "Update channel: {channel}",
   "system.updateCheckUnavailable": "Update check unavailable",
   "system.updateDriver": "Update driver",
