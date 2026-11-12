@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.14.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.13.0...v0.14.0) - 2026-11-12
+
+- Sign in with a passkey: your device's fingerprint, face or PIN instead of phone and password. Add, rename and remove passkeys in your profile; on the sign-in screen the browser offers a saved passkey on its own. Works when the panel is opened at the https address from VPNHUB_BASE_URL
+- A group member can now be picked from users who are already registered, not only invited by phone. The panel admin sees everyone; a group owner sees people they already share a group with, with masked phone numbers
+- Adding someone who is already in the group is refused instead of creating a second entry, and errors while adding a member now show up on screen
+- Server archive: a server you switched off can be archived without losing its traffic, metrics and cost history. The panel stops connecting to it over SSH, polling and syncing it, members no longer see it, and it stops accruing cost. You can restore it at any time
+- Configs on an archived server are kept and marked "Server archived"; they work again once the server is restored
+- Fixed: the panel failed to start when the database password contained special characters such as % ( | } ?
+- Fixed: sessions from iPhone and iPad were labelled as macOS
+- The panel image picks up security fixes (zlib, certifi), and dependencies are updated
+
 ## [0.13.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.12.0...v0.13.0) - 2026-10-08
 
 - The provider catalog now lists 762 VPS hosts in 115 countries: local hosts from the Philippines, Sri Lanka, Nepal, Cambodia, Mongolia, Ghana, Georgia, Azerbaijan and Kyrgyzstan are in, and payment methods for customers from Russia were checked against the providers' sites
