@@ -521,7 +521,7 @@ def test__device_to_dict__maps_configs_to_camelcase() -> None:
         "id": "d1",
         "name": "iPhone 15",
         "platform": "ios",
-        "configs": [{"serverId": "s1", "type": "amnezia", "proto": "awg", "status": "active"}],
+        "configs": [{"serverId": "s1", "type": "amnezia", "proto": "awg", "status": "active", "serverArchived": False}],
     }
 
 

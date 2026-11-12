@@ -106,6 +106,24 @@ async def delete_server(
     return {"ok": True}
 
 
+@router.post("/servers/{sid}/archive")
+async def archive_server(
+    sid: str, ident: Identity = Depends(require_user), svc: ServerService = Depends(service(ServerService))
+) -> dict:
+    # без SSH: сервер, скорее всего, выключен. Фоновые циклы его пропускают, участникам он не виден.
+    return await svc.archive(ident.id, sid)
+
+
+@router.post("/servers/{sid}/unarchive")
+async def unarchive_server(
+    sid: str, ident: Identity = Depends(require_user), svc: ServerService = Depends(service(ServerService))
+) -> dict:
+    await svc.unarchive(ident.id, sid)
+    # как после добавления: сразу пингуем и сверяем (best-effort), чтобы статус не висел «неизвестен»
+    await svc.check_and_sync(ident.id, sid)
+    return await svc.get(ident.id, sid)
+
+
 @router.post("/servers/{sid}/migrate")
 async def migrate_server(
     sid: str,

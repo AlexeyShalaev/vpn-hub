@@ -164,6 +164,12 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />,
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+    </>
+  ),
   edit: <path d="M4 20h4L18 10l-4-4L4 16v4zM13 5l4 4" />,
   sun: (
     <>

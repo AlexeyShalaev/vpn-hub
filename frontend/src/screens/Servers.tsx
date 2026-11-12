@@ -1,10 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Btn, Empty, Icon, ScreenHeader, SkeletonCard, StatusBadge, VpnChip } from "../components/ui";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
+import { archivedDate, splitByArchive } from "../lib/serverArchive";
 import type { Server } from "../lib/types";
 import { useNav } from "../nav";
+import { useStore } from "../store";
 
 function mono(name: string) {
   return (name || "?").slice(0, 2).toUpperCase();
@@ -125,10 +127,92 @@ function ServerCard({ s }: { s: Server }) {
   );
 }
 
+/** Строка архивного сервера: приглушена, без статуса (его не проверяем), с возвратом из архива. */
+function ArchivedServerRow({ s }: { s: Server }) {
+  const go = useNav((n) => n.go);
+  const t = useT();
+  const lang = useStore((st) => st.lang);
+  const toast = useStore((st) => st.toast);
+  const qc = useQueryClient();
+  const restoreMut = useMutation({
+    mutationFn: () => q.unarchiveServer(s.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["servers"] });
+      qc.invalidateQueries({ queryKey: ["server", s.id] });
+      toast(t("servers.restored", { name: s.name }));
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : t("servers.restoreFailed")),
+  });
+  return (
+    <div
+      className="card"
+      style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 14px", minWidth: 0 }}
+    >
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 11,
+          background: "var(--surface-2)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 700,
+          fontSize: 14,
+          color: "var(--text-3)",
+          flex: "none",
+        }}
+      >
+        {mono(s.name)}
+      </div>
+      <div style={{ flex: "1 1 200px", minWidth: 0, opacity: 0.75 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <span
+            style={{
+              fontWeight: 700,
+              fontSize: 15,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {s.name}
+          </span>
+          <span className="badge neutral">{t("servers.archivedBadge")}</span>
+        </div>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "var(--text-3)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {s.provider} · {s.location} · <span className="mono">{s.ip}</span>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+          {t("servers.archivedOn", { date: archivedDate(s, lang === "en" ? "en-GB" : "ru-RU") })}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flex: "none" }}>
+        <Btn sm onClick={() => go("server", { serverId: s.id })}>
+          {t("servers.open")}
+        </Btn>
+        <Btn sm variant="primary" disabled={restoreMut.isPending} onClick={() => restoreMut.mutate()}>
+          <Icon name="refresh" size={15} />
+          {t("servers.restore")}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 export function ServersScreen() {
   const go = useNav((n) => n.go);
   const t = useT();
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<"active" | "archive">("active");
 
   const { data: servers, isLoading } = useQuery({
     queryKey: ["servers"],
@@ -138,13 +222,17 @@ export function ServersScreen() {
   });
 
   const all = servers ?? [];
-  const showSearch = all.length >= 3;
+  const { active, archived } = useMemo(() => splitByArchive(all), [all]);
+  // вкладка «Архив» появляется, только когда в нём что-то есть; опустел — возвращаемся к рабочим
+  const showArchive = view === "archive" && archived.length > 0;
+  const shown = showArchive ? archived : active;
+  const showSearch = shown.length >= 3;
 
   const filtered = useMemo(() => {
     const sq = query.trim().toLowerCase();
-    if (!sq) return all;
-    return all.filter((s) => `${s.name} ${s.ip} ${s.provider} ${s.location}`.toLowerCase().includes(sq));
-  }, [all, query]);
+    if (!sq) return shown;
+    return shown.filter((s) => `${s.name} ${s.ip} ${s.provider} ${s.location}`.toLowerCase().includes(sq));
+  }, [shown, query]);
 
   return (
     <div className="screen">
@@ -182,6 +270,35 @@ export function ServersScreen() {
         />
       ) : (
         <>
+          {archived.length > 0 && (
+            <div className="detail-tabs" role="tablist" aria-label={t("nav.servers")}>
+              {(
+                [
+                  ["active", t("servers.tabActive"), active.length, "servers"],
+                  ["archive", t("servers.tabArchive"), archived.length, "archive"],
+                ] as const
+              ).map(([id, label, count, icon]) => {
+                const selected = (id === "archive") === showArchive;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    className={`detail-tab${selected ? " active" : ""}`}
+                    onClick={() => setView(id)}
+                  >
+                    <Icon name={icon} size={16} />
+                    <span>{label}</span>
+                    <span style={{ opacity: 0.7, fontWeight: 600 }}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {showArchive && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{t("servers.archiveHint")}</div>}
+
           {showSearch && (
             <div style={{ position: "relative" }}>
               <span
@@ -207,8 +324,28 @@ export function ServersScreen() {
             </div>
           )}
 
-          {filtered.length === 0 ? (
+          {shown.length === 0 ? (
+            showArchive ? (
+              <Empty title={t("servers.archiveEmptyTitle")} />
+            ) : (
+              <Empty
+                title={t("servers.allArchivedTitle")}
+                sub={t("servers.allArchivedSub")}
+                action={
+                  <Btn variant="primary" onClick={() => go("serverForm")}>
+                    {t("servers.addServer")}
+                  </Btn>
+                }
+              />
+            )
+          ) : filtered.length === 0 ? (
             <Empty title={t("common.nothingFound")} sub={t("servers.tryDifferentQuery")} />
+          ) : showArchive ? (
+            <div className="stack" style={{ gap: 10 }}>
+              {filtered.map((s) => (
+                <ArchivedServerRow key={s.id} s={s} />
+              ))}
+            </div>
           ) : (
             <div className="grid">
               {filtered.map((s) => (

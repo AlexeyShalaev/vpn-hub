@@ -4,6 +4,7 @@ import { type ChartLine, LineChart } from "../components/chart";
 import { Btn, Field, Icon, Modal, ScreenHeader, Spinner, StatusBadge } from "../components/ui";
 import { type TFunc, type TKey, useT } from "../lib/i18n";
 import * as q from "../lib/queries";
+import { archivedDate, isArchived } from "../lib/serverArchive";
 import {
   bytesToTrafficInput,
   convertTrafficInputUnit,
@@ -738,7 +739,7 @@ function ChainSection({ server }: { server: Server }) {
   const entryProtoEff = entryProto && freeEntryProtos.includes(entryProto) ? entryProto : (freeEntryProtos[0] ?? "");
   // выходные точки: чужие онлайн-серверы владельца × их Xray-семейства протоколы (сервер + протокол)
   const exitEndpoints = (serversQ.data ?? [])
-    .filter((s) => s.id !== server.id && s.status === "online")
+    .filter((s) => s.id !== server.id && s.status === "online" && !isArchived(s))
     .flatMap((s) =>
       chainableProtos(s).map((proto) => ({
         key: `${s.id}|${proto}`,
@@ -870,10 +871,12 @@ export function ServerDetailScreen() {
   const go = useNav((s) => s.go);
   const toast = useStore((s) => s.toast);
   const theme = useStore((s) => s.theme);
+  const lang = useStore((s) => s.lang);
   const qc = useQueryClient();
 
   const [reveal, setReveal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   // мастер «Мигрировать на новый VPS»: новые SSH-реквизиты; secret пустой → оставить текущий
   const [migrateForm, setMigrateForm] = useState<{
     ip: string;
@@ -1024,6 +1027,26 @@ export function ServerDetailScreen() {
     onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.migrationStartFailed")),
   });
 
+  // архив: без SSH (сервер, скорее всего, уже выключен); возврат — бэк сразу пингует и сверяет
+  const archiveMut = useMutation({
+    mutationFn: () => q.archiveServer(serverId),
+    onSuccess: (s) => {
+      setConfirmArchive(false);
+      invalidate();
+      toast(t("srvDetail.archived", { name: s.name }));
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : t("srvDetail.archiveFailed")),
+  });
+
+  const unarchiveMut = useMutation({
+    mutationFn: () => q.unarchiveServer(serverId),
+    onSuccess: (s) => {
+      invalidate();
+      toast(t("servers.restored", { name: s.name }));
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : t("servers.restoreFailed")),
+  });
+
   const deleteMut = useMutation({
     mutationFn: () => q.deleteServer(serverId),
     onSuccess: () => {
@@ -1052,7 +1075,9 @@ export function ServerDetailScreen() {
 
   const server: Server = serverQ.data;
   const checking = checkMut.isPending;
-  const online = server.status === "online";
+  // архивный сервер: только история и карточка; всё, что ходит на хост, выключено
+  const archived = isArchived(server);
+  const online = server.status === "online" && !archived;
   const authLabel = server.auth === "key" ? t("srvDetail.sshKey") : t("srvDetail.password");
   const secretShown = reveal ? server.secret : "•".repeat(Math.max(6, server.secret.length || 6));
 
@@ -1079,12 +1104,44 @@ export function ServerDetailScreen() {
               <Icon name="edit" size={16} />
               {t("common.edit")}
             </Btn>
+            {archived ? (
+              <Btn sm onClick={() => unarchiveMut.mutate()} disabled={unarchiveMut.isPending}>
+                {unarchiveMut.isPending ? <Spinner /> : <Icon name="refresh" size={16} />}
+                {t("servers.restore")}
+              </Btn>
+            ) : (
+              <Btn sm onClick={() => setConfirmArchive(true)}>
+                <Icon name="archive" size={16} />
+                {t("srvDetail.archive")}
+              </Btn>
+            )}
             <Btn variant="danger" sm onClick={() => setConfirmDelete(true)}>
               <Icon name="trash" size={16} />
             </Btn>
           </div>
         }
       />
+
+      {archived && (
+        <div
+          className="card"
+          style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "var(--surface-2)" }}
+        >
+          <span style={{ color: "var(--text-3)", flex: "none", display: "inline-flex" }}>
+            <Icon name="archive" size={20} />
+          </span>
+          <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{t("srvDetail.archivedBannerTitle")}</div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+              {t("srvDetail.archivedBannerBody", { date: archivedDate(server, lang === "en" ? "en-GB" : "ru-RU") })}
+            </div>
+          </div>
+          <Btn sm variant="primary" onClick={() => unarchiveMut.mutate()} disabled={unarchiveMut.isPending}>
+            {unarchiveMut.isPending ? <Spinner /> : <Icon name="refresh" size={16} />}
+            {t("servers.restore")}
+          </Btn>
+        </div>
+      )}
 
       {/* Статус */}
       <div className="card">
@@ -1100,7 +1157,7 @@ export function ServerDetailScreen() {
               {t("srvDetail.checkedAt", { time: server.lastCheck || t("srvDetail.neverChecked") })}
             </span>
           </div>
-          <div className="rowflex" style={{ flexWrap: "nowrap" }}>
+          <div className="rowflex" style={{ flexWrap: "nowrap", display: archived ? "none" : undefined }}>
             <Btn sm onClick={() => syncMut.mutate()} disabled={syncing}>
               {syncing ? <Spinner /> : <Icon name="refresh" size={16} />}
               {syncing ? t("srvDetail.syncing") : t("srvDetail.synchronize")}
@@ -1154,6 +1211,7 @@ export function ServerDetailScreen() {
               </div>
               <Btn
                 sm
+                disabled={archived}
                 onClick={() =>
                   setMigrateForm({
                     ip: "",
@@ -1214,324 +1272,331 @@ export function ServerDetailScreen() {
       )}
 
       {activeTab === "protocols" && (
-        <div className="stack" role="tabpanel" id="server-tabpanel-protocols" aria-labelledby="server-tab-protocols">
-          {/* VPN ПО */}
-          <div className="card stack">
-            <div
-              className="muted-3"
-              style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
-            >
-              {t("srvDetail.vpnSoftwareOnServer")}
-            </div>
-            <div className="stack" style={{ gap: 10 }}>
-              {VPN_TYPES.map((type) => {
-                const v = vpnByType(type);
-                const protos = protosByVendor(type);
-                const catalog = VENDOR_PROTOCOLS[type]; // все протоколы вендора (для выбора/докачки)
-                const notInstalled = catalog.filter((pr) => !protos.find((x) => x.proto === pr.id)?.installed);
-                const installing = protos.some((p) => p.state === "installing");
-                const errored = protos.find((p) => p.state === "error");
-                const rem = errored?.remediation ?? null;
-                const busy =
-                  (opMut.isPending && opMut.variables?.type === type) ||
-                  (fixMut.isPending && fixMut.variables?.type === type);
-                const runLabel = installing
-                  ? t("srvDetail.installingEllipsis")
-                  : !v.installed
-                    ? t("srvDetail.notInstalled")
-                    : v.running
-                      ? t("srvDetail.runningState")
-                      : t("srvDetail.stoppedState");
-                const runClass = installing ? "neutral" : v.installed && v.running ? "ok" : "neutral";
-                return (
-                  <div
-                    key={type}
-                    className="stack"
-                    style={{
-                      border: `1px solid ${errored ? "var(--danger)" : "var(--border)"}`,
-                      borderRadius: 13,
-                      padding: 13,
-                      gap: 12,
-                    }}
-                  >
-                    {/* Шапка: иконка + имя вендора + агрегатный статус (клик — расширенные настройки) */}
-                    <div className="rowflex" style={{ gap: 12, flexWrap: "nowrap", alignItems: "flex-start" }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flex: "none",
-                          background: "var(--surface-2)",
-                          color: `var(--${type})`,
-                        }}
-                      >
-                        {vpnLogo(type, theme) ? (
-                          <img
-                            src={vpnLogo(type, theme)}
-                            alt={VPN_LABEL[type]}
-                            width={26}
-                            height={26}
-                            style={{ objectFit: "contain", display: "block" }}
-                          />
-                        ) : (
-                          <Icon name={VPN_ICON[type]} size={20} />
-                        )}
-                      </div>
-                      <div
-                        style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
-                        onClick={v.installed ? () => setAdvancedVpn(type) : undefined}
-                      >
-                        <div className="rowflex" style={{ gap: 8 }}>
-                          <span style={{ fontWeight: 700, fontSize: 15 }}>{VPN_LABEL[type]}</span>
-                          <span className={`badge ${runClass}`}>{runLabel}</span>
-                          {v.installed && (
-                            <span
-                              className="muted-3"
-                              style={{ display: "inline-flex" }}
-                              title={t("srvDetail.advancedSettings")}
-                            >
-                              <Icon name="chevron" size={14} />
-                            </span>
+        <fieldset disabled={archived} className="fieldset-reset">
+          <div className="stack" role="tabpanel" id="server-tabpanel-protocols" aria-labelledby="server-tab-protocols">
+            {/* VPN ПО */}
+            <div className="card stack">
+              <div
+                className="muted-3"
+                style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" }}
+              >
+                {t("srvDetail.vpnSoftwareOnServer")}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                {VPN_TYPES.map((type) => {
+                  const v = vpnByType(type);
+                  const protos = protosByVendor(type);
+                  const catalog = VENDOR_PROTOCOLS[type]; // все протоколы вендора (для выбора/докачки)
+                  const notInstalled = catalog.filter((pr) => !protos.find((x) => x.proto === pr.id)?.installed);
+                  const installing = protos.some((p) => p.state === "installing");
+                  const errored = protos.find((p) => p.state === "error");
+                  const rem = errored?.remediation ?? null;
+                  const busy =
+                    (opMut.isPending && opMut.variables?.type === type) ||
+                    (fixMut.isPending && fixMut.variables?.type === type);
+                  const runLabel = installing
+                    ? t("srvDetail.installingEllipsis")
+                    : !v.installed
+                      ? t("srvDetail.notInstalled")
+                      : v.running
+                        ? t("srvDetail.runningState")
+                        : t("srvDetail.stoppedState");
+                  const runClass = installing ? "neutral" : v.installed && v.running ? "ok" : "neutral";
+                  return (
+                    <div
+                      key={type}
+                      className="stack"
+                      style={{
+                        border: `1px solid ${errored ? "var(--danger)" : "var(--border)"}`,
+                        borderRadius: 13,
+                        padding: 13,
+                        gap: 12,
+                      }}
+                    >
+                      {/* Шапка: иконка + имя вендора + агрегатный статус (клик — расширенные настройки) */}
+                      <div className="rowflex" style={{ gap: 12, flexWrap: "nowrap", alignItems: "flex-start" }}>
+                        <div
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 10,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flex: "none",
+                            background: "var(--surface-2)",
+                            color: `var(--${type})`,
+                          }}
+                        >
+                          {vpnLogo(type, theme) ? (
+                            <img
+                              src={vpnLogo(type, theme)}
+                              alt={VPN_LABEL[type]}
+                              width={26}
+                              height={26}
+                              style={{ objectFit: "contain", display: "block" }}
+                            />
+                          ) : (
+                            <Icon name={VPN_ICON[type]} size={20} />
                           )}
                         </div>
-                        <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
-                          {vpnDesc(type)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Протоколы: ровный список со статус-точкой и пер-протокольными действиями */}
-                    {(v.installed || installing) && (
-                      <div
-                        className="stack"
-                        style={{ gap: 2, borderTop: "1px solid var(--border)", paddingTop: 10 }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
                         <div
-                          className="muted-3"
-                          style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}
+                          style={{ flex: 1, minWidth: 0, cursor: v.installed ? "pointer" : "default" }}
+                          onClick={v.installed ? () => setAdvancedVpn(type) : undefined}
                         >
-                          {t("srvDetail.protocols")}
-                        </div>
-                        {catalog.map((pr) => {
-                          const p = protos.find((x) => x.proto === pr.id);
-                          const st = p?.state ?? "absent";
-                          const inst = p?.installed ?? false;
-                          const running = p?.running ?? false;
-                          const ext = p?.externalClients ?? 0;
-                          // у установленного показываем работает/остановлен, иначе — состояние установки
-                          const stateText = inst
-                            ? running
-                              ? t("srvDetail.runningState")
-                              : t("srvDetail.stoppedState")
-                            : (PROTO_STATE_LABEL[st] ?? st);
-                          const dotColor =
-                            st === "installing"
-                              ? "var(--warn)"
-                              : inst && running
-                                ? "var(--ok)"
-                                : inst
-                                  ? "var(--warn)"
-                                  : "var(--border-strong)";
-                          return (
-                            <div
-                              key={pr.id}
-                              className="rowflex"
-                              style={{
-                                justifyContent: "space-between",
-                                gap: 8,
-                                flexWrap: "nowrap",
-                                minHeight: 34,
-                                opacity: inst || st === "installing" ? 1 : 0.55,
-                              }}
-                            >
-                              <span className="rowflex" style={{ gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
-                                <span
-                                  style={{
-                                    width: 7,
-                                    height: 7,
-                                    borderRadius: 999,
-                                    flex: "none",
-                                    background: dotColor,
-                                  }}
-                                />
-                                <span
-                                  style={{
-                                    fontSize: 13,
-                                    fontWeight: 600,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {pr.label}
-                                </span>
-                                <span
-                                  className="muted-3"
-                                  style={{ fontSize: 11.5, whiteSpace: "nowrap", flex: "none" }}
-                                >
-                                  {stateText}
-                                  {ext > 0 ? ` · ${t("srvDetail.externalCountSuffix", { n: ext })}` : ""}
-                                </span>
-                                {p?.updateAvailable && (
-                                  <span
-                                    className="badge warn"
-                                    title={t("srvDetail.updateAvailableTooltip", {
-                                      current: p.imageVersion ?? "?",
-                                      latest: p.latestVersion ?? "?",
-                                    })}
-                                    style={{ flex: "none" }}
-                                  >
-                                    {t("srvDetail.updateBadge")}
-                                  </span>
-                                )}
-                              </span>
-                              {inst && (
-                                <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6, flex: "none" }}>
-                                  {p?.updateAvailable && (
-                                    <Btn
-                                      variant="primary"
-                                      sm
-                                      disabled={!online || updateProtoMut.isPending}
-                                      title={t("srvDetail.updateToVersion", { version: p.latestVersion ?? "" })}
-                                      onClick={() => updateProtoMut.mutate({ proto: pr.id, label: pr.label })}
-                                    >
-                                      {t("srvDetail.updateAction")}
-                                    </Btn>
-                                  )}
-                                  <Btn
-                                    sm
-                                    disabled={!online || protoOpMut.isPending}
-                                    onClick={() =>
-                                      protoOpMut.mutate({
-                                        proto: pr.id,
-                                        label: pr.label,
-                                        op: running ? "stop" : "start",
-                                      })
-                                    }
-                                  >
-                                    {running ? t("srvDetail.stopAction") : t("srvDetail.startAction")}
-                                  </Btn>
-                                  <Btn
-                                    variant="ghost"
-                                    sm
-                                    title={t("srvDetail.deleteProtocolTooltip", { label: pr.label })}
-                                    disabled={removeProtoMut.isPending}
-                                    onClick={() =>
-                                      setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })
-                                    }
-                                  >
-                                    <Icon name="trash" size={13} />
-                                  </Btn>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Диагностика ошибки установки/сбоя протокола */}
-                    {errored && (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        {rem ? (
-                          <div className="stack" style={{ gap: 3 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)" }}>{rem.title}</div>
-                            <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
-                              {rem.explanation}
-                            </div>
-                            {rem.manualSteps.length > 0 && (
-                              <ol
+                          <div className="rowflex" style={{ gap: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: 15 }}>{VPN_LABEL[type]}</span>
+                            <span className={`badge ${runClass}`}>{runLabel}</span>
+                            {v.installed && (
+                              <span
                                 className="muted-3"
-                                style={{ fontSize: 11.5, margin: "2px 0 0", paddingLeft: 16, lineHeight: 1.5 }}
+                                style={{ display: "inline-flex" }}
+                                title={t("srvDetail.advancedSettings")}
                               >
-                                {rem.manualSteps.map((step, i) => (
-                                  <li key={i} style={{ wordBreak: "break-word" }}>
-                                    {step}
-                                  </li>
-                                ))}
-                              </ol>
+                                <Icon name="chevron" size={14} />
+                              </span>
                             )}
                           </div>
-                        ) : (
-                          errored.error && (
-                            <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
-                              {t("srvDetail.errorPrefix", { error: errored.error })}
+                          <div className="muted-3" style={{ fontSize: 12.5, marginTop: 2 }}>
+                            {vpnDesc(type)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Протоколы: ровный список со статус-точкой и пер-протокольными действиями */}
+                      {(v.installed || installing) && (
+                        <div
+                          className="stack"
+                          style={{ gap: 2, borderTop: "1px solid var(--border)", paddingTop: 10 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div
+                            className="muted-3"
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              letterSpacing: ".04em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {t("srvDetail.protocols")}
+                          </div>
+                          {catalog.map((pr) => {
+                            const p = protos.find((x) => x.proto === pr.id);
+                            const st = p?.state ?? "absent";
+                            const inst = p?.installed ?? false;
+                            const running = p?.running ?? false;
+                            const ext = p?.externalClients ?? 0;
+                            // у установленного показываем работает/остановлен, иначе — состояние установки
+                            const stateText = inst
+                              ? running
+                                ? t("srvDetail.runningState")
+                                : t("srvDetail.stoppedState")
+                              : (PROTO_STATE_LABEL[st] ?? st);
+                            const dotColor =
+                              st === "installing"
+                                ? "var(--warn)"
+                                : inst && running
+                                  ? "var(--ok)"
+                                  : inst
+                                    ? "var(--warn)"
+                                    : "var(--border-strong)";
+                            return (
+                              <div
+                                key={pr.id}
+                                className="rowflex"
+                                style={{
+                                  justifyContent: "space-between",
+                                  gap: 8,
+                                  flexWrap: "nowrap",
+                                  minHeight: 34,
+                                  opacity: inst || st === "installing" ? 1 : 0.55,
+                                }}
+                              >
+                                <span className="rowflex" style={{ gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
+                                  <span
+                                    style={{
+                                      width: 7,
+                                      height: 7,
+                                      borderRadius: 999,
+                                      flex: "none",
+                                      background: dotColor,
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      fontSize: 13,
+                                      fontWeight: 600,
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                  >
+                                    {pr.label}
+                                  </span>
+                                  <span
+                                    className="muted-3"
+                                    style={{ fontSize: 11.5, whiteSpace: "nowrap", flex: "none" }}
+                                  >
+                                    {stateText}
+                                    {ext > 0 ? ` · ${t("srvDetail.externalCountSuffix", { n: ext })}` : ""}
+                                  </span>
+                                  {p?.updateAvailable && (
+                                    <span
+                                      className="badge warn"
+                                      title={t("srvDetail.updateAvailableTooltip", {
+                                        current: p.imageVersion ?? "?",
+                                        latest: p.latestVersion ?? "?",
+                                      })}
+                                      style={{ flex: "none" }}
+                                    >
+                                      {t("srvDetail.updateBadge")}
+                                    </span>
+                                  )}
+                                </span>
+                                {inst && (
+                                  <div className="rowflex" style={{ flexWrap: "nowrap", gap: 6, flex: "none" }}>
+                                    {p?.updateAvailable && (
+                                      <Btn
+                                        variant="primary"
+                                        sm
+                                        disabled={!online || updateProtoMut.isPending}
+                                        title={t("srvDetail.updateToVersion", { version: p.latestVersion ?? "" })}
+                                        onClick={() => updateProtoMut.mutate({ proto: pr.id, label: pr.label })}
+                                      >
+                                        {t("srvDetail.updateAction")}
+                                      </Btn>
+                                    )}
+                                    <Btn
+                                      sm
+                                      disabled={!online || protoOpMut.isPending}
+                                      onClick={() =>
+                                        protoOpMut.mutate({
+                                          proto: pr.id,
+                                          label: pr.label,
+                                          op: running ? "stop" : "start",
+                                        })
+                                      }
+                                    >
+                                      {running ? t("srvDetail.stopAction") : t("srvDetail.startAction")}
+                                    </Btn>
+                                    <Btn
+                                      variant="ghost"
+                                      sm
+                                      title={t("srvDetail.deleteProtocolTooltip", { label: pr.label })}
+                                      disabled={removeProtoMut.isPending}
+                                      onClick={() =>
+                                        setConfirmRemoveProto({ vendor: type, proto: pr.id, label: pr.label })
+                                      }
+                                    >
+                                      <Icon name="trash" size={13} />
+                                    </Btn>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Диагностика ошибки установки/сбоя протокола */}
+                      {errored && (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          {rem ? (
+                            <div className="stack" style={{ gap: 3 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)" }}>{rem.title}</div>
+                              <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                                {rem.explanation}
+                              </div>
+                              {rem.manualSteps.length > 0 && (
+                                <ol
+                                  className="muted-3"
+                                  style={{ fontSize: 11.5, margin: "2px 0 0", paddingLeft: 16, lineHeight: 1.5 }}
+                                >
+                                  {rem.manualSteps.map((step, i) => (
+                                    <li key={i} style={{ wordBreak: "break-word" }}>
+                                      {step}
+                                    </li>
+                                  ))}
+                                </ol>
+                              )}
                             </div>
-                          )
+                          ) : (
+                            errored.error && (
+                              <div className="muted-3" style={{ fontSize: 11.5, wordBreak: "break-word" }}>
+                                {t("srvDetail.errorPrefix", { error: errored.error })}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
+
+                      {/* Действия по вендору: докачать / остановить всё / удалить ПО целиком */}
+                      <div
+                        className="rowflex"
+                        style={{ gap: 8, borderTop: "1px solid var(--border)", paddingTop: 11 }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {installing ? (
+                          <span className="rowflex" style={{ gap: 8 }}>
+                            <Spinner />
+                            <span className="muted-3" style={{ fontSize: 12.5 }}>
+                              {t("srvDetail.installingEllipsisLong")}
+                            </span>
+                          </span>
+                        ) : busy ? (
+                          <Spinner />
+                        ) : (
+                          <>
+                            {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
+                            {rem?.canAutoFix && (
+                              <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
+                                {rem.fixLabel ?? t("srvDetail.fixAction")}
+                              </Btn>
+                            )}
+                            {notInstalled.length > 0 && (
+                              <Btn
+                                variant={v.installed || rem?.canAutoFix ? "ghost" : "primary"}
+                                sm
+                                onClick={() => {
+                                  setCheckedProtos(new Set(notInstalled.map((p) => p.id)));
+                                  setAddProtoVendor(type);
+                                }}
+                              >
+                                {v.installed ? t("srvDetail.addProtocolsAction") : t("srvDetail.installAction")}
+                              </Btn>
+                            )}
+                            {v.installed && (
+                              <Btn
+                                sm
+                                disabled={!online}
+                                onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
+                              >
+                                {v.running ? t("srvDetail.stopAllAction") : t("srvDetail.startAllAction")}
+                              </Btn>
+                            )}
+                            {v.installed && (
+                              <Btn
+                                variant="ghost"
+                                sm
+                                title={t("srvDetail.deleteVendorTooltip", { label: VPN_LABEL[type] })}
+                                style={{ marginLeft: "auto" }}
+                                onClick={() => setConfirmRemoveVpn(type)}
+                              >
+                                <Icon name="trash" size={15} />
+                              </Btn>
+                            )}
+                          </>
                         )}
                       </div>
-                    )}
-
-                    {/* Действия по вендору: докачать / остановить всё / удалить ПО целиком */}
-                    <div
-                      className="rowflex"
-                      style={{ gap: 8, borderTop: "1px solid var(--border)", paddingTop: 11 }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {installing ? (
-                        <span className="rowflex" style={{ gap: 8 }}>
-                          <Spinner />
-                          <span className="muted-3" style={{ fontSize: 12.5 }}>
-                            {t("srvDetail.installingEllipsisLong")}
-                          </span>
-                        </span>
-                      ) : busy ? (
-                        <Spinner />
-                      ) : (
-                        <>
-                          {/* fix доступен и в installed-состоянии (частичный сбой: один протокол упал) */}
-                          {rem?.canAutoFix && (
-                            <Btn variant="primary" sm onClick={() => fixMut.mutate({ type })}>
-                              {rem.fixLabel ?? t("srvDetail.fixAction")}
-                            </Btn>
-                          )}
-                          {notInstalled.length > 0 && (
-                            <Btn
-                              variant={v.installed || rem?.canAutoFix ? "ghost" : "primary"}
-                              sm
-                              onClick={() => {
-                                setCheckedProtos(new Set(notInstalled.map((p) => p.id)));
-                                setAddProtoVendor(type);
-                              }}
-                            >
-                              {v.installed ? t("srvDetail.addProtocolsAction") : t("srvDetail.installAction")}
-                            </Btn>
-                          )}
-                          {v.installed && (
-                            <Btn
-                              sm
-                              disabled={!online}
-                              onClick={() => opMut.mutate({ type, op: v.running ? "stop" : "start" })}
-                            >
-                              {v.running ? t("srvDetail.stopAllAction") : t("srvDetail.startAllAction")}
-                            </Btn>
-                          )}
-                          {v.installed && (
-                            <Btn
-                              variant="ghost"
-                              sm
-                              title={t("srvDetail.deleteVendorTooltip", { label: VPN_LABEL[type] })}
-                              style={{ marginLeft: "auto" }}
-                              onClick={() => setConfirmRemoveVpn(type)}
-                            >
-                              <Icon name="trash" size={15} />
-                            </Btn>
-                          )}
-                        </>
-                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
+            <ChainSection server={server} />
           </div>
-          <ChainSection server={server} />
-        </div>
+        </fieldset>
       )}
 
       {activeTab === "monitoring" && (
@@ -1543,11 +1608,33 @@ export function ServerDetailScreen() {
 
       {activeTab === "access" && (
         <div className="stack" role="tabpanel" id="server-tabpanel-access" aria-labelledby="server-tab-access">
-          <ServerAccessSections serverId={serverId} />
+          <fieldset disabled={archived} className="fieldset-reset">
+            <ServerAccessSections serverId={serverId} />
+          </fieldset>
         </div>
       )}
 
       {advancedVpn && <VpnAdvancedModal serverId={serverId} vtype={advancedVpn} onClose={() => setAdvancedVpn(null)} />}
+
+      {confirmArchive && (
+        <Modal
+          title={t("srvDetail.archiveTitle")}
+          onClose={() => setConfirmArchive(false)}
+          footer={
+            <>
+              <Btn variant="ghost" onClick={() => setConfirmArchive(false)}>
+                {t("common.cancel")}
+              </Btn>
+              <Btn variant="primary" disabled={archiveMut.isPending} onClick={() => archiveMut.mutate()}>
+                <Icon name="archive" size={16} />
+                {t("srvDetail.archive")}
+              </Btn>
+            </>
+          }
+        >
+          <p className="muted">{t("srvDetail.archiveBody")}</p>
+        </Modal>
+      )}
 
       {confirmDelete && (
         <Modal

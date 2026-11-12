@@ -407,7 +407,7 @@ class SyncService:
 
     async def run_tick(self) -> int:
         async with self.uow.query() as tx:
-            ids = [s.id for s in await tx.servers.all()]
+            ids = [s.id for s in await tx.servers.active()]  # архивные не сверяем
         done = 0
         for sid in ids:
             try:

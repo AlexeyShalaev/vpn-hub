@@ -64,6 +64,7 @@ export interface Server {
   bandwidthQuota: number | null; // квота трафика тарифа за период (байт), null = безлимит
   billingDay: number | null; // день сброса периода (1..31), null → 1-е число
   providerMetadata?: Record<string, unknown>; // провайдерская метадата: тариф, external id и т.п.
+  archivedAt?: number | null; // epoch секунд ухода в архив, null — рабочий сервер
   vpns: Vpn[];
   protocols: Protocol[];
 }
@@ -303,6 +304,7 @@ export interface DeviceConfig {
   type: VpnType;
   proto: string | null;
   status?: string; // active | revoked
+  serverArchived?: boolean; // сервер в архиве: конфиг сохранён, но не работает
 }
 
 export interface Device {

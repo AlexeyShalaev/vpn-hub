@@ -130,6 +130,7 @@ def server_to_dict(s: m.Server, secret: str | None = None) -> dict:
         "bandwidthQuota": s.bandwidth_quota_bytes,  # квота трафика тарифа за период (null = безлимит)
         "billingDay": s.billing_day,  # день сброса периода (1..31; null → 1-е число)
         "providerMetadata": dict(s.provider_metadata or {}),
+        "archivedAt": s.archived_at,  # epoch секунд, null = не в архиве
         "vpns": [vpn_to_dict(v) for v in sorted(s.vpns, key=lambda x: x.type)],
         "protocols": [protocol_to_dict(p) for p in sorted(s.protocols, key=lambda x: x.proto)],
     }
@@ -164,13 +165,21 @@ def group_to_dict(g: m.Group, pools: list[str], servers: dict[str, list[str]]) -
     }
 
 
-def device_to_dict(d: m.Device) -> dict:
+def device_to_dict(d: m.Device, archived_server_ids: set[str] | frozenset[str] = frozenset()) -> dict:
     return {
         "id": d.id,
         "name": d.name,
         "platform": d.platform,
         "configs": [
-            {"serverId": c.server_id, "type": c.vpn_type, "proto": c.proto, "status": c.status} for c in d.configs
+            {
+                "serverId": c.server_id,
+                "type": c.vpn_type,
+                "proto": c.proto,
+                "status": c.status,
+                # сервер в архиве: конфиг сохранён, но не работает, пока владелец не вернёт сервер
+                "serverArchived": c.server_id in archived_server_ids,
+            }
+            for c in d.configs
         ],
     }
 

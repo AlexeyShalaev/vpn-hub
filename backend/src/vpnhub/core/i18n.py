@@ -144,6 +144,10 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "en": "The protocol is not installed on this server yet",
     },
     "config.select_device": {"ru": "Выберите устройство", "en": "Select a device"},
+    "config.server_archived": {
+        "ru": "Сервер в архиве: новые конфиги на нём не выдаются",
+        "en": "This server is archived, so no new configs are issued on it",
+    },
     "config.server_not_found": {"ru": "Сервер не найден", "en": "Server not found"},
     "config.traffic_limit_reached": {
         "ru": "Достигнут лимит трафика на «{server}» за период ({used} / {limit}). Доступ восстановится после сброса периода.",  # noqa: E501
@@ -160,6 +164,10 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     "finance.currency_invalid": {
         "ru": "Валюта — 3–8 латинских букв (напр. RUB, USD, EUR)",
         "en": "Currency must be 3–8 Latin letters (e.g. RUB, USD, EUR)",
+    },
+    "finance.server_archived": {
+        "ru": "Сервер в архиве и расход по нему не начисляется. Верните его из архива, чтобы изменить цену",
+        "en": "The server is archived and accrues no cost. Restore it to change the price",
     },
     "finance.period_invalid": {"ru": "Период — minute | day | month", "en": "Period must be minute | day | month"},
     "finance.price_not_finite": {"ru": "Цена должна быть конечным числом", "en": "Price must be a finite number"},
@@ -180,6 +188,10 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     "group.not_found": {"ru": "Группа не найдена", "en": "Group not found"},
     "group.user_not_found": {"ru": "Пользователь не найден", "en": "User not found"},
     "hostmetrics.server_not_found": {"ru": "Сервер не найден", "en": "Server not found"},
+    "multihop.server_archived": {
+        "ru": "Сервер «{server}» в архиве: цепочку через него создать нельзя",
+        "en": 'Server "{server}" is archived, so it cannot be part of a chain',
+    },
     "multihop.both_servers_must_be_online": {
         "ru": "Оба сервера должны быть онлайн",
         "en": "Both servers must be online",
@@ -272,6 +284,14 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     "server.no_current_obfuscation_params": {
         "ru": "Нет текущих параметров обфускации",
         "en": "No current obfuscation parameters",
+    },
+    "server.archive_in_chain": {
+        "ru": "Сервер участвует в мультихоп-цепочке. Сначала удалите цепочку, затем отправьте сервер в архив",
+        "en": "The server is part of a multi-hop chain. Remove the chain first, then archive the server",
+    },
+    "server.archived": {
+        "ru": "Сервер в архиве. Верните его из архива, чтобы выполнить эту операцию",
+        "en": "The server is archived. Restore it to run this operation",
     },
     "server.no_error_to_fix": {"ru": "Нет ошибки для исправления", "en": "There is no error to fix"},
     "server.no_protocols_selected": {

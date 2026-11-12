@@ -93,6 +93,8 @@ export const getServer = (id: string) => http.get<Server>(`/servers/${id}`);
 export const createServer = (b: Record<string, unknown>) => http.post<Server>("/servers", b);
 export const updateServer = (id: string, b: Record<string, unknown>) => http.patch<Server>(`/servers/${id}`, b);
 export const deleteServer = (id: string) => http.del(`/servers/${id}`);
+export const archiveServer = (id: string) => http.post<Server>(`/servers/${id}/archive`);
+export const unarchiveServer = (id: string) => http.post<Server>(`/servers/${id}/unarchive`);
 export const checkServer = (id: string) => http.post<Server>(`/servers/${id}/check`);
 // миграция на новый VPS: новые SSH-реквизиты + фоновая переустановка установленных протоколов;
 // выданные конфиги помечаются revoked (перевыдача — материал сервера генерится заново)

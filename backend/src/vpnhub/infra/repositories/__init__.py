@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vpnhub.infra.db.orm import models as m
@@ -146,6 +146,26 @@ class ServerRepo(_Repo):
             select(m.Server).where(m.Server.owner_user_id == owner_id).order_by(m.Server.created_at)
         )
         return list(res.scalars().all())
+
+    async def active(self) -> list[m.Server]:
+        """Все неархивные серверы — то, что обходят фоновые циклы (мониторинг, синк, метрики)."""
+        res = await self.session.execute(
+            select(m.Server).where(m.Server.archived_at.is_(None)).order_by(m.Server.created_at)
+        )
+        return list(res.scalars().all())
+
+    async def archived_ids(self) -> set[str]:
+        res = await self.session.execute(select(m.Server.id).where(m.Server.archived_at.is_not(None)))
+        return {r[0] for r in res.all()}
+
+    async def in_chains(self, server_id: str) -> bool:
+        """Участвует ли сервер в мультихоп-цепочке (как вход или как выход)."""
+        res = await self.session.execute(
+            select(m.ChainLink.id)
+            .where(or_(m.ChainLink.entry_server_id == server_id, m.ChainLink.exit_server_id == server_id))
+            .limit(1)
+        )
+        return res.first() is not None
 
 
 class PoolRepo(_Repo):

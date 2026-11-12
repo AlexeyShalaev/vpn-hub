@@ -60,7 +60,9 @@ class MetricsService:
         return len(rows)
 
     async def _server_counts(self, tx: Any) -> dict[str, int]:
-        result = await tx.session.execute(select(m.Server.status, func.count()).group_by(m.Server.status))
+        result = await tx.session.execute(
+            select(m.Server.status, func.count()).where(m.Server.archived_at.is_(None)).group_by(m.Server.status)
+        )
         counts = {"online": 0, "offline": 0, "unknown": 0}
         for status, n in result.all():
             counts[status] = int(n)

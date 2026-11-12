@@ -13,6 +13,8 @@ CONFIG_DOWNLOAD = "config.download"
 ACCESS_REVOKE = "access.revoke"
 PASSKEY_ADD = "passkey.add"
 PASSKEY_REMOVE = "passkey.remove"
+SERVER_ARCHIVE = "server.archive"
+SERVER_UNARCHIVE = "server.unarchive"
 
 # code -> человекочитаемая русская подпись
 LABELS: dict[str, str] = {
@@ -22,6 +24,8 @@ LABELS: dict[str, str] = {
     ACCESS_REVOKE: "Отзыв доступа",
     PASSKEY_ADD: "Добавлен ключ доступа",
     PASSKEY_REMOVE: "Удалён ключ доступа",
+    SERVER_ARCHIVE: "Сервер в архиве",
+    SERVER_UNARCHIVE: "Сервер возвращён из архива",
 }
 
 

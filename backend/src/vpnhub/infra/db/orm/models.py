@@ -118,6 +118,9 @@ class Server(BaseTable, DatetimeColumnsMixin):
     billing_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Провайдерская метадата: исходный тариф из письма/панели, id внешней услуги и т.п.
     provider_metadata: Mapped[dict[str, Any]] = mapped_column(JSON().with_variant(JSONB, "postgresql"), default=dict)
+    # Архив (epoch секунд): сервер выключен и больше не используется. История остаётся, но фоновые
+    # циклы его пропускают, SSH к нему не ходим, участникам не виден. NULL = обычный сервер.
+    archived_at: Mapped[float | None] = mapped_column(nullable=True)
 
     vpns: Mapped[list[ServerVpn]] = relationship(back_populates="server", cascade="all, delete-orphan", lazy="selectin")
     protocols: Mapped[list[ServerProtocol]] = relationship(

@@ -57,7 +57,9 @@ async def test__list__user_devices__returns_device_to_dict_shape(uow, settings, 
         "id": dev.id,
         "name": "iPhone",
         "platform": "ios",
-        "configs": [{"serverId": srv.id, "type": "amnezia", "proto": "AmneziaWG", "status": "active"}],
+        "configs": [
+            {"serverId": srv.id, "type": "amnezia", "proto": "AmneziaWG", "status": "active", "serverArchived": False}
+        ],
     }
 
 

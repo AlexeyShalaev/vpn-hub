@@ -177,12 +177,17 @@ function DeviceCard({
                   >
                     {g.serverName}
                   </span>
+                  {g.items.some((c) => c.serverArchived) && (
+                    <span className="badge neutral" style={{ fontSize: 11 }}>
+                      {t("devices.serverArchived")}
+                    </span>
+                  )}
                   <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
                 </div>
                 {g.items.map((c) => {
                   const suspended = c.status === "suspended";
                   const revoked = c.status && c.status !== "active" && !suspended;
-                  const dimmed = revoked || suspended;
+                  const dimmed = revoked || suspended || !!c.serverArchived;
                   return (
                     <div
                       key={`${c.type}-${c.proto ?? ""}`}

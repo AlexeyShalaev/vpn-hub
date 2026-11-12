@@ -25,7 +25,8 @@ class DeviceService:
 
     async def list(self, user_id: str) -> list[dict]:
         async with self.uow.query() as tx:
-            return [device_to_dict(d) for d in await tx.devices.for_user(user_id)]
+            archived = await tx.servers.archived_ids()
+            return [device_to_dict(d, archived) for d in await tx.devices.for_user(user_id)]
 
     async def limit_info(self, user_id: str) -> dict:
         """Занятость/лимит устройств пользователя для отображения на экране устройств."""

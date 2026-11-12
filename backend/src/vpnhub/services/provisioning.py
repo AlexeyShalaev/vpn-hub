@@ -402,6 +402,10 @@ class ProvisioningService:
                 server = await tx.servers.get(server_id)
                 if not server:
                     continue
+                if server.archived_at is not None:
+                    # архивный сервер выключен: SSH не трогаем, клиенты на нём уйдут вместе с хостом
+                    log.info("revoke: server archived, skipping ssh", server=server_id, clients=len(items))
+                    continue
                 creds = self.creds(server)
                 jobs = []  # (provisioner, client_id)
                 for proto_label, client_id in items:
@@ -429,10 +433,15 @@ class ProvisioningService:
 
         async with self.uow.query() as tx:
             access, _ = await effective_access(tx, user_id)
+            # конфиги на архивных серверах не трогаем: хост выключен (SSH некуда), а при возврате из
+            # архива сверка повторится (ServerService.unarchive) и снимет то, к чему доступа уже нет
+            archived = await tx.servers.archived_ids()
             drop: list[tuple[str, str, str, str]] = []  # (config_id, server_id, proto_label, client_id)
             for d in await tx.devices.for_user(user_id):
                 for c in d.configs:
                     if c.vpn_type not in PROVISIONED_VENDORS or not c.client_id:
+                        continue
+                    if c.server_id in archived:
                         continue
                     if c.vpn_type not in access.get(c.server_id, set()):
                         drop.append((c.id, c.server_id, c.proto or "", c.client_id))
@@ -475,7 +484,7 @@ class ProvisioningService:
         for server_id, items in by_server.items():
             async with self.uow.query() as tx:
                 server = await tx.servers.get(server_id)
-                if not server:
+                if not server or server.archived_at is not None:  # архивный: SSH не трогаем
                     continue
                 creds = self.creds(server)
                 jobs = []  # (provisioner, material)

@@ -602,7 +602,9 @@ class TrafficService:
             server_rows = list(
                 (
                     await tx.session.execute(
-                        select(m.Server.id, m.Server.name).where(m.Server.owner_user_id == owner_id)
+                        select(m.Server.id, m.Server.name).where(
+                            m.Server.owner_user_id == owner_id, m.Server.archived_at.is_(None)
+                        )
                     )
                 ).all()
             )
