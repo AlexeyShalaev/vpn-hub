@@ -27,6 +27,16 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.14.1",
+        "date": "2026-11-13",
+        "notes": [
+            {
+                "ru": "Исправлено: панель могла предложить обновление раньше, чем образ новой версии опубликован, и в Kubernetes после нажатия «Обновить» переставала открываться. Теперь, пока образ собирается, в разделе «Система» видна метка «готовится версия …», а обновление становится доступно, когда образ уже в реестре",  # noqa: E501
+                "en": 'Fixed: the panel could offer an update before the new version\'s image was published, and in Kubernetes it stopped opening after clicking Update. While the image is being built, System now shows a "version … is on its way" badge, and the update becomes available once the image is in the registry',  # noqa: E501
+            },
+        ],
+    },
+    {
         "v": "0.14.0",
         "date": "2026-11-12",
         "notes": [

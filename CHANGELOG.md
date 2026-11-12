@@ -5,14 +5,9 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
-## [0.14.1](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.14.0...v0.14.1) (2026-11-12)
+## [0.14.1](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.14.0...v0.14.1) - 2026-11-13
 
-
-### Bug Fixes
-
-* **ui:** show a pending badge while the new version's image is being built ([76b8a63](https://github.com/AlexeyShalaev/vpn-hub/commit/76b8a6381f75f256e7836c7eb5499995d996aecc))
-* **update:** don't offer or apply a release whose image isn't published yet ([8948377](https://github.com/AlexeyShalaev/vpn-hub/commit/894837760a5b36eea7ac621750e23aee0db2e5bc))
-* **update:** don't offer or apply a release whose image isn't published yet ([d2f7ec6](https://github.com/AlexeyShalaev/vpn-hub/commit/d2f7ec6e8b1a4124be82652b2f307089b2f6a181))
+- Fixed: the panel could offer an update before the new version's image was published, and in Kubernetes it stopped opening after clicking Update. While the image is being built, System now shows a "version … is on its way" badge, and the update becomes available once the image is in the registry
 
 ## [0.14.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.13.0...v0.14.0) - 2026-11-12
 
