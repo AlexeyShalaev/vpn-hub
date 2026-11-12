@@ -531,6 +531,7 @@ class HostMetricsService:
                         .join(m.ServerProtocol, m.ServerProtocol.server_id == m.Server.id)
                         .where(
                             m.Server.owner_user_id == owner_id,
+                            m.Server.archived_at.is_(None),
                             m.ServerProtocol.installed.is_(True),
                             m.ServerProtocol.proto.in_(STATS_PROTOS),
                             or_(m.ServerProtocol.traffic_status.is_(None), m.ServerProtocol.traffic_status != "ok"),

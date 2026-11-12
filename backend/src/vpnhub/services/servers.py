@@ -21,6 +21,7 @@ from vpnhub.api.config import Settings
 from vpnhub.common.catalog import DEFAULT_PORTS
 from vpnhub.common.net import is_valid_host
 from vpnhub.common.serializers import server_to_dict
+from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra import metrics
 from vpnhub.infra.db.orm import models as m
@@ -94,6 +95,13 @@ class ServerService:
         s: m.Server | None = await tx.servers.get(sid)
         if not s or s.owner_user_id != owner_id:
             raise NotFound(key="server.not_found")
+        return s
+
+    async def _owned_live(self, tx: UowTransaction, owner_id: str, sid: str) -> m.Server:
+        """Свой и НЕ архивный сервер: для операций, которым нужен живой хост (SSH, зонд, установка)."""
+        s = await self._owned(tx, owner_id, sid)
+        if s.archived_at is not None:
+            raise BadRequest(key="server.archived")
         return s
 
     async def get(self, owner_id: str, sid: str) -> dict:
@@ -189,7 +197,7 @@ class ServerService:
 
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.transaction() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             s.ip = ip
             if data.get("sshUser"):
                 s.ssh_user = str(data["sshUser"])
@@ -234,7 +242,12 @@ class ServerService:
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
             s = await self._owned(tx, owner_id, sid)
-            vendors = {p.vendor for p in s.protocols if p.installed and p.vendor in PROVISIONED_VENDORS}
+            # архивный сервер выключен: контейнеры не сносим (SSH некуда), просто забываем его
+            vendors = (
+                set()
+                if s.archived_at is not None
+                else {p.vendor for p in s.protocols if p.installed and p.vendor in PROVISIONED_VENDORS}
+            )
             server = s
         for vendor in vendors:
             await prov.remove_vendor(server, vendor)  # снести контейнеры (пиры уйдут вместе с ними), best-effort
@@ -243,10 +256,114 @@ class ServerService:
             await tx.session.execute(sa_delete(m.DeviceConfig).where(m.DeviceConfig.server_id == sid))
             await tx.session.delete(s)
 
+    # ---- архив ----
+    # Архив = сервер выключен и больше не используется, но история (трафик, метрики, финансы,
+    # аудит) нужна. Ничего не делаем по SSH: хост, скорее всего, уже недоступен. Строки доступа
+    # (пулы, группы) и выданные конфиги сохраняются, так что возврат из архива всё восстанавливает.
+
+    async def archive(self, owner_id: str, sid: str) -> dict:
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            if s.archived_at is None:  # повторный вызов — no-op (без второго события)
+                # мультихоп: архив выхода/входа молча сломал бы цепочку у живого сервера — пусть
+                # владелец сначала явно удалит цепочку (это SSH-операция, её надо сделать до архива)
+                if await tx.servers.in_chains(sid):
+                    raise BadRequest(key="server.archive_in_chain")
+                now = time.time()
+                s.archived_at = now
+                # финансы: закрыть текущий сегмент цены — расход дальше не начисляется, история остаётся
+                await tx.session.execute(
+                    sa_update(m.ServerPrice)
+                    .where(m.ServerPrice.server_id == sid, m.ServerPrice.effective_to.is_(None))
+                    .values(effective_to=now)
+                )
+                await self._audit(tx, owner_id, audit_types.SERVER_ARCHIVE, s)
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            result = server_to_dict(s, self._secret(s))
+        self.bus.publish(TOPIC_SERVER, sid)
+        return result
+
+    async def unarchive(self, owner_id: str, sid: str) -> dict:
+        async with self.uow.transaction() as tx:
+            s = await self._owned(tx, owner_id, sid)
+            archived_at = s.archived_at
+            if archived_at is not None:
+                now = time.time()
+                s.archived_at = None
+                s.status, s.latency_ms = "unknown", None  # статус до архива устарел; перепроверит монитор
+                # финансы: если архив закрыл сегмент цены — продолжаем ту же цену с этого момента
+                last = (
+                    (
+                        await tx.session.execute(
+                            select(m.ServerPrice)
+                            .where(m.ServerPrice.server_id == sid, m.ServerPrice.effective_to.is_not(None))
+                            .order_by(m.ServerPrice.effective_from.desc())
+                        )
+                    )
+                    .scalars()
+                    .first()
+                )
+                if last is not None and last.effective_to is not None and abs(last.effective_to - archived_at) < 1:
+                    tx.session.add(
+                        m.ServerPrice(
+                            server_id=sid,
+                            amount_micros=last.amount_micros,
+                            currency=last.currency,
+                            period=last.period,
+                            anchor_day=last.anchor_day,
+                            effective_from=now,
+                            effective_to=None,
+                        )
+                    )
+                await self._audit(tx, owner_id, audit_types.SERVER_UNARCHIVE, s)
+            await tx.session.flush()
+            await tx.session.refresh(s)
+            result = server_to_dict(s, self._secret(s))
+            # чьи конфиги лежат на сервере — их доступ могли сузить, пока сервер был в архиве
+            user_ids = (
+                list(
+                    (
+                        await tx.session.execute(
+                            select(m.Device.user_id)
+                            .join(m.DeviceConfig, m.DeviceConfig.device_id == m.Device.id)
+                            .where(m.DeviceConfig.server_id == sid)
+                            .distinct()
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if archived_at is not None
+                else []
+            )
+        if user_ids:
+            try:
+                await ProvisioningService(self.uow, self.settings).reconcile_users(user_ids)
+            except Exception as e:  # best-effort: хост может ещё не подняться, сверка повторится позже
+                log.warning("unarchive_reconcile_failed", server_id=sid, error=str(e))
+        self.bus.publish(TOPIC_SERVER, sid)
+        return result
+
+    @staticmethod
+    async def _audit(tx: UowTransaction, owner_id: str, type_: str, s: m.Server) -> None:
+        owner = await tx.users.get(owner_id)
+        tx.audit.add_event(
+            at=time.time(),
+            actor_kind="admin" if owner and await tx.admins.is_admin(owner_id) else "user",
+            actor_id=owner_id,
+            actor_name=owner.name if owner else "",
+            type_=type_,
+            target_kind="server",
+            target_id=s.id,
+            owner_user_id=owner_id,
+            meta_json=json.dumps({"server": s.name}, ensure_ascii=False),
+        )
+
     async def check(self, owner_id: str, sid: str) -> dict:
         """Проверить один сервер по запросу (TCP-зонд по SSH-порту)."""
         async with self.uow.transaction() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             result = await probe_tcp(s.ip, _parse_port(s.ssh_port), self.settings.monitor_timeout)
             _apply_probe(s, result)
             await tx.session.flush()
@@ -258,7 +375,7 @@ class ServerService:
         from vpnhub.services.sync import SyncService  # noqa: PLC0415 — избегаем цикла import
 
         async with self.uow.query() as tx:
-            await self._owned(tx, owner_id, sid)
+            await self._owned_live(tx, owner_id, sid)
         await SyncService(self.uow, self.settings).sync_server(sid)
         async with self.uow.query() as tx:
             s = await self._owned(tx, owner_id, sid)
@@ -291,7 +408,7 @@ class ServerService:
         соединение к БД открытым на время сетевых таймаутов.
         """
         async with self.uow.query() as tx:
-            targets = [(s.id, s.ip, _parse_port(s.ssh_port)) for s in await tx.servers.all()]
+            targets = [(s.id, s.ip, _parse_port(s.ssh_port)) for s in await tx.servers.active()]
         if not targets:
             return 0
 
@@ -364,7 +481,7 @@ class ServerService:
         """
         try:
             async with self.uow.query() as tx:
-                servers = await tx.servers.all()
+                servers = await tx.servers.active()  # архивные не считаются ни online, ни offline
                 protocols = list(
                     (await tx.session.execute(select(m.ServerProtocol).where(m.ServerProtocol.state == "error")))
                     .scalars()
@@ -407,7 +524,7 @@ class ServerService:
         """
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             errored = next((p for p in s.protocols if p.vendor == vtype and p.state == "error"), None)
             if errored is None:
                 raise BadRequest(key="server.no_error_to_fix")
@@ -442,7 +559,7 @@ class ServerService:
             if not proto_ids:
                 raise BadRequest(key="server.no_protocols_selected")
             async with self.uow.transaction() as tx:
-                s = await self._owned(tx, owner_id, sid)
+                s = await self._owned_live(tx, owner_id, sid)
                 vpn = next((v for v in s.vpns if v.type == vendor), None)
                 if vpn is None:
                     vpn = m.ServerVpn(server_id=sid, type=vendor, port=DEFAULT_PORTS[vendor])
@@ -456,7 +573,7 @@ class ServerService:
 
         if op == "remove":
             async with self.uow.query() as tx:
-                s = await self._owned(tx, owner_id, sid)
+                s = await self._owned_live(tx, owner_id, sid)
             await prov.remove_vendor(s, vendor)
             async with self.uow.transaction() as tx:
                 s = await self._owned(tx, owner_id, sid)
@@ -481,7 +598,7 @@ class ServerService:
 
         # start / stop
         async with self.uow.query() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             if s.status != "online":
                 raise BadRequest(key="server.must_be_online")
         try:
@@ -530,7 +647,7 @@ class ServerService:
         spec = pc.spec_by_id(proto_id)
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.transaction() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             if s.status != "online":
                 raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
@@ -550,7 +667,7 @@ class ServerService:
         spec = pc.spec_by_id(proto_id)
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             if s.status != "online":
                 raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
@@ -591,7 +708,7 @@ class ServerService:
 
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             if s.status != "online":
                 raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
@@ -720,7 +837,7 @@ class ServerService:
 
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
             if s.status != "online":
                 raise BadRequest(key="server.must_be_online")
             sp = next((p for p in s.protocols if p.proto == proto_id), None)
@@ -764,7 +881,7 @@ class ServerService:
         spec = pc.spec_by_id(proto_id)
         prov = ProvisioningService(self.uow, self.settings)
         async with self.uow.query() as tx:
-            s = await self._owned(tx, owner_id, sid)
+            s = await self._owned_live(tx, owner_id, sid)
         await prov.remove_protocol(s, proto_id)  # docker rm контейнера (пиры уходят вместе с ним)
         async with self.uow.transaction() as tx:
             s = await self._owned(tx, owner_id, sid)

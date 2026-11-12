@@ -116,6 +116,9 @@ class ChainService:
         async with self.uow.query() as tx:
             entry = await self._owned(tx, owner_id, entry_sid)
             exit_srv = await self._owned(tx, owner_id, exit_sid)
+            for srv in (entry, exit_srv):
+                if srv.archived_at is not None:
+                    raise BadRequest(key="multihop.server_archived", params={"server": srv.name})
             if entry.status != "online" or exit_srv.status != "online":
                 raise BadRequest(key="multihop.both_servers_must_be_online")
             entry_sp = self._chain_sp(entry, entry_proto)

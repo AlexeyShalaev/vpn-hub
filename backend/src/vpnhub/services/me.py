@@ -30,7 +30,7 @@ class MeService:
             out = []
             for sid in access:
                 s = await tx.servers.get(sid)
-                if not s:
+                if not s or s.archived_at is not None:
                     continue
                 ps = period_start(time.time(), s.billing_day)
                 rx, txb = await period_usage(tx.session, sid, user_id, ps)
@@ -71,7 +71,7 @@ class MeService:
             out = []
             for sid, vtypes in access.items():
                 s = await tx.servers.get(sid)
-                if not s:
+                if not s or s.archived_at is not None:  # архивный сервер участникам не показываем
                     continue
                 order = {"amnezia": 0, "openvpn": 1, "outline": 2, "hysteria2": 3}
                 out.append(

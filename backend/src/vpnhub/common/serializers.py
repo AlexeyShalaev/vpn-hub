@@ -130,6 +130,7 @@ def server_to_dict(s: m.Server, secret: str | None = None) -> dict:
         "bandwidthQuota": s.bandwidth_quota_bytes,  # квота трафика тарифа за период (null = безлимит)
         "billingDay": s.billing_day,  # день сброса периода (1..31; null → 1-е число)
         "providerMetadata": dict(s.provider_metadata or {}),
+        "archivedAt": s.archived_at,  # epoch секунд, null = не в архиве
         "vpns": [vpn_to_dict(v) for v in sorted(s.vpns, key=lambda x: x.type)],
         "protocols": [protocol_to_dict(p) for p in sorted(s.protocols, key=lambda x: x.proto)],
     }

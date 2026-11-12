@@ -187,7 +187,9 @@ class FinanceService:
         if amount is not None and amount > 1_000_000_000_000:  # 1e12 → micros 1e18 < bigint max
             raise BadRequest(key="finance.price_too_large")
         async with self.uow.transaction() as tx:
-            await self._owned(tx, owner_id, sid)
+            s = await self._owned(tx, owner_id, sid)
+            if s.archived_at is not None:  # архив закрыл сегмент цены; новая цена снова начала бы начислять
+                raise BadRequest(key="finance.server_archived")
             cur = await self._open_segment(tx, sid)
 
             if amount is None or amount <= 0:
@@ -325,10 +327,14 @@ class FinanceService:
                     for currency, amount in day_cost.items():
                         cost_by_day[b][currency] = cost_by_day[b].get(currency, 0.0) + amount
 
+                archived = s.archived_at is not None
+                if archived and not by_cur:
+                    continue  # архивный сервер без расхода в окне — в отчёте ему нечего показать
                 billing_start = period_start(now, s.billing_day)
                 rx, txb = await period_usage(tx.session, s.id, None, billing_start)
                 used = int(rx) + int(txb)
-                quota = s.bandwidth_quota_bytes
+                # квота архивного сервера не в работе — не размываем ею утилизацию живых серверов
+                quota = None if archived else s.bandwidth_quota_bytes
                 if quota and quota > 0:
                     quota_servers += 1
                     total_quota_bytes += int(quota)
@@ -346,6 +352,7 @@ class FinanceService:
                         "providerPlan": provider_plan if isinstance(provider_plan, str) else None,
                         "location": s.location,
                         "status": s.status,
+                        "archived": archived,
                         "price": price,
                         "costByCurrency": _money_items(by_cur),
                         "trafficQuotaBytes": quota,

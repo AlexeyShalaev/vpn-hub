@@ -169,6 +169,8 @@ class ConfigService:
             s = await tx.servers.get(server_id)
             if not s:
                 raise NotFound(key="config.server_not_found")
+            if s.archived_at is not None:
+                raise BadRequest(key="config.server_archived")
             platform = "ios"
             if device_id:
                 d = await tx.devices.get(device_id)
