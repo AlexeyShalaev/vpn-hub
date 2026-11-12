@@ -27,6 +27,44 @@ class Release(TypedDict):
 # Самая свежая версия — первая. Пункты: пользовательские формулировки (не commit-стиль).
 RELEASES: list[Release] = [
     {
+        "v": "0.14.0",
+        "date": "2026-11-12",
+        "notes": [
+            {
+                "ru": "Вход по ключу доступа (passkey): отпечаток, лицо или PIN устройства вместо телефона и пароля. Ключи добавляются, переименовываются и удаляются в профиле, а на экране входа браузер сам предложит сохранённый ключ. Работает, когда панель открыта по https-адресу из VPNHUB_BASE_URL",  # noqa: E501
+                "en": "Sign in with a passkey: your device's fingerprint, face or PIN instead of phone and password. Add, rename and remove passkeys in your profile; on the sign-in screen the browser offers a saved passkey on its own. Works when the panel is opened at the https address from VPNHUB_BASE_URL",  # noqa: E501
+            },
+            {
+                "ru": "Участника группы теперь можно выбрать из уже зарегистрированных пользователей, а не только пригласить по телефону. Администратор панели видит всех, владелец группы — тех, с кем уже состоит в общих группах, и с замаскированными телефонами",  # noqa: E501
+                "en": "A group member can now be picked from users who are already registered, not only invited by phone. The panel admin sees everyone; a group owner sees people they already share a group with, with masked phone numbers",  # noqa: E501
+            },
+            {
+                "ru": "Повторно добавить в группу того, кто уже в ней состоит, больше нельзя: раньше появлялась вторая запись. Ошибки при добавлении теперь видны на экране",  # noqa: E501
+                "en": "Adding someone who is already in the group is refused instead of creating a second entry, and errors while adding a member now show up on screen",  # noqa: E501
+            },
+            {
+                "ru": "Архив серверов: выключенный сервер можно убрать в архив, не теряя историю трафика, метрик и расходов. Панель не ходит на него по SSH, не опрашивает и не синхронизирует, участникам он не виден, расход по нему не начисляется. Вернуть из архива можно в любой момент",  # noqa: E501
+                "en": "Server archive: a server you switched off can be archived without losing its traffic, metrics and cost history. The panel stops connecting to it over SSH, polling and syncing it, members no longer see it, and it stops accruing cost. You can restore it at any time",  # noqa: E501
+            },
+            {
+                "ru": "Конфиги на архивном сервере сохраняются и помечены «Сервер в архиве»; после возврата сервера они снова работают",  # noqa: E501
+                "en": 'Configs on an archived server are kept and marked "Server archived"; they work again once the server is restored',  # noqa: E501
+            },
+            {
+                "ru": "Исправлено: панель не запускалась, если в пароле базы данных были спецсимволы (например, % ( | } ?)",  # noqa: E501
+                "en": "Fixed: the panel failed to start when the database password contained special characters such as % ( | } ?",  # noqa: E501
+            },
+            {
+                "ru": "Исправлено: сессии с iPhone и iPad подписывались как macOS",
+                "en": "Fixed: sessions from iPhone and iPad were labelled as macOS",
+            },
+            {
+                "ru": "Образ панели получил исправления безопасности (zlib, certifi), обновлены зависимости",
+                "en": "The panel image picks up security fixes (zlib, certifi), and dependencies are updated",
+            },
+        ],
+    },
+    {
         "v": "0.13.0",
         "date": "2026-10-08",
         "notes": [
