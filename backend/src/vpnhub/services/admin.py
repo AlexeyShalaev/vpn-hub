@@ -16,7 +16,7 @@ from vpnhub.api.config import Settings
 from vpnhub.common.serializers import user_to_dict
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.core.i18n import DEFAULT_LANG, Lang, translate
-from vpnhub.infra import keyring, selfupdate, sysprobe
+from vpnhub.infra import keyring, registry, selfupdate, sysprobe
 from vpnhub.infra.changelog import local_releases
 from vpnhub.infra.security import hash_password, normalize_phone
 from vpnhub.infra.uow import Uow
@@ -42,6 +42,8 @@ _START = time.time()
 
 
 _CACHE_KEY = "update_feed_cache"
+# пока образ новой версии ещё собирается, перепроверяем реестр не чаще раза в минуту
+_IMAGE_RECHECK_S = 60.0
 
 
 def _is_num(s: str) -> bool:
@@ -148,6 +150,8 @@ class AdminService:
         s = self.settings
         cache = await self._update_cache()
         latest = cache.get("latest") or s.version
+        newer = is_newer(latest, s.version)
+        image_ready = await self._image_ready(latest, cache) if newer else True
         releases = local_releases(lang)  # ноты — из курируемого двуязычного changelog
         update_mode = selfupdate.detect_mode(s)
         update_supported = update_mode != "manual"
@@ -161,7 +165,9 @@ class AdminService:
         return {
             "version": s.version,
             "latest": latest,
-            "updateAvailable": is_newer(latest, s.version),
+            # релиз уже в фиде, но образа в реестре ещё нет → обновление не предлагаем
+            "updateAvailable": newer and image_ready is not False,
+            "updatePending": newer and image_ready is False,
             "channel": s.update_channel,
             "image": s.image,
             "edition": s.edition,
@@ -246,6 +252,28 @@ class AdminService:
         except ValueError:
             return {}
 
+    async def _image_ready(self, latest: str, cache: dict) -> bool | None:
+        """Опубликован ли образ версии latest (кэш в настройках; пока «нет» — перепроверка раз в минуту).
+
+        True/None — можно предлагать (None = реестр не ответил: приватный/недоступный, не блокируем).
+        False — реестр уверенно ответил 404: релиз есть, а образ ещё собирается.
+        """
+        cached = cache.get("imageReady")
+        fresh = cache.get("latest") == latest and time.time() - float(cache.get("imageAt") or 0) < _IMAGE_RECHECK_S
+        if cache.get("latest") == latest and (cached is True or fresh):
+            return cast("bool | None", cached)
+        ready = await registry.tag_exists(self.settings.image, latest)
+        async with self.uow.transaction() as tx:
+            await tx.settings.set_value(
+                _CACHE_KEY,
+                json.dumps({**cache, "latest": latest, "imageReady": ready, "imageAt": time.time()}),
+            )
+        return ready
+
+    def _availability(self, latest: str, image_ready: bool | None) -> dict:
+        newer = is_newer(latest, self.settings.version)
+        return {"available": newer and image_ready is not False, "pending": newer and image_ready is False}
+
     async def check_updates(self, lang: Lang = DEFAULT_LANG) -> dict:
         """Проверка обновлений: тянет фид ради номера последней версии, сравнивает с текущей.
 
@@ -260,7 +288,7 @@ class AdminService:
             cache = await self._update_cache()
             latest = cache.get("latest") or current
             return {
-                "available": is_newer(latest, current),
+                **self._availability(latest, cache.get("imageReady")),
                 "current": current,
                 "latest": latest,
                 "checked": False,
@@ -274,7 +302,7 @@ class AdminService:
             cache = await self._update_cache()
             latest = cache.get("latest") or current
             return {
-                "available": is_newer(latest, current),
+                **self._availability(latest, cache.get("imageReady")),
                 "current": current,
                 "latest": latest,
                 "checked": False,
@@ -282,10 +310,15 @@ class AdminService:
                 "reason": translate("update.feed_failed", lang, error=str(exc)),
             }
         latest = str(feed.get("latest") or current)
+        # релиз на GitHub появляется раньше образа: сверяем реестр, чтобы не предлагать несуществующий тег
+        ready = await registry.tag_exists(self.settings.image, latest) if is_newer(latest, current) else True
         async with self.uow.transaction() as tx:
-            await tx.settings.set_value(_CACHE_KEY, json.dumps({"latest": latest, "at": time.time()}))
+            await tx.settings.set_value(
+                _CACHE_KEY,
+                json.dumps({"latest": latest, "at": time.time(), "imageReady": ready, "imageAt": time.time()}),
+            )
         return {
-            "available": is_newer(latest, current),
+            **self._availability(latest, ready),
             "current": current,
             "latest": latest,
             "checked": True,
@@ -318,6 +351,15 @@ class AdminService:
             target = str(fresh.get("latest") or "")
             if not target or not is_newer(target, s.version):
                 return {"ok": False, "manual": False, "message": translate("update.already_latest", lang)}
+        # Последний рубеж: свежая проверка реестра прямо перед применением. В k8s (Recreate) патч на
+        # несуществующий тег гасит рабочий под, а новый навсегда висит в ImagePullBackOff.
+        if await registry.tag_exists(s.image, target) is False:
+            return {
+                "ok": False,
+                "manual": False,
+                "pending": True,
+                "message": translate("update.image_not_ready", lang, version=target),
+            }
         return selfupdate.start(s, target, lang)
 
     def upgrade_status(self) -> dict:
