@@ -30,6 +30,7 @@ from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.probe import ProbeResult
 from vpnhub.infra.provisioning.creds import server_creds
 from vpnhub.services.configs import ConfigService
+from vpnhub.services.devices import DeviceService
 from vpnhub.services.finance import FinanceService
 from vpnhub.services.me import MeService
 from vpnhub.services.metrics import MetricsService
@@ -436,3 +437,19 @@ async def test__chain_create__archived_server__raises(uow, settings, session_mak
     with pytest.raises(BadRequest) as exc:
         await ChainService(uow, settings).create(owner.id, entry.id, exit_srv.id)
     assert exc.value.key == "multihop.server_archived"
+
+
+async def test__devices_list__flags_configs_on_archived_server(uow, settings, session_maker) -> None:
+    oid, uid, sid, _ = await _member_with_access(session_maker, phone_owner="+79005550018", phone_member="+79005550019")
+    async with seed(session_maker) as s:
+        dev = await make_device(s, user_id=uid, name="Laptop")
+        await make_device_config(s, device_id=dev.id, server_id=sid, vpn_type="amnezia", client_id="c9")
+    svc = DeviceService(uow, settings)
+    before = await svc.list(uid)
+
+    await ServerService(uow, settings).archive(oid, sid)
+    after = await svc.list(uid)
+
+    flags = lambda devices: [c["serverArchived"] for d in devices for c in d["configs"]]  # noqa: E731
+    assert flags(before) == [False]
+    assert flags(after) == [True]
