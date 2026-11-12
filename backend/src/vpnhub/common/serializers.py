@@ -71,6 +71,17 @@ def session_to_dict(s: m.Session, current: bool) -> dict:
     }
 
 
+def passkey_to_dict(pk: m.Passkey) -> dict:
+    created = pk.created_at.timestamp() if pk.created_at else None
+    return {
+        "id": pk.id,
+        "name": pk.name,
+        "createdAt": time.strftime("%d.%m.%Y %H:%M", time.localtime(created)) if created else "",
+        "lastUsed": rel_time(pk.last_used_at),
+        "synced": pk.backed_up,
+    }
+
+
 def vpn_to_dict(v: m.ServerVpn) -> dict:
     return {"type": v.type, "installed": v.installed, "running": v.running, "port": v.port}
 

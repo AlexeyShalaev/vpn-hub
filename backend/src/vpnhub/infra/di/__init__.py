@@ -26,6 +26,7 @@ from vpnhub.services.hostmetrics import HostMetricsService
 from vpnhub.services.me import MeService
 from vpnhub.services.metrics import MetricsService
 from vpnhub.services.multihop import ChainService
+from vpnhub.services.passkeys import PasskeyService
 from vpnhub.services.pools import PoolService
 from vpnhub.services.server_access import ServerAccessService
 from vpnhub.services.servers import ServerService
@@ -72,6 +73,7 @@ class AppProvider(Provider):
 
     provider_store = provide(ProviderStore)
     auth = provide(AuthService)
+    passkeys = provide(PasskeyService)
     server_access = provide(ServerAccessService)
     pools = provide(PoolService)
     groups = provide(GroupService)

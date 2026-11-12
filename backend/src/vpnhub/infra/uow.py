@@ -10,11 +10,13 @@ from vpnhub.infra.repositories import (
     AuditRepo,
     DeviceRepo,
     GroupRepo,
+    PasskeyRepo,
     PoolRepo,
     ServerRepo,
     SessionRepo,
     SettingRepo,
     UserRepo,
+    WebauthnChallengeRepo,
 )
 
 
@@ -32,6 +34,8 @@ class UowTransaction:
         self.devices = DeviceRepo(session)
         self.settings = SettingRepo(session)
         self.audit = AuditRepo(session)
+        self.passkeys = PasskeyRepo(session)
+        self.webauthn_challenges = WebauthnChallengeRepo(session)
 
 
 Uow = AsyncSQLAlchemyUnitOfWork[UowTransaction]
