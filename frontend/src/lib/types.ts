@@ -454,6 +454,7 @@ export interface SystemInfo {
   version: string;
   latest: string;
   updateAvailable: boolean;
+  updatePending?: boolean; // релиз уже вышел, но образа ещё нет в реестре (собирается)
   channel: string;
   image: string;
   edition: string;
@@ -621,6 +622,7 @@ export interface MetricsOverview {
 
 export interface UpdateCheck {
   available: boolean;
+  pending?: boolean; // образ новой версии ещё не опубликован
   current?: string;
   latest: string;
   checked?: boolean;
