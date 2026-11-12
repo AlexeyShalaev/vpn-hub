@@ -22,7 +22,9 @@ _BACKEND_DIR = Path(__file__).resolve().parents[4]  # .../backend (src/vpnhub/in
 def _config(dsn: str) -> Config:
     cfg = Config(str(_BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(_BACKEND_DIR / "migrations"))
-    cfg.set_main_option("sqlalchemy.url", dsn)
+    # Config поверх configparser с интерполяцией: `%` из URL-кодированного пароля (%28, %7C, ...)
+    # иначе роняет старт ValueError. Экранируем, get_main_option в env.py вернёт исходный DSN.
+    cfg.set_main_option("sqlalchemy.url", dsn.replace("%", "%%"))
     return cfg
 
 
