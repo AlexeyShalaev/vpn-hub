@@ -5,6 +5,30 @@ All notable changes to this project are documented here.
 Generated from `backend/src/vpnhub/infra/changelog.py` via `make changelog` — do not edit by hand.
 Release notes are hand-written and bilingual (RU/EN); the panel shows them in the selected language.
 
+## [0.14.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.13.0...v0.14.0) (2026-11-12)
+
+
+### Features
+
+* **auth:** sign in with passkeys (WebAuthn) ([4a34ebb](https://github.com/AlexeyShalaev/vpn-hub/commit/4a34ebb66728432ccde1f09b28e5bb566195d9a5))
+* **devices:** flag configs whose server is archived ([6e2da72](https://github.com/AlexeyShalaev/vpn-hub/commit/6e2da72dd3af99d7a8e0bdd1a3743985fd954566))
+* **groups:** add members by picking existing users ([55bcb40](https://github.com/AlexeyShalaev/vpn-hub/commit/55bcb40bd7549cd89ede65b0118cbef3b572e493))
+* **groups:** add members by picking existing users ([62a477f](https://github.com/AlexeyShalaev/vpn-hub/commit/62a477fa667d858151e1b37b51fa79b46a540d13))
+* **servers:** archive and restore servers ([f21ea02](https://github.com/AlexeyShalaev/vpn-hub/commit/f21ea02c2e756f91a243a3f89e748bbad3558dc0))
+* **servers:** archive and restore servers ([dd2bffd](https://github.com/AlexeyShalaev/vpn-hub/commit/dd2bffd618f28b2e2116e58b7a7a2fd4c3575671))
+* sign in with passkeys ([c0c11f5](https://github.com/AlexeyShalaev/vpn-hub/commit/c0c11f5d20849510178c691259b92d60d7ab0f67))
+* **ui:** passkeys in the profile and on the sign-in screen ([dd12a04](https://github.com/AlexeyShalaev/vpn-hub/commit/dd12a04f2b8c6a112707740fe9270d909b63ce2b))
+* **ui:** pick existing users in the add-member dialog ([379e196](https://github.com/AlexeyShalaev/vpn-hub/commit/379e19625aeb83754e5004f825bba483de0f3fc2))
+* **ui:** server archive ([401eefb](https://github.com/AlexeyShalaev/vpn-hub/commit/401eefba2756dc70ec655261c7e2fa27e4787301))
+
+
+### Bug Fixes
+
+* **auth:** label iPhone and iPad sessions as iOS instead of macOS ([52dd275](https://github.com/AlexeyShalaev/vpn-hub/commit/52dd27531e7235da723d8e6653fc34a69f663f58))
+* **db:** escape % in the DSN passed to Alembic Config ([c4bab61](https://github.com/AlexeyShalaev/vpn-hub/commit/c4bab61cbaa415076d9a2f25c3a4f6bfe0346b7f))
+* **db:** escape % in the DSN passed to Alembic Config ([b50a9ec](https://github.com/AlexeyShalaev/vpn-hub/commit/b50a9ec7f69f83e19fe239b9a33e78cb014b29a2)), closes [#66](https://github.com/AlexeyShalaev/vpn-hub/issues/66)
+* **docker:** patch fixable HIGH/CRITICAL findings in the image ([a493c8c](https://github.com/AlexeyShalaev/vpn-hub/commit/a493c8c729980631c5286c614c8b9e168ae5fa83))
+
 ## [0.13.0](https://github.com/AlexeyShalaev/vpn-hub/compare/v0.12.0...v0.13.0) - 2026-10-08
 
 - The provider catalog now lists 762 VPS hosts in 115 countries: local hosts from the Philippines, Sri Lanka, Nepal, Cambodia, Mongolia, Ghana, Georgia, Azerbaijan and Kyrgyzstan are in, and payment methods for customers from Russia were checked against the providers' sites
