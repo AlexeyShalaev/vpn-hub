@@ -190,6 +190,203 @@ async def test__add_member__no_phone__active(uow, settings, session_maker):
     assert added["phone"] == ""
 
 
+async def test__add_member__phone_already_in_group__raises_bad_request(uow, settings, session_maker):
+    """Повторное приглашение на тот же телефон → BadRequest, второй строки не появляется."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s)
+        g = await make_group(s, owner_id=owner.id, token="grp-dup-phone")
+        await add_member(s, group_id=g.id, display_name="Гость", phone="+79991234567", status="invited")
+    svc = GroupService(uow, settings)
+    # Act / Assert
+    with pytest.raises(BadRequest) as ei:
+        await svc.add_member(owner.id, g.id, "Ещё раз", "member", "+79991234567")
+    assert ei.value.key == "group.member_already_added"
+
+
+# ---- candidates / add_user (выбор из зарегистрированных) ----
+
+
+async def test__candidates__admin__sees_all_active_users_with_full_phones(uow, settings, session_maker):
+    """Админ видит всех активных пользователей с полными телефонами, кроме уже состоящих в группе."""
+    # Arrange
+    async with seed(session_maker) as s:
+        admin = await make_user(s, phone="+79000000001", name="Админ", admin=True)
+        g = await make_group(s, owner_id=admin.id, token="grp-adm")
+        await add_member(s, group_id=g.id, user_id=admin.id, display_name="Админ (вы)", role="admin")
+        await make_user(s, phone="+79000000002", name="Борис")
+        await make_user(s, phone="+79000000003", name="Анна")
+        await make_user(s, phone="+79000000004", name="Блок", status="blocked")
+        await make_user(s, phone="+79000000005", name="Ждёт", status="pending")
+        await make_user(s, phone="+79000000006", name="Приглашён")
+        await add_member(s, group_id=g.id, display_name="Приглашён", phone="+79000000006", status="invited")
+    svc = GroupService(uow, settings)
+    # Act
+    result = await svc.candidates(admin.id, g.id, is_admin=True)
+    # Assert
+    assert [(c["name"], c["phone"]) for c in result] == [("Анна", "+7 900 000-00-03"), ("Борис", "+7 900 000-00-02")]
+
+
+async def test__candidates__non_admin_owner__sees_only_shared_group_users_masked(uow, settings, session_maker):
+    """Обычный владелец видит только тех, с кем уже в общей группе, и только маску телефона."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79000000001", name="Владелец")
+        friend = await make_user(s, phone="+79000001234", name="Друг")
+        cousin = await make_user(s, phone="+79000005678", name="Кузен")
+        await make_user(s, phone="+79000009999", name="Незнакомец")
+        mine = await make_group(s, owner_id=owner.id, token="grp-mine")
+        target = await make_group(s, owner_id=owner.id, name="Новая", token="grp-target")
+        await add_member(s, group_id=target.id, user_id=owner.id, display_name="Владелец (вы)", role="admin")
+        await add_member(s, group_id=mine.id, user_id=friend.id, display_name="Друг")
+        # группа чужого владельца, где владелец сам активный участник, — её участники тоже «знакомые»
+        foreign = await make_group(s, owner_id=cousin.id, name="Чужая", token="grp-foreign")
+        await add_member(s, group_id=foreign.id, user_id=owner.id, display_name="Владелец")
+        await add_member(s, group_id=foreign.id, user_id=cousin.id, display_name="Кузен")
+    svc = GroupService(uow, settings)
+    # Act
+    result = await svc.candidates(owner.id, target.id, is_admin=False)
+    # Assert
+    assert [(c["name"], c["phone"]) for c in result] == [
+        ("Друг", "+7 *** ***-12-34"),
+        ("Кузен", "+7 *** ***-56-78"),
+    ]
+
+
+async def test__candidates__search__by_name_and_admin_phone_digits(uow, settings, session_maker):
+    """Поиск: по имени без учёта регистра; по цифрам телефона — только у админа."""
+    # Arrange
+    async with seed(session_maker) as s:
+        admin = await make_user(s, phone="+79000000001", name="Админ", admin=True)
+        g = await make_group(s, owner_id=admin.id, token="grp-search")
+        await add_member(s, group_id=g.id, user_id=admin.id, display_name="Админ (вы)", role="admin")
+        await make_user(s, phone="+79005550001", name="Мария")
+        await make_user(s, phone="+79007770002", name="Пётр")
+        own = await make_group(s, owner_id=admin.id, name="Все", token="grp-all")
+    svc = GroupService(uow, settings)
+    # Act
+    by_name = await svc.candidates(admin.id, g.id, "мар", is_admin=True)
+    by_digits = await svc.candidates(admin.id, g.id, "777", is_admin=True)
+    digits_non_admin = await svc.candidates(admin.id, own.id, "777", is_admin=False)
+    # Assert
+    assert [c["name"] for c in by_name] == ["Мария"]
+    assert [c["name"] for c in by_digits] == ["Пётр"]
+    assert digits_non_admin == []
+
+
+async def test__candidates__foreign_group__raises_not_found(uow, settings, session_maker):
+    """Кандидаты для чужой группы → NotFound."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79000000001")
+        g = await make_group(s, owner_id=owner.id, token="grp-foreign-cand")
+    svc = GroupService(uow, settings)
+    # Act / Assert
+    with pytest.raises(NotFound):
+        await svc.candidates("someone-else", g.id, is_admin=True)
+
+
+async def test__add_user__eligible__active_member_bound_to_user(uow, settings, session_maker):
+    """Выбор кандидата → активный участник с user_id, именем и телефоном пользователя, роль из запроса."""
+    # Arrange
+    async with seed(session_maker) as s:
+        admin = await make_user(s, phone="+79000000001", name="Админ", admin=True)
+        g = await make_group(s, owner_id=admin.id, token="grp-pick")
+        user = await make_user(s, phone="+79991234567", name="Ольга")
+    svc = GroupService(uow, settings)
+    # Act
+    result = await svc.add_user(admin.id, g.id, user.id, "admin", is_admin=True)
+    # Assert
+    added = next(mb for mb in result["members"] if mb["userId"] == user.id)
+    assert added == {**added, "name": "Ольга", "status": "active", "role": "admin", "phone": "+79991234567"}
+
+
+async def test__add_user__unknown_role__falls_back_to_member(uow, settings, session_maker):
+    """Неизвестная роль из запроса → member."""
+    # Arrange
+    async with seed(session_maker) as s:
+        admin = await make_user(s, phone="+79000000001", admin=True)
+        g = await make_group(s, owner_id=admin.id, token="grp-role")
+        user = await make_user(s, phone="+79991234567")
+    svc = GroupService(uow, settings)
+    # Act
+    result = await svc.add_user(admin.id, g.id, user.id, "owner", is_admin=True)
+    # Assert
+    assert next(mb for mb in result["members"] if mb["userId"] == user.id)["role"] == "member"
+
+
+@pytest.mark.parametrize("status", ["blocked", "pending"])
+async def test__add_user__inactive_user__raises_not_found(uow, settings, session_maker, status):
+    """Заблокированного или неподтверждённого пользователя добавить нельзя даже админу."""
+    # Arrange
+    async with seed(session_maker) as s:
+        admin = await make_user(s, phone="+79000000001", admin=True)
+        g = await make_group(s, owner_id=admin.id, token="grp-inactive")
+        user = await make_user(s, phone="+79991234567", status=status)
+    svc = GroupService(uow, settings)
+    # Act / Assert
+    with pytest.raises(NotFound) as ei:
+        await svc.add_user(admin.id, g.id, user.id, "member", is_admin=True)
+    assert ei.value.key == "group.user_not_found"
+
+
+async def test__add_user__non_admin_stranger__raises_not_found(uow, settings, session_maker):
+    """Обычный владелец не может добавить по id пользователя, с которым не делит ни одной группы."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79000000001")
+        g = await make_group(s, owner_id=owner.id, token="grp-stranger")
+        stranger = await make_user(s, phone="+79991234567")
+    svc = GroupService(uow, settings)
+    # Act / Assert
+    with pytest.raises(NotFound):
+        await svc.add_user(owner.id, g.id, stranger.id, "member", is_admin=False)
+
+
+async def test__add_user__unknown_id__raises_not_found(uow, settings, session_maker):
+    """Несуществующий user id → NotFound."""
+    # Arrange
+    async with seed(session_maker) as s:
+        admin = await make_user(s, phone="+79000000001", admin=True)
+        g = await make_group(s, owner_id=admin.id, token="grp-unknown-id")
+    svc = GroupService(uow, settings)
+    # Act / Assert
+    with pytest.raises(NotFound):
+        await svc.add_user(admin.id, g.id, "no-such-user", "member", is_admin=True)
+
+
+async def test__add_user__already_member__raises_bad_request(uow, settings, session_maker):
+    """Пользователь уже в группе → BadRequest с понятным ключом."""
+    # Arrange
+    async with seed(session_maker) as s:
+        admin = await make_user(s, phone="+79000000001", admin=True)
+        g = await make_group(s, owner_id=admin.id, token="grp-dup")
+        user = await make_user(s, phone="+79991234567")
+        await add_member(s, group_id=g.id, user_id=user.id, display_name="Уже тут")
+    svc = GroupService(uow, settings)
+    # Act / Assert
+    with pytest.raises(BadRequest) as ei:
+        await svc.add_user(admin.id, g.id, user.id, "member", is_admin=True)
+    assert ei.value.key == "group.member_already_added"
+
+
+async def test__add_user__foreign_group__raises_not_found(uow, settings, session_maker):
+    """Добавление в чужую группу → NotFound, участник не появляется."""
+    # Arrange
+    async with seed(session_maker) as s:
+        owner = await make_user(s, phone="+79000000001")
+        intruder = await make_user(s, phone="+79000000002", admin=True)
+        g = await make_group(s, owner_id=owner.id, token="grp-not-yours")
+        user = await make_user(s, phone="+79991234567")
+    svc = GroupService(uow, settings)
+    # Act / Assert
+    with pytest.raises(NotFound):
+        await svc.add_user(intruder.id, g.id, user.id, "member", is_admin=True)
+    async with uow.query() as tx:
+        group = await tx.groups.get(g.id)
+        assert all(mb.user_id != user.id for mb in group.members)
+
+
 # ---- peek_by_token ----
 
 

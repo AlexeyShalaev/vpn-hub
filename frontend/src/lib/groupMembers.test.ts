@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { countUniqueNonSelfGroupMembers, hasNonSelfGroupMember } from "./groupMembers";
+import {
+  type AddMemberForm,
+  buildAddMemberBody,
+  countUniqueNonSelfGroupMembers,
+  defaultAddMemberMode,
+  hasNonSelfGroupMember,
+} from "./groupMembers";
 import type { Group, Member } from "./types";
 
 function member(id: string, userId: string | null, extra: Partial<Member> = {}): Member {
@@ -50,5 +56,52 @@ describe("group member progress helpers", () => {
     ];
 
     expect(countUniqueNonSelfGroupMembers(groups, "u-owner")).toBe(1);
+  });
+});
+
+const form = (extra: Partial<AddMemberForm> = {}): AddMemberForm => ({
+  mode: "pick",
+  role: "member",
+  userId: null,
+  name: "",
+  phone: "",
+  ...extra,
+});
+
+describe("defaultAddMemberMode", () => {
+  it("opens the picker when there is someone to pick", () => {
+    expect(defaultAddMemberMode(3)).toBe("pick");
+  });
+
+  it("falls back to the phone invite when the list is empty", () => {
+    expect(defaultAddMemberMode(0)).toBe("phone");
+  });
+});
+
+describe("buildAddMemberBody", () => {
+  it("sends only userId and role in pick mode", () => {
+    expect(buildAddMemberBody(form({ userId: "u1", role: "admin", name: "ignored", phone: "+7999" }))).toEqual({
+      body: { userId: "u1", role: "admin" },
+    });
+  });
+
+  it("asks to pick a user when nothing is selected", () => {
+    expect(buildAddMemberBody(form())).toEqual({ error: "groupDetail.pickUserFirst" });
+  });
+
+  it("sends trimmed name and phone in phone mode", () => {
+    expect(buildAddMemberBody(form({ mode: "phone", userId: "u1", name: "  Аня ", phone: " +79991234567 " }))).toEqual({
+      body: { name: "Аня", role: "member", phone: "+79991234567" },
+    });
+  });
+
+  it("omits an empty phone", () => {
+    expect(buildAddMemberBody(form({ mode: "phone", name: "Аня", phone: "  " }))).toEqual({
+      body: { name: "Аня", role: "member" },
+    });
+  });
+
+  it("requires a name in phone mode", () => {
+    expect(buildAddMemberBody(form({ mode: "phone", name: "   " }))).toEqual({ error: "groupDetail.enterMemberName" });
   });
 });

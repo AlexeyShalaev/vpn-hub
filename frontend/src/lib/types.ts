@@ -235,6 +235,14 @@ export interface Member {
   maxBytes: number | null; // персональный override лимита трафика (байт/период); null = наследовать
 }
 
+// Зарегистрированный пользователь, которого можно добавить в группу (диалог выбора).
+// Телефон у не-админа маскирован сервером (+7 *** ***-12-34).
+export interface MemberCandidate {
+  id: string;
+  name: string;
+  phone: string;
+}
+
 export interface Session {
   id: string;
   ip: string;

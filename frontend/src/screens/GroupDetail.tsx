@@ -2,6 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { PhoneField } from "../components/PhoneField";
 import { Avatar, Btn, Field, Icon, Modal, ScreenHeader, Spinner } from "../components/ui";
+import {
+  type AddMemberBody,
+  type AddMemberMode,
+  buildAddMemberBody,
+  defaultAddMemberMode,
+  type MemberRole,
+} from "../lib/groupMembers";
 import { useT } from "../lib/i18n";
 import { toDataUrl } from "../lib/qr";
 import * as q from "../lib/queries";
@@ -62,11 +69,6 @@ export function GroupDetailScreen() {
   const [memberLimitVal, setMemberLimitVal] = useState("");
   const [memberBytesVal, setMemberBytesVal] = useState("");
   const [memberBytesUnit, setMemberBytesUnit] = useState<TrafficUnit>("GB");
-  const [form, setForm] = useState<{ name: string; role: "admin" | "member"; phone: string }>({
-    name: "",
-    role: "member",
-    phone: "",
-  });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["group", groupId] });
@@ -95,14 +97,6 @@ export function GroupDetailScreen() {
       qc.setQueryData(["group", groupId], g);
       qc.invalidateQueries({ queryKey: ["groups"] });
       toast(t("groupDetail.linkRefreshed"));
-    },
-  });
-  const addMut = useMutation({
-    mutationFn: (b: { name: string; role: string; phone?: string }) => q.addMember(groupId, b),
-    onSuccess: () => {
-      invalidate();
-      setAdding(false);
-      toast(t("groupDetail.memberAdded"));
     },
   });
   const roleMut = useMutation({
@@ -326,14 +320,7 @@ export function GroupDetailScreen() {
           >
             {t("groupDetail.membersHeading", { n: group.members.length })}
           </div>
-          <Btn
-            variant="default"
-            sm
-            onClick={() => {
-              setForm({ name: "", role: "member", phone: "" });
-              setAdding(true);
-            }}
-          >
+          <Btn variant="default" sm onClick={() => setAdding(true)}>
             <Icon name="plus" size={15} />
             {t("common.add")}
           </Btn>
@@ -460,71 +447,17 @@ export function GroupDetailScreen() {
         </Modal>
       )}
 
-      {/* Добавить участника вручную */}
+      {/* Добавить участника: выбор из зарегистрированных или приглашение по телефону */}
       {adding && (
-        <Modal
-          title={t("groupDetail.addMemberTitle")}
+        <AddMemberModal
+          groupId={groupId}
           onClose={() => setAdding(false)}
-          footer={
-            <>
-              <Btn variant="default" block onClick={() => setAdding(false)}>
-                {t("common.cancel")}
-              </Btn>
-              <Btn
-                variant="primary"
-                block
-                onClick={() => {
-                  if (!form.name.trim()) {
-                    toast(t("groupDetail.enterMemberName"));
-                    return;
-                  }
-                  addMut.mutate({
-                    name: form.name.trim(),
-                    role: form.role,
-                    phone: form.phone.trim() || undefined,
-                  });
-                }}
-                disabled={addMut.isPending}
-              >
-                {t("common.add")}
-              </Btn>
-            </>
-          }
-        >
-          <p className="muted" style={{ marginBottom: 16 }}>
-            {t("groupDetail.addMemberHint")}
-          </p>
-          <Field label={t("groupDetail.nameLabel")}>
-            <input
-              className="input"
-              value={form.name}
-              placeholder={t("groupDetail.namePlaceholder")}
-              autoFocus
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </Field>
-          <Field label={t("groupDetail.roleLabel")}>
-            <div className="rowflex" style={{ gap: 8 }}>
-              <button
-                type="button"
-                className={`chip ${form.role === "member" ? "selected" : ""}`}
-                onClick={() => setForm((f) => ({ ...f, role: "member" }))}
-              >
-                {t("groupDetail.roleMember")}
-              </button>
-              <button
-                type="button"
-                className={`chip ${form.role === "admin" ? "selected" : ""}`}
-                onClick={() => setForm((f) => ({ ...f, role: "admin" }))}
-              >
-                {t("groupDetail.roleGroupAdmin")}
-              </button>
-            </div>
-          </Field>
-          <Field label={t("groupDetail.phoneOptionalLabel")}>
-            <PhoneField value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-          </Field>
-        </Modal>
+          onAdded={() => {
+            invalidate();
+            setAdding(false);
+            toast(t("groupDetail.memberAdded"));
+          }}
+        />
       )}
 
       {/* Лимиты группы: устройства + трафик */}
@@ -654,6 +587,193 @@ export function GroupDetailScreen() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function AddMemberModal({ groupId, onClose, onAdded }: { groupId: string; onClose: () => void; onAdded: () => void }) {
+  const t = useT();
+  const toast = useStore((s) => s.toast);
+  // mode === null — ещё не знаем, есть ли кого выбрать; решаем по первому ответу кандидатов
+  const [mode, setMode] = useState<AddMemberMode | null>(null);
+  const [role, setRole] = useState<MemberRole>("member");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(search.trim()), 250);
+    return () => window.clearTimeout(id);
+  }, [search]);
+
+  const candQ = useQuery({
+    queryKey: ["groupCandidates", groupId, debounced],
+    queryFn: () => q.memberCandidates(groupId, debounced),
+    placeholderData: (prev) => prev,
+  });
+
+  useEffect(() => {
+    if (mode !== null) return;
+    if (candQ.isError) setMode("phone");
+    else if (candQ.data && !candQ.isPlaceholderData) setMode(defaultAddMemberMode(candQ.data.length));
+  }, [mode, candQ.data, candQ.isError, candQ.isPlaceholderData]);
+
+  const addMut = useMutation({
+    mutationFn: (b: AddMemberBody) => q.addMember(groupId, b),
+    onSuccess: onAdded,
+    onError: (e) => toast(e instanceof Error ? e.message : t("groupDetail.addMemberFailed")),
+  });
+
+  const candidates = candQ.data ?? [];
+  const submit = () => {
+    if (!mode) return;
+    // выбранный, но отфильтрованный поиском пользователь не должен добавиться «вслепую»
+    const picked = candidates.some((c) => c.id === userId) ? userId : null;
+    const res = buildAddMemberBody({ mode, role, userId: picked, name, phone });
+    if ("error" in res) {
+      toast(t(res.error));
+      return;
+    }
+    addMut.mutate(res.body);
+  };
+
+  const modeChip = (m: AddMemberMode, label: string) => (
+    <button type="button" className={`chip ${mode === m ? "selected" : ""}`} onClick={() => setMode(m)}>
+      {label}
+    </button>
+  );
+
+  return (
+    <Modal
+      title={t("groupDetail.addMemberTitle")}
+      onClose={onClose}
+      footer={
+        <>
+          <Btn variant="default" block onClick={onClose}>
+            {t("common.cancel")}
+          </Btn>
+          <Btn variant="primary" block onClick={submit} disabled={!mode || addMut.isPending}>
+            {t("common.add")}
+          </Btn>
+        </>
+      }
+    >
+      {mode === null ? (
+        <Spinner />
+      ) : (
+        <>
+          <div className="rowflex" style={{ gap: 8, marginBottom: 16 }}>
+            {modeChip("pick", t("groupDetail.addModePick"))}
+            {modeChip("phone", t("groupDetail.addModePhone"))}
+          </div>
+
+          {mode === "pick" ? (
+            <>
+              <p className="muted" style={{ marginBottom: 12 }}>
+                {t("groupDetail.pickUserHint")}
+              </p>
+              <input
+                className="input"
+                type="search"
+                value={search}
+                placeholder={t("groupDetail.searchUsers")}
+                autoFocus
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <div className="stack" style={{ gap: 6, marginTop: 10, maxHeight: 280, overflowY: "auto" }}>
+                {candidates.length === 0 ? (
+                  <div className="muted-3" style={{ fontSize: 13, padding: "8px 2px" }}>
+                    {debounced ? t("groupDetail.noCandidatesFound") : t("groupDetail.noCandidates")}
+                  </div>
+                ) : (
+                  candidates.map((c) => {
+                    const checked = c.id === userId;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="card-row"
+                        onClick={() => setUserId(checked ? null : c.id)}
+                        style={{
+                          gap: 12,
+                          padding: 10,
+                          borderRadius: 12,
+                          cursor: "pointer",
+                          textAlign: "left",
+                          border: `1.5px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                          background: checked ? "var(--accent-soft)" : "var(--surface)",
+                        }}
+                      >
+                        <Avatar name={c.name} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              fontSize: 14,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {c.name}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--text-3)" }}>{c.phone}</div>
+                        </div>
+                        {checked && (
+                          <span style={{ color: "var(--accent)", display: "inline-flex" }}>
+                            <Icon name="check" size={20} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ marginBottom: 16 }}>
+                {t("groupDetail.addMemberHint")}
+              </p>
+              <Field label={t("groupDetail.nameLabel")}>
+                <input
+                  className="input"
+                  value={name}
+                  placeholder={t("groupDetail.namePlaceholder")}
+                  autoFocus
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </Field>
+              <Field label={t("groupDetail.phoneOptionalLabel")}>
+                <PhoneField value={phone} onChange={setPhone} />
+              </Field>
+            </>
+          )}
+
+          <div style={{ marginTop: 16 }}>
+            <Field label={t("groupDetail.roleLabel")}>
+              <div className="rowflex" style={{ gap: 8 }}>
+                <button
+                  type="button"
+                  className={`chip ${role === "member" ? "selected" : ""}`}
+                  onClick={() => setRole("member")}
+                >
+                  {t("groupDetail.roleMember")}
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${role === "admin" ? "selected" : ""}`}
+                  onClick={() => setRole("admin")}
+                >
+                  {t("groupDetail.roleGroupAdmin")}
+                </button>
+              </div>
+            </Field>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 

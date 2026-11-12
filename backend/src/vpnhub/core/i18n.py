@@ -171,9 +171,14 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "en": "Invite is invalid or has been revoked",
     },
     "group.member_name_required": {"ru": "Введите имя", "en": "Enter a name"},
+    "group.member_already_added": {
+        "ru": "Этот пользователь уже в группе",
+        "en": "This user is already in the group",
+    },
     "group.member_not_found": {"ru": "Участник не найден", "en": "Member not found"},
     "group.name_required": {"ru": "Введите название", "en": "Enter a name"},
     "group.not_found": {"ru": "Группа не найдена", "en": "Group not found"},
+    "group.user_not_found": {"ru": "Пользователь не найден", "en": "User not found"},
     "hostmetrics.server_not_found": {"ru": "Сервер не найден", "en": "Server not found"},
     "multihop.both_servers_must_be_online": {
         "ru": "Оба сервера должны быть онлайн",

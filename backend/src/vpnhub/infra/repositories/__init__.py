@@ -55,6 +55,16 @@ class UserRepo(_Repo):
         res = await self.session.execute(select(m.User).where(m.User.phone == normalize_phone(phone)))
         return res.scalar_one_or_none()
 
+    async def active(self, ids: set[str] | None = None) -> list[m.User]:
+        """Активные пользователи; ids — ограничить выборку этими id (None — все)."""
+        stmt = select(m.User).where(m.User.status == "active")
+        if ids is not None:
+            if not ids:
+                return []
+            stmt = stmt.where(m.User.id.in_(ids))
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
 
 class SessionRepo(_Repo):
     model = m.Session
@@ -161,6 +171,23 @@ class GroupRepo(_Repo):
             .where(m.GroupMember.user_id == user_id, m.GroupMember.status == "active")
         )
         return list(res.scalars().unique().all())
+
+    async def known_user_ids(self, user_id: str) -> set[str]:
+        """Пользователи, с которыми user_id уже состоит в общей группе.
+
+        Участники групп, которыми он владеет, плюс участники групп, где он сам активный участник.
+        """
+        owned = select(m.Group.id).where(m.Group.owner_user_id == user_id)
+        joined = select(m.GroupMember.group_id).where(
+            m.GroupMember.user_id == user_id, m.GroupMember.status == "active"
+        )
+        res = await self.session.execute(
+            select(m.GroupMember.user_id)
+            .where(m.GroupMember.user_id.is_not(None))
+            .where(m.GroupMember.group_id.in_(owned) | m.GroupMember.group_id.in_(joined))
+            .distinct()
+        )
+        return {r[0] for r in res.all()}
 
     async def members_by_phone(self, phone: str) -> list[m.GroupMember]:
         res = await self.session.execute(
