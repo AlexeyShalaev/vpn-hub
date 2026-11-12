@@ -18,8 +18,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 # 3) рантайм
 FROM python:3.14-slim AS runtime
-# бэкапы теперь логические (SQLAlchemy) — pg_dump/psql не нужны; только curl для HEALTHCHECK
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# бэкапы теперь логические (SQLAlchemy) — pg_dump/psql не нужны; только curl для HEALTHCHECK.
+# upgrade: debian-security фиксы (напр. zlib) выходят раньше, чем пересобирается python:3.14-slim.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 # pip в рантайме не нужен (зависимости ставит uv в стадии pydeps), а вендоренные в нём пакеты
