@@ -22,8 +22,10 @@ jobs:
       # Тег создаёт release-please под GITHUB_TOKEN, а push от GITHUB_TOKEN НЕ триггерит другие
       # воркфлоу — publish.yml сам бы не запустился. Но workflow_dispatch — исключение из этого
       # правила, поэтому явно дёргаем publish.yml для нового тега. PAT/App не нужен.
+      # Пакет в корне ('.'): release-please-action отдаёт его outputs БЕЗ префикса пути
+      # (release_created, tag_name); префикс `<path>--` бывает только у вложенных пакетов.
       - name: Trigger image publish for the new tag
-        if: ${{ steps.release.outputs['.--release_created'] == 'true' }}
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run publish.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs['.--tag_name'] }}"
+        run: gh workflow run publish.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs.tag_name }}"
