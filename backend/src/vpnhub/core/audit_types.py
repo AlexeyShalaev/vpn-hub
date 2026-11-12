@@ -11,6 +11,8 @@ AUTH_LOGIN = "auth.login"
 GROUP_JOIN = "group.join"
 CONFIG_DOWNLOAD = "config.download"
 ACCESS_REVOKE = "access.revoke"
+PASSKEY_ADD = "passkey.add"
+PASSKEY_REMOVE = "passkey.remove"
 
 # code -> человекочитаемая русская подпись
 LABELS: dict[str, str] = {
@@ -18,6 +20,8 @@ LABELS: dict[str, str] = {
     GROUP_JOIN: "Вступление в группу",
     CONFIG_DOWNLOAD: "Выдача конфига",
     ACCESS_REVOKE: "Отзыв доступа",
+    PASSKEY_ADD: "Добавлен ключ доступа",
+    PASSKEY_REMOVE: "Удалён ключ доступа",
 }
 
 

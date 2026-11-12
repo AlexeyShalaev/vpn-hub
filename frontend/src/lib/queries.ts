@@ -20,6 +20,8 @@ import type {
   MetricsOverview,
   Monitoring,
   MyUsage,
+  Passkey,
+  PasskeyConfig,
   Pool,
   Provider,
   ProviderPlan,
@@ -39,6 +41,7 @@ import type {
   VpnAdvanced,
   VpnExternal,
 } from "./types";
+import type { CreationOptionsJSON, RequestOptionsJSON } from "./webauthn";
 
 // auth
 export const getMe = () => http.get<Me | null>("/auth/me");
@@ -65,6 +68,19 @@ export const changePassword = (b: { current: string; new: string }) =>
 export const listSessions = () => http.get<Session[]>("/auth/sessions");
 export const revokeSession = (id: string) => http.del(`/auth/sessions/${id}`);
 export const revokeOtherSessions = () => http.post<{ ok: boolean; revoked: number }>("/auth/sessions/revoke-others");
+
+// passkeys (WebAuthn): опции — JSON-форма WebAuthn, конвертирует lib/webauthn.ts
+type CeremonyOptions<T> = { challengeId: string; publicKey: T };
+type CeremonyResult = { challengeId: string; credential: Record<string, unknown> };
+export const passkeyConfig = () => http.get<PasskeyConfig>("/auth/passkeys/config");
+export const passkeyLoginOptions = () => http.post<CeremonyOptions<RequestOptionsJSON>>("/auth/passkeys/login/options");
+export const passkeyLogin = (b: CeremonyResult) => http.post<Me>("/auth/passkeys/login", b);
+export const listPasskeys = () => http.get<Passkey[]>("/auth/passkeys");
+export const passkeyRegisterOptions = () =>
+  http.post<CeremonyOptions<CreationOptionsJSON>>("/auth/passkeys/register/options");
+export const passkeyRegister = (b: CeremonyResult) => http.post<Passkey>("/auth/passkeys/register", b);
+export const renamePasskey = (id: string, name: string) => http.patch<Passkey>(`/auth/passkeys/${id}`, { name });
+export const deletePasskey = (id: string) => http.del<{ ok: boolean }>(`/auth/passkeys/${id}`);
 
 // invites / join
 export const peekInvite = (token: string) => http.get<InvitePeek>(`/groups/by-token/${token}`);

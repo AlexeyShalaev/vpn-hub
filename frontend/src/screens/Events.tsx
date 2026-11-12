@@ -14,6 +14,8 @@ function typeOptions(t: TFunc): { value: string; label: string }[] {
     { value: "group.join", label: t("events.typeJoin") },
     { value: "config.download", label: t("events.typeConfig") },
     { value: "access.revoke", label: t("events.typeRevoke") },
+    { value: "passkey.add", label: t("events.typePasskeyAdd") },
+    { value: "passkey.remove", label: t("events.typePasskeyRemove") },
   ];
 }
 

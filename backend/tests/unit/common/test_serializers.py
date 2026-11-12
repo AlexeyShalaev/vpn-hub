@@ -136,7 +136,7 @@ def test__latency_str__zero__is_rendered_not_dropped() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# _ua_label
+# ua_label
 # --------------------------------------------------------------------------- #
 
 
@@ -146,6 +146,8 @@ def test__latency_str__zero__is_rendered_not_dropped() -> None:
         ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Edg/120", "Edge · Windows"),
         ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Safari/605", "Safari · macOS"),
         ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Safari/604", "Safari · iOS"),
+        # настоящий UA iPhone содержит «like Mac OS X» — это всё равно iOS, а не macOS
+        ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1", "Safari · iOS"),
         ("Mozilla/5.0 (Linux; Android 14) Chrome/120 Mobile", "Chrome · Android"),
         ("Mozilla/5.0 (X11; Linux x86_64) Firefox/119", "Firefox · Linux"),
         ("Mozilla/5.0 (Windows NT 10.0) Chrome/120", "Chrome · Windows"),
@@ -154,7 +156,7 @@ def test__latency_str__zero__is_rendered_not_dropped() -> None:
 def test__ua_label__known_agent__maps_browser_and_os(ua: str, expected: str) -> None:
     """Известные UA раскладываются в «Браузер · ОС» (edge важнее chrome, android важнее linux)."""
     # Arrange / Act
-    result = s._ua_label(ua)
+    result = s.ua_label(ua)
     # Assert
     assert result == expected
 
@@ -163,7 +165,7 @@ def test__ua_label__known_agent__maps_browser_and_os(ua: str, expected: str) -> 
 def test__ua_label__empty__returns_unknown_device(ua: str | None) -> None:
     """Пустой/отсутствующий UA → «Неизвестное устройство»."""
     # Arrange / Act
-    result = s._ua_label(ua)
+    result = s.ua_label(ua)
     # Assert
     assert result == "Неизвестное устройство"
 
@@ -171,7 +173,7 @@ def test__ua_label__empty__returns_unknown_device(ua: str | None) -> None:
 def test__ua_label__unrecognized_agent__uses_dash_placeholders() -> None:
     """Нераспознанный UA (без известной ОС/браузера) → «— · —»."""
     # Arrange / Act
-    result = s._ua_label("curl/8.0")
+    result = s.ua_label("curl/8.0")
     # Assert
     assert result == "— · —"
 

@@ -9,7 +9,18 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_foundation_kit import BaseTable, DatetimeColumnsMixin
@@ -49,6 +60,41 @@ class Session(BaseTable, DatetimeColumnsMixin):
     expires_at: Mapped[float] = mapped_column()  # epoch seconds
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Passkey(BaseTable, DatetimeColumnsMixin):
+    """Ключ доступа (WebAuthn discoverable credential) пользователя — вход без телефона и пароля.
+
+    credential_id — сырой id из аутентификатора (уникален глобально), public_key — COSE-ключ.
+    sign_count растёт у аппаратных ключей; откат счётчика = признак клона (вход отклоняется).
+    """
+
+    __tablename__ = "passkeys"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    sign_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    transports: Mapped[list[str]] = mapped_column(JSON, default=list)
+    aaguid: Mapped[str] = mapped_column(String(36), default="")
+    backed_up: Mapped[bool] = mapped_column(Boolean, default=False)  # синхронизируемый (облачный) ключ
+    name: Mapped[str] = mapped_column(String(120))
+    last_used_at: Mapped[float | None] = mapped_column(nullable=True)  # epoch seconds
+
+
+class WebauthnChallenge(BaseTable):
+    """Одноразовый WebAuthn-челлендж (регистрация/вход) с коротким TTL.
+
+    Живёт в БД, а не в памяти процесса — чтобы церемония работала при нескольких репликах.
+    Потребляется атомарным DELETE ... RETURNING: повторная отправка того же ответа не пройдёт.
+    """
+
+    __tablename__ = "webauthn_challenges"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    challenge: Mapped[bytes] = mapped_column(LargeBinary)
+    purpose: Mapped[str] = mapped_column(String(16))  # register|login
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # для register
+    expires_at: Mapped[float] = mapped_column(index=True)  # epoch seconds
 
 
 class Server(BaseTable, DatetimeColumnsMixin):

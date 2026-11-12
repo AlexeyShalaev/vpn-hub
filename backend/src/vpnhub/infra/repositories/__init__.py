@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import time
 from typing import Any
 
 from sqlalchemy import delete as sa_delete
@@ -80,6 +82,59 @@ class SessionRepo(_Repo):
         if except_id is not None:
             stmt = stmt.where(m.Session.id != except_id)
         res = await self.session.execute(stmt)
+        return int(res.rowcount or 0)  # type: ignore[attr-defined]
+
+
+class PasskeyRepo(_Repo):
+    model = m.Passkey
+
+    async def for_user(self, user_id: str) -> list[m.Passkey]:
+        res = await self.session.execute(
+            select(m.Passkey).where(m.Passkey.user_id == user_id).order_by(m.Passkey.created_at, m.Passkey.id)
+        )
+        return list(res.scalars().all())
+
+    async def by_credential_id(self, credential_id: bytes) -> m.Passkey | None:
+        res = await self.session.execute(select(m.Passkey).where(m.Passkey.credential_id == credential_id))
+        return res.scalar_one_or_none()
+
+
+class WebauthnChallengeRepo(_Repo):
+    model = m.WebauthnChallenge
+
+    async def issue(self, purpose: str, ttl: float, user_id: str | None = None) -> tuple[str, bytes]:
+        """Новый одноразовый челлендж (id, bytes); попутно чистим протухшие, чтобы таблица не росла."""
+        now = time.time()
+        await self.purge_expired(now)
+        challenge_id = secrets.token_hex(16)
+        challenge = secrets.token_bytes(32)
+        self.session.add(
+            m.WebauthnChallenge(
+                id=challenge_id, challenge=challenge, purpose=purpose, user_id=user_id, expires_at=now + ttl
+            )
+        )
+        return challenge_id, challenge
+
+    async def consume(self, challenge_id: str) -> tuple[bytes, str, str | None, float] | None:
+        """Атомарно забрать челлендж (DELETE ... RETURNING): второй потребитель получит None.
+
+        Возвращает (challenge, purpose, user_id, expires_at) — проверку срока/назначения делает вызывающий.
+        """
+        stmt = (
+            sa_delete(m.WebauthnChallenge)
+            .where(m.WebauthnChallenge.id == challenge_id)
+            .returning(
+                m.WebauthnChallenge.challenge,
+                m.WebauthnChallenge.purpose,
+                m.WebauthnChallenge.user_id,
+                m.WebauthnChallenge.expires_at,
+            )
+        )
+        row = (await self.session.execute(stmt)).first()
+        return (row[0], row[1], row[2], row[3]) if row else None
+
+    async def purge_expired(self, now: float) -> int:
+        res = await self.session.execute(sa_delete(m.WebauthnChallenge).where(m.WebauthnChallenge.expires_at < now))
         return int(res.rowcount or 0)  # type: ignore[attr-defined]
 
 

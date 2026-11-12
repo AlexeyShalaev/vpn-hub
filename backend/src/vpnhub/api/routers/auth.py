@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from vpnhub.api.deps import (
     COOKIE,
@@ -19,6 +21,7 @@ from vpnhub.core.errors import BadRequest, Forbidden
 from vpnhub.services.auth import AuthService, Identity
 from vpnhub.services.backups import BackupService
 from vpnhub.services.groups import GroupService
+from vpnhub.services.passkeys import PasskeyService
 from vpnhub.services.servers import ServerService
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
@@ -39,6 +42,15 @@ class LoginIn(BaseModel):
 class ChangePasswordIn(BaseModel):
     current: str = ""
     new: str = ""
+
+
+class PasskeyVerifyIn(BaseModel):
+    challengeId: str = ""  # noqa: N815 — JSON-ключ фронтенда
+    credential: dict[str, Any] = Field(default_factory=dict)
+
+
+class PasskeyRenameIn(BaseModel):
+    name: str = ""
 
 
 class SetupIn(BaseModel):
@@ -134,6 +146,77 @@ async def login(
     ident = await auth.resolve(token)
     assert ident is not None
     return await build_me(request, ident)
+
+
+# ---- ключи доступа (passkeys, WebAuthn) ----
+
+
+@router.get("/auth/passkeys/config")
+async def passkeys_config(svc: PasskeyService = Depends(service(PasskeyService))) -> dict:
+    return svc.config()
+
+
+@router.post("/auth/passkeys/login/options", dependencies=[Depends(rate_limit("passkey-options", 30, 300))])
+async def passkey_login_options(auth: AuthService = Depends(service(AuthService))) -> dict:
+    return await auth.passkey_login_options()
+
+
+@router.post("/auth/passkeys/login", dependencies=[Depends(rate_limit("login", 10, 300))])
+async def passkey_login(
+    body: PasskeyVerifyIn,
+    request: Request,
+    response: Response,
+    auth: AuthService = Depends(service(AuthService)),
+) -> dict:
+    ip, ua = client_meta(request)
+    token = await auth.passkey_login(body.challengeId, body.credential, ip=ip, ua=ua)
+    set_session_cookie(response, token, request=request)
+    ident = await auth.resolve(token)
+    assert ident is not None
+    return await build_me(request, ident)
+
+
+@router.get("/auth/passkeys")
+async def list_passkeys(
+    ident: Identity = Depends(require_user), svc: PasskeyService = Depends(service(PasskeyService))
+) -> list[dict]:
+    return await svc.list(ident.id)
+
+
+@router.post("/auth/passkeys/register/options", dependencies=[Depends(rate_limit("passkey-options", 30, 300))])
+async def passkey_register_options(
+    ident: Identity = Depends(require_user), svc: PasskeyService = Depends(service(PasskeyService))
+) -> dict:
+    return await svc.registration_options(ident.id)
+
+
+@router.post("/auth/passkeys/register", dependencies=[Depends(rate_limit("passkey-register", 10, 300))])
+async def passkey_register(
+    body: PasskeyVerifyIn,
+    request: Request,
+    ident: Identity = Depends(require_user),
+    svc: PasskeyService = Depends(service(PasskeyService)),
+) -> dict:
+    _, ua = client_meta(request)
+    return await svc.register(ident, body.challengeId, body.credential, ua=ua)
+
+
+@router.patch("/auth/passkeys/{pid}")
+async def rename_passkey(
+    pid: str,
+    body: PasskeyRenameIn,
+    ident: Identity = Depends(require_user),
+    svc: PasskeyService = Depends(service(PasskeyService)),
+) -> dict:
+    return await svc.rename(ident.id, pid, body.name)
+
+
+@router.delete("/auth/passkeys/{pid}")
+async def delete_passkey(
+    pid: str, ident: Identity = Depends(require_user), svc: PasskeyService = Depends(service(PasskeyService))
+) -> dict:
+    await svc.delete(ident, pid)
+    return {"ok": True}
 
 
 @router.post("/auth/change-password", dependencies=[Depends(rate_limit("change-password", 10, 300))])

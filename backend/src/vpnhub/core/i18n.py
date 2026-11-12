@@ -214,6 +214,32 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "На сервере «{server}» должен быть установлен и запущен Xray",
         "en": 'Xray must be installed and running on server "{server}"',
     },
+    "passkey.already_registered": {
+        "ru": "Этот ключ доступа уже добавлен",
+        "en": "This passkey has already been added",
+    },
+    "passkey.challenge_expired": {
+        "ru": "Запрос устарел, попробуйте ещё раз",
+        "en": "The request has expired, please try again",
+    },
+    "passkey.limit_reached": {
+        "ru": "Можно добавить не больше {max} ключей доступа",
+        "en": "You can add at most {max} passkeys",
+    },
+    "passkey.name_required": {"ru": "Введите название ключа", "en": "Enter a passkey name"},
+    "passkey.not_found": {"ru": "Ключ доступа не найден", "en": "Passkey not found"},
+    "passkey.unavailable": {
+        "ru": "Ключи доступа недоступны: панель должна открываться по https-домену из VPNHUB_BASE_URL",
+        "en": "Passkeys are unavailable: the panel must be served over the https domain set in VPNHUB_BASE_URL",
+    },
+    "passkey.unknown_credential": {
+        "ru": "Этот ключ доступа не привязан ни к одному аккаунту",
+        "en": "This passkey is not linked to any account",
+    },
+    "passkey.verification_failed": {
+        "ru": "Не удалось проверить ключ доступа",
+        "en": "Could not verify the passkey",
+    },
     "pool.name_required": {"ru": "Введите название", "en": "Enter a name"},
     "pool.not_found": {"ru": "Пул не найден", "en": "Pool not found"},
     "provider.name_required": {"ru": "Введите название провайдера", "en": "Enter the provider name"},

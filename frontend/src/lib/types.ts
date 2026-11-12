@@ -253,6 +253,20 @@ export interface Session {
   current: boolean;
 }
 
+export interface Passkey {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsed: string | null;
+  synced: boolean;
+}
+
+export interface PasskeyConfig {
+  available: boolean;
+  origin: string | null;
+  rpId: string | null;
+}
+
 export interface InvitePeek {
   id: string;
   name: string;

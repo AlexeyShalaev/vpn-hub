@@ -12,6 +12,7 @@ from vpnhub.api.config import Settings
 from vpnhub.common.serializers import session_to_dict
 from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound, Unauthorized
+from vpnhub.infra import webauthn
 from vpnhub.infra.db.orm import models as m
 from vpnhub.infra.security import (
     hash_password,
@@ -102,32 +103,82 @@ class AuthService:
             password_ok = verify_password(user.password_hash if user else _DUMMY_PASSWORD_HASH, password)
             if not user or not password_ok:
                 raise Unauthorized(key="auth.invalid_credentials")
-            if await tx.admins.is_admin(user.id):
-                token = await self._make_session(tx, "admin", user.id, ip, ua)
-                self._audit_login(tx, "admin", user, ip)
-                return token
-            if user.status == "blocked":
-                raise Unauthorized(key="auth.account_blocked")
-            # подхватить приглашения, появившиеся уже после регистрации
-            if user.status == "pending" and await self._bind_invites(tx, user):
-                user.status = "active"
-            if user.status == "pending":
-                raise Unauthorized(key="auth.account_pending")
-            token = await self._make_session(tx, "user", user.id, ip, ua)
-            self._audit_login(tx, "user", user, ip)
+            return await self._finish_login(tx, user, ip, ua)
+
+    async def _finish_login(
+        self, tx: UowTransaction, user: m.User, ip: str | None, ua: str | None, method: str | None = None
+    ) -> str:
+        """Общие правила входа после проверки учётных данных (пароль или ключ доступа)."""
+        if await tx.admins.is_admin(user.id):
+            token = await self._make_session(tx, "admin", user.id, ip, ua)
+            self._audit_login(tx, "admin", user, ip, method)
             return token
+        if user.status == "blocked":
+            raise Unauthorized(key="auth.account_blocked")
+        # подхватить приглашения, появившиеся уже после регистрации
+        if user.status == "pending" and await self._bind_invites(tx, user):
+            user.status = "active"
+        if user.status == "pending":
+            raise Unauthorized(key="auth.account_pending")
+        token = await self._make_session(tx, "user", user.id, ip, ua)
+        self._audit_login(tx, "user", user, ip, method)
+        return token
+
+    # ---- вход по ключу доступа (passkey, WebAuthn) ----
+
+    def _rp(self) -> webauthn.RelyingParty:
+        rp = webauthn.relying_party(self.settings.base_url)
+        if rp is None:
+            raise BadRequest(key="passkey.unavailable")
+        return rp
+
+    async def passkey_login_options(self) -> dict:
+        """Параметры navigator.credentials.get() для входа без логина (discoverable credentials)."""
+        rp = self._rp()
+        async with self.uow.transaction() as tx:
+            challenge_id, challenge = await tx.webauthn_challenges.issue("login", webauthn.LOGIN_TTL)
+        return {"challengeId": challenge_id, "publicKey": webauthn.authentication_options(rp, challenge=challenge)}
+
+    async def passkey_login(
+        self, challenge_id: str, credential: dict, *, ip: str | None = None, ua: str | None = None
+    ) -> str:
+        rp = self._rp()
+        parsed = webauthn.parse_assertion(credential)
+        # Челлендж сжигаем отдельной транзакцией ДО проверки: и удачная, и неудачная попытка его
+        # расходуют, повтор того же ответа (replay) упрётся в пустую строку.
+        async with self.uow.transaction() as tx:
+            row = await tx.webauthn_challenges.consume(challenge_id) if challenge_id else None
+        if row is None or row[1] != "login" or row[3] < time.time():
+            raise Unauthorized(key="passkey.challenge_expired")
+        async with self.uow.transaction() as tx:
+            pk = await tx.passkeys.by_credential_id(bytes(parsed.raw_id))
+            if pk is None or not webauthn.user_handle_matches(parsed, pk.user_id):
+                raise Unauthorized(key="passkey.unknown_credential")
+            verified = webauthn.verify_assertion(rp, parsed, row[0], public_key=pk.public_key, sign_count=pk.sign_count)
+            user = await tx.users.get(pk.user_id)
+            if user is None:
+                raise Unauthorized(key="passkey.unknown_credential")
+            pk.sign_count = verified.new_sign_count
+            pk.backed_up = verified.backed_up
+            pk.last_used_at = time.time()
+            return await self._finish_login(tx, user, ip, ua, method="passkey")
 
     @staticmethod
-    def _audit_login(tx: UowTransaction, kind: str, user: m.User, ip: str | None) -> None:
+    def _audit_login(tx: UowTransaction, kind: str, user: m.User, ip: str | None, method: str | None = None) -> None:
         """Записать событие входа в той же транзакции (актор = сам пользователь)."""
         # actor_id == user.id → owner увидит собственные login-события даже без owner_user_id
+        meta: dict[str, str] = {}
+        if ip:
+            meta["ip"] = ip
+        if method:
+            meta["method"] = method
         tx.audit.add_event(
             at=time.time(),
             actor_kind=kind,
             actor_id=user.id,
             actor_name=user.name,
             type_=audit_types.AUTH_LOGIN,
-            meta_json=json.dumps({"ip": ip}, ensure_ascii=False) if ip else None,
+            meta_json=json.dumps(meta, ensure_ascii=False) if meta else None,
         )
 
     async def _bind_invites(self, tx: UowTransaction, user: m.User) -> bool:

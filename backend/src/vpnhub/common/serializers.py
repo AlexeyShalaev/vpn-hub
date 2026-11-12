@@ -27,16 +27,17 @@ def latency_str(ms: int | None) -> str | None:
     return f"{ms} мс" if ms is not None else None
 
 
-def _ua_label(ua: str | None) -> str:
+def ua_label(ua: str | None) -> str:
     if not ua:
         return "Неизвестное устройство"
     u = ua.lower()
-    if "windows" in u:
+    # iPhone/iPad раньше macOS: их UA содержит «like Mac OS X»
+    if "iphone" in u or "ipad" in u:
+        os_name = "iOS"
+    elif "windows" in u:
         os_name = "Windows"
     elif "macintosh" in u or "mac os" in u:
         os_name = "macOS"
-    elif "iphone" in u or "ipad" in u:
-        os_name = "iOS"
     elif "android" in u:
         os_name = "Android"
     elif "linux" in u:
@@ -62,11 +63,22 @@ def session_to_dict(s: m.Session, current: bool) -> dict:
     return {
         "id": s.id,
         "ip": s.ip or "—",
-        "device": _ua_label(s.user_agent),
+        "device": ua_label(s.user_agent),
         "userAgent": s.user_agent or "",
         "createdAt": time.strftime("%d.%m.%Y %H:%M", time.localtime(created)) if created else "",
         "lastSeen": rel_time(seen),
         "current": current,
+    }
+
+
+def passkey_to_dict(pk: m.Passkey) -> dict:
+    created = pk.created_at.timestamp() if pk.created_at else None
+    return {
+        "id": pk.id,
+        "name": pk.name,
+        "createdAt": time.strftime("%d.%m.%Y %H:%M", time.localtime(created)) if created else "",
+        "lastUsed": rel_time(pk.last_used_at),
+        "synced": pk.backed_up,
     }
 
 
