@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import time
 
@@ -10,9 +11,18 @@ from vpnhub.common.serializers import group_to_dict
 from vpnhub.core import audit_types
 from vpnhub.core.errors import BadRequest, NotFound
 from vpnhub.infra.db.orm import models as m
-from vpnhub.infra.security import gen_token, normalize_phone
+from vpnhub.infra.security import format_phone, gen_token, mask_phone, normalize_phone
 from vpnhub.infra.uow import Uow, UowTransaction
 from vpnhub.services.provisioning import ProvisioningService
+
+CANDIDATES_LIMIT = 50
+_ROLES = ("admin", "member")
+
+
+def _already_in_group(g: m.Group, user: m.User) -> bool:
+    """Пользователь уже в группе: привязан по user_id или висит приглашением на его телефон."""
+    phone = normalize_phone(user.phone)
+    return any(mb.user_id == user.id or (phone and mb.phone == phone) for mb in g.members)
 
 
 class GroupService:
@@ -128,6 +138,69 @@ class GroupService:
             await tx.session.refresh(g)
             return await self._ser(tx, g)
 
+    # ---- участники ----
+
+    async def _eligible_users(
+        self, tx: UowTransaction, owner_id: str, g: m.Group, *, is_admin: bool
+    ) -> builtins.list[m.User]:
+        """Кого владелец может добавить в группу из уже зарегистрированных.
+
+        Админ панели видит всех активных пользователей. Обычный владелец группы — только тех,
+        с кем уже состоит в общей группе: иначе любой пользователь получил бы справочник всех
+        телефонов панели. Уже состоящие в группе (и приглашённые на их телефон) исключаются.
+        """
+        users = await tx.users.active(None if is_admin else await tx.groups.known_user_ids(owner_id))
+        return [u for u in users if not _already_in_group(g, u)]
+
+    async def candidates(self, owner_id: str, gid: str, q: str = "", *, is_admin: bool) -> builtins.list[dict]:
+        """Список пользователей для выбора в диалоге «Добавить участника».
+
+        Телефоны админ видит целиком, остальные — маскированными. Поиск: по имени, а у админа
+        ещё и по цифрам телефона (по маске искать бессмысленно, а по полному номеру — утечка).
+        """
+        needle = (q or "").strip().casefold()
+        digits = "".join(ch for ch in needle if ch.isdigit())
+        async with self.uow.query() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            users = await self._eligible_users(tx, owner_id, g, is_admin=is_admin)
+        if needle:
+            users = [
+                u
+                for u in users
+                if needle in u.name.casefold() or (is_admin and digits and digits in normalize_phone(u.phone))
+            ]
+        users.sort(key=lambda u: (u.name.casefold(), u.phone))
+        return [
+            {"id": u.id, "name": u.name, "phone": format_phone(u.phone) if is_admin else mask_phone(u.phone)}
+            for u in users[:CANDIDATES_LIMIT]
+        ]
+
+    async def add_user(self, owner_id: str, gid: str, user_id: str, role: str, *, is_admin: bool) -> dict:
+        """Добавить в группу уже зарегистрированного пользователя (выбор из списка кандидатов)."""
+        async with self.uow.transaction() as tx:
+            g = await self._owned(tx, owner_id, gid)
+            user: m.User | None = await tx.users.get(user_id)
+            if user and _already_in_group(g, user):
+                raise BadRequest(key="group.member_already_added")
+            # повторная проверка на сервере: id приходит от клиента, добавить можно только кандидата
+            if not user or user.id not in {
+                u.id for u in await self._eligible_users(tx, owner_id, g, is_admin=is_admin)
+            }:
+                raise NotFound(key="group.user_not_found")
+            tx.session.add(
+                m.GroupMember(
+                    group_id=g.id,
+                    user_id=user.id,
+                    display_name=user.name,
+                    role=role if role in _ROLES else "member",
+                    status="active",
+                    phone=normalize_phone(user.phone) or None,
+                )
+            )
+            await tx.session.flush()
+            await tx.session.refresh(g)
+            return await self._ser(tx, g)
+
     async def add_member(self, owner_id: str, gid: str, name: str, role: str, phone: str | None) -> dict:
         if not name:
             raise BadRequest(key="group.member_name_required")
@@ -137,6 +210,8 @@ class GroupService:
             # если телефон уже принадлежит зарегистрированному пользователю — сразу активный участник
             # с доступом; если пользователя ещё нет — «приглашён» (привяжется при регистрации/входе)
             user = await tx.users.by_phone(np) if np else None
+            if (user and _already_in_group(g, user)) or (np and any(mb.phone == np for mb in g.members)):
+                raise BadRequest(key="group.member_already_added")
             status = "active" if (user or not np) else "invited"
             tx.session.add(
                 m.GroupMember(

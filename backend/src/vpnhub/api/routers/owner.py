@@ -596,7 +596,23 @@ async def add_member(
     ident: Identity = Depends(require_user),
     svc: GroupService = Depends(service(GroupService)),
 ) -> dict:
-    return await svc.add_member(ident.id, gid, body.get("name", ""), body.get("role", "member"), body.get("phone"))
+    # два способа: {"userId"} — выбранный из кандидатов пользователь; {"name", "phone"?} — приглашение
+    role = body.get("role", "member")
+    user_id = body.get("userId")
+    if isinstance(user_id, str) and user_id:
+        return await svc.add_user(ident.id, gid, user_id, role, is_admin=ident.kind == "admin")
+    return await svc.add_member(ident.id, gid, body.get("name", ""), role, body.get("phone"))
+
+
+@router.get("/groups/{gid}/candidates")
+async def member_candidates(
+    gid: str,
+    q: str = Query(default="", max_length=100),
+    ident: Identity = Depends(require_user),
+    svc: GroupService = Depends(service(GroupService)),
+) -> list[dict]:
+    """Зарегистрированные пользователи, которых можно добавить в группу (диалог выбора)."""
+    return await svc.candidates(ident.id, gid, q, is_admin=ident.kind == "admin")
 
 
 @router.post("/groups/{gid}/members/{mid}/role")

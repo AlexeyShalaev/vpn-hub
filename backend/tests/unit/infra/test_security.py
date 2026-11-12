@@ -20,6 +20,7 @@ from vpnhub.infra.security import (
     hash_token,
     is_default_secret_key,
     is_valid_phone,
+    mask_phone,
     new_session_token,
     normalize_phone,
     validate_password,
@@ -240,6 +241,31 @@ def test__format_phone__invalid_number__returned_as_is():
     result = format_phone(raw)
     # Assert
     assert result == "not-a-phone"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("+79991234567", "+7 *** ***-45-67"),
+        ("8 (999) 123-45-67", "+7 *** ***-45-67"),
+        ("+12025550147", "+1 *** ***-01-47"),
+    ],
+)
+def test__mask_phone__valid_number__keeps_country_code_and_last_four(raw: str, expected: str):
+    """Валидный номер → виден только код страны и последние 4 цифры."""
+    # Act
+    result = mask_phone(raw)
+    # Assert
+    assert result == expected
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("12345", "***45"), ("", "")])
+def test__mask_phone__invalid_number__shows_at_most_two_digits(raw: str, expected: str):
+    """Невалидный номер → наружу не больше двух последних цифр."""
+    # Act
+    result = mask_phone(raw)
+    # Assert
+    assert result == expected
 
 
 # --------------------------------------------------- парольная политика ---

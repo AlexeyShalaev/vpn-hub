@@ -99,6 +99,16 @@ def format_phone(value: str, region: str | None = None) -> str:
     return value or ""
 
 
+def mask_phone(value: str, region: str | None = None) -> str:
+    """Телефон для чужих глаз: код страны и последние 4 цифры (+7 *** ***-12-34)."""
+    num = _parse_phone(value, region)
+    if num is not None and phonenumbers.is_valid_number(num):
+        tail = str(num.national_number)[-4:]
+        return f"+{num.country_code} *** ***-{tail[:2]}-{tail[2:]}"
+    digits = "".join(ch for ch in value or "" if ch.isdigit())
+    return f"***{digits[-2:]}" if digits else ""
+
+
 def is_default_secret_key(key: str) -> bool:
     return (key or "") == DEFAULT_INSECURE_SECRET_KEY
 
