@@ -410,6 +410,17 @@ a {
   }
 }
 
+/* fieldset как обёртка для «только чтение» (архивный сервер): без рамки и отступов */
+.fieldset-reset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.fieldset-reset:disabled {
+  opacity: 0.6;
+}
+
 /* tabs */
 .detail-tabs {
   display: flex;

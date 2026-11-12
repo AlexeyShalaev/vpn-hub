@@ -8,6 +8,7 @@ import { Btn, Icon, ScreenHeader } from "../components/ui";
 import { countUniqueNonSelfGroupMembers } from "../lib/groupMembers";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
+import { isArchived } from "../lib/serverArchive";
 import { NAV_META, type Screen, useNav } from "../nav";
 import { useStore } from "../store";
 import { EventList } from "./Events";
@@ -47,8 +48,9 @@ export function HomeScreen() {
     enabled: isOwner,
   });
 
-  const online = (servers ?? []).filter((s) => s.status === "online").length;
-  const total = (servers ?? []).length;
+  const liveServers = (servers ?? []).filter((s) => !isArchived(s)); // архивные не в счёт
+  const online = liveServers.filter((s) => s.status === "online").length;
+  const total = liveServers.length;
   const groupCount = groups?.length ?? 0;
   const memberCount = countUniqueNonSelfGroupMembers(groups ?? [], meId);
   const costLabel = (cost?.totals ?? [])

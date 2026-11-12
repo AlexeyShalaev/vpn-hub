@@ -16,6 +16,8 @@ function typeOptions(t: TFunc): { value: string; label: string }[] {
     { value: "access.revoke", label: t("events.typeRevoke") },
     { value: "passkey.add", label: t("events.typePasskeyAdd") },
     { value: "passkey.remove", label: t("events.typePasskeyRemove") },
+    { value: "server.archive", label: t("events.typeServerArchive") },
+    { value: "server.unarchive", label: t("events.typeServerUnarchive") },
   ];
 }
 

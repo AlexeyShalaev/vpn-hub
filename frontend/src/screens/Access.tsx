@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Btn, Icon, Modal, ScreenHeader, Spinner, Switch } from "../components/ui";
 import { useT } from "../lib/i18n";
 import * as q from "../lib/queries";
+import { isArchived } from "../lib/serverArchive";
 import type { Server, VpnType } from "../lib/types";
 import { VPN_LABEL } from "../lib/types";
 import { useNav } from "../nav";
@@ -42,6 +43,8 @@ export function AccessScreen() {
     queryKey: ["servers"],
     queryFn: q.listServers,
   });
+  // архивные серверы участникам не выдаются — в выборе доступа их не показываем (строки доступа сохраняются)
+  const liveServers = useMemo(() => (servers ?? []).filter((s) => !isArchived(s)), [servers]);
 
   // Выбранная группа: из params.groupId, иначе первая.
   const [selectedGid, setSelectedGid] = useState<string | undefined>(params.groupId);
@@ -282,10 +285,10 @@ export function AccessScreen() {
               {t("access.individualServersHint")}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-              {(servers || []).length === 0 ? (
+              {liveServers.length === 0 ? (
                 <div style={{ fontSize: 13, color: "var(--text-3)" }}>{t("access.noServersYet")}</div>
               ) : (
-                (servers || []).map((s) => {
+                liveServers.map((s) => {
                   const installed = s.vpns.filter((v) => v.installed);
                   const explicit = accGroup?.access.servers[s.id];
                   const byPoolNames = viaPool[s.id];
@@ -483,10 +486,10 @@ export function AccessScreen() {
           <div className="field">
             <label>{t("access.serversInPool")}</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(servers || []).length === 0 ? (
+              {liveServers.length === 0 ? (
                 <div style={{ fontSize: 13, color: "var(--text-3)" }}>{t("access.noServersYet")}</div>
               ) : (
-                (servers || []).map((s: Server) => {
+                liveServers.map((s: Server) => {
                   const checked = poolForm.serverIds.includes(s.id);
                   return (
                     <button
