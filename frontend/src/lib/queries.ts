@@ -1,5 +1,6 @@
 // Обёртки над REST-эндпоинтами + ключи react-query.
 import { API_BASE, http } from "./api";
+import type { AddMemberBody } from "./groupMembers";
 import type {
   AdminUser,
   AuditEvent,
@@ -15,6 +16,7 @@ import type {
   Group,
   InvitePeek,
   Me,
+  MemberCandidate,
   MetricsOverview,
   Monitoring,
   MyUsage,
@@ -194,8 +196,9 @@ export const createGroup = (b: { name: string }) => http.post<Group>("/groups", 
 export const updateGroup = (id: string, b: { name: string }) => http.patch<Group>(`/groups/${id}`, b);
 export const deleteGroup = (id: string) => http.del(`/groups/${id}`);
 export const regenToken = (id: string) => http.post<Group>(`/groups/${id}/token`);
-export const addMember = (id: string, b: { name: string; role: string; phone?: string }) =>
-  http.post<Group>(`/groups/${id}/members`, b);
+export const addMember = (id: string, b: AddMemberBody) => http.post<Group>(`/groups/${id}/members`, b);
+export const memberCandidates = (id: string, search: string) =>
+  http.get<MemberCandidate[]>(`/groups/${id}/candidates?q=${encodeURIComponent(search)}`);
 export const toggleMemberRole = (gid: string, mid: string) => http.post<Group>(`/groups/${gid}/members/${mid}/role`);
 export const removeMember = (gid: string, mid: string) => http.del<Group>(`/groups/${gid}/members/${mid}`);
 export const setGroupLimit = (gid: string, maxDevices: number | null) =>

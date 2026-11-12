@@ -20,3 +20,36 @@ export function countUniqueNonSelfGroupMembers(groups: Group[], meId: string | n
   }
   return ids.size;
 }
+
+// ── диалог «Добавить участника»: выбор зарегистрированного пользователя или приглашение по телефону ──
+
+export type AddMemberMode = "pick" | "phone";
+export type MemberRole = "admin" | "member";
+
+export type AddMemberBody = { userId: string; role: MemberRole } | { name: string; role: MemberRole; phone?: string };
+
+export interface AddMemberForm {
+  mode: AddMemberMode;
+  role: MemberRole;
+  userId: string | null;
+  name: string;
+  phone: string;
+}
+
+/** Режим по умолчанию: выбор из списка, если есть кого выбрать, иначе приглашение по телефону. */
+export function defaultAddMemberMode(candidateCount: number): AddMemberMode {
+  return candidateCount > 0 ? "pick" : "phone";
+}
+
+/** Тело POST /groups/{id}/members из формы диалога, либо ключ ошибки валидации. */
+export function buildAddMemberBody(
+  form: AddMemberForm,
+): { body: AddMemberBody } | { error: "groupDetail.pickUserFirst" | "groupDetail.enterMemberName" } {
+  if (form.mode === "pick") {
+    return form.userId ? { body: { userId: form.userId, role: form.role } } : { error: "groupDetail.pickUserFirst" };
+  }
+  const name = form.name.trim();
+  if (!name) return { error: "groupDetail.enterMemberName" };
+  const phone = form.phone.trim();
+  return { body: { name, role: form.role, ...(phone ? { phone } : {}) } };
+}
