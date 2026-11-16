@@ -10,14 +10,14 @@ COPY frontend/ ./
 RUN npm run build
 
 # 2) зависимости python через uv (версия закреплена для воспроизводимости; обновляет dependabot)
-FROM python:3.14-slim AS pydeps
+FROM python:3.15-slim AS pydeps
 COPY --from=ghcr.io/astral-sh/uv:0.11.25 /uv /uvx /bin/
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # 3) рантайм
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 # бэкапы теперь логические (SQLAlchemy) — pg_dump/psql не нужны; только curl для HEALTHCHECK.
 # upgrade: debian-security фиксы (напр. zlib) выходят раньше, чем пересобирается python:3.14-slim.
 RUN apt-get update && apt-get upgrade -y \
